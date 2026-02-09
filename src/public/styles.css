@@ -1,0 +1,161 @@
+:root {
+  color-scheme: light;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  background: radial-gradient(circle at 20% 10%, #122454 0%, #060910 55%, #020205 100%);
+  color: #f5f7ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+}
+
+.homepage-shell {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 2rem;
+  letter-spacing: 0.04em;
+}
+
+.page-header p {
+  margin-top: 8px;
+  margin-bottom: 24px;
+  color: #c8d4ff;
+}
+
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.game-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-decoration: none;
+  color: #e9f2ff;
+  padding: 12px;
+  aspect-ratio: 1 / 1;
+  border-radius: 14px;
+  border: 1px solid rgba(98, 145, 255, 0.45);
+  background: linear-gradient(145deg, rgba(12, 24, 58, 0.88), rgba(15, 35, 89, 0.72));
+  box-shadow: 0 6px 18px rgba(4, 10, 28, 0.45);
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.game-tile:hover,
+.game-tile:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 20px rgba(9, 16, 39, 0.52);
+}
+
+.tile-id {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.tile-created {
+  font-size: 0.82rem;
+  color: #becfff;
+}
+
+.empty-state {
+  margin-top: 32px;
+  color: #cfdbff;
+}
+
+.game-page {
+  overflow: hidden;
+}
+
+#game-canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+.edit-button {
+  position: fixed;
+  right: 16px;
+  top: 16px;
+  z-index: 10;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.93);
+  color: #111;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.prompt-panel {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 12;
+  padding: 12px;
+  background: rgba(5, 10, 28, 0.95);
+  border-bottom: 1px solid rgba(151, 180, 255, 0.45);
+  transform: translateY(-110%);
+  transition: transform 0.24s ease;
+}
+
+.prompt-panel--open {
+  transform: translateY(0);
+}
+
+.prompt-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.prompt-panel-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.prompt-close {
+  border: 0;
+  background: transparent;
+  color: #eaf1ff;
+  font-size: 1.4rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.prompt-form {
+  display: flex;
+}
+
+.prompt-form input {
+  width: 100%;
+  border: 1px solid rgba(185, 207, 255, 0.6);
+  border-radius: 10px;
+  background: rgba(10, 17, 40, 1);
+  color: #f7f9ff;
+  padding: 12px;
+  font-size: 1rem;
+}
+
+.prompt-form input:focus {
+  outline: 2px solid rgba(88, 148, 255, 0.9);
+  outline-offset: 1px;
+}

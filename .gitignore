@@ -1,0 +1,6 @@
+
+factory/
+node_modules/
+dist/
+games/*/node_modules/
+games/*/dist/
