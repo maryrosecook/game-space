@@ -2,65 +2,76 @@
 
 ## Goal
 
-Build a web repo where the homepage has a playable game in the top half and a
-prompt input near the bottom that sends requests to a headless Codex CLI, which
-edits the repo and commits game changes.
+Build a local web app for curating and evolving browser-game versions: the
+homepage lists versions, users open one to play, and async Codex workers
+produce new versions.
 
-## Core Loop
+## UX
 
-1. User submits a prompt.
-2. Backend enqueues a `change_request` job with prompt + current commit.
-3. Headless Codex worker edits code, runs checks, and creates a commit.
-4. UI streams status, then reloads the updated game on success.
-5. UI shows failure logs and retry options on error.
+### Homepage (Game Picker)
 
-## Background Evolution Loop
+- Render a grid of square tiles.
+- Every square is a game version; show all versions in reverse chronological
+  order (newest first).
+- Tapping a tile opens that version.
 
-- Trigger after successful game-changing commits (primary trigger).
-- Optional low-frequency idle trigger (fallback only).
-- Generate 3 short evolution directions with expected impact and effort.
-- Let user choose to:
-  - apply to current branch
-  - create a new branch (recommended default)
-  - dismiss
-- Notify asynchronously via non-blocking toasts + a review inbox.
+### Game View
 
-## Divergent Ideation
+- Game renders in most of the screen.
+- A single prompt box sits beneath the game.
+- Prompting is async (submit, then review updates later).
 
-- Run separate async ideation jobs for mechanics, themes, and feature twists.
-- Prioritize novelty when recent changes are incremental.
-- Keep work non-blocking so users can continue interacting while ideas are
-  generated.
+## Runtime and Rendering
 
-## Recommendations For Open Questions
+- V1 runs locally only (no local/remote sync layer).
+- Game runtime is 100% client-side.
+- Each game is served as a static bundle: `HTML + JS + minimal CSS`.
+- Bundles are minified before serving.
+- Start with WebGL rendering, even for simple circles/rectangles, so the move
+  to custom shaders is easier later.
+- Use npm-driven build/serve flow:
+  - Root script `npm run build:games` iterates `/games/*` and runs each game's
+    build via `npm run build --prefix`, outputting to
+    `/public/games/<version-id>/`.
+  - Root script `npm run serve:games` serves `/public/games/*` for gameplay.
 
-- **When to ideate:** trigger mainly post-commit for meaningful game edits; use
-  rare idle-time runs only as a backup.
-- **How to control cost:** enforce daily/weekly token budgets, use trigger
-  scoring (novelty + stagnation + acceptance rate), and suppress ideation when
-  acceptance stays low.
-- **Framework trade-off:** start with **Phaser** and a strict thin architecture
-  around it. This gives higher Codex productivity and lower bug risk versus a
-  custom engine; revisit custom framework only if repeated complexity pain
-  appears.
-- **Graphics path:** start with geometric primitives for rapid iteration, then
-  add optional shader-based rendering behind a feature flag once core loop is
-  stable.
+## Generation and Evolution
+
+- Product workflow is curator-first: mostly async submissions, not realtime
+  interactive coding loops.
+- User prompt -> backend enqueues a `change_request` job.
+- Headless Codex worker edits code, runs checks, and writes commit/version
+  metadata.
+- LLM can also generate new versions in the background without interactive UI.
+- UI surfaces job status and completed-version notifications asynchronously.
+
+## Versioning and Isolation (V1 Default)
+
+- Each game version lives in `/games/<version-id>/`.
+- Metadata lives in each game directory (for example `metadata.json` with id,
+  parent id, timestamps, framework/version).
+- Each game directory has its own `package.json`.
+- `node_modules` exists inside each game directory when that game is installed,
+  run, or built.
+- Dependencies install per game directory via npm prefix/scoped commands.
+- Forking a game creates a new lineage by copying a game directory, then
+  iterating independently.
 
 ## Initial Milestones
 
-1. Build homepage layout: top-half game viewport + bottom prompt input + status
-   area.
-2. Implement Codex worker pipeline: queue, isolated edits, validation, commit
-   metadata, log streaming.
-3. Implement post-commit suggestion worker that returns 3 evolution options.
-4. Add branch-based exploration + notifications inbox.
-5. Add ideation scoring, budget controls, and outcome telemetry.
+1. Build homepage game-picker grid (square tiles, all versions listed).
+2. Build reverse-chron homepage feed behavior (newest version first).
+3. Build game view (large playable area + single prompt box below).
+4. Implement async Codex worker pipeline for prompt-driven changes.
+5. Add static minified game bundling (`HTML/JS/CSS`) for client-side serving.
+6. Implement per-game sandbox directories with isolated dependency/version
+   control.
+7. Add background LLM ideation + notifications for newly created versions.
 
 ## Success Criteria
 
-- Prompt-to-play loop works end-to-end with committed updates.
-- Async suggestions regularly produce viable directions without interrupting
-  user flow.
-- Token spend stays within budget while suggestion acceptance improves over
-  time.
+- Users can browse all versions from the homepage and open any version to play.
+- Prompt-to-new-version flow works asynchronously end to end.
+- Games remain playable over time as static client-side bundles.
+- Per-game dependency isolation prevents framework changes from breaking old
+  games.
