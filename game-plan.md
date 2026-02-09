@@ -105,16 +105,17 @@ that run Codex edits against the selected game.
 10. Implement per-game sandbox directories with isolated dependency/version
     control.
 
-## Success Criteria
+## Required verification
 
 - Users can browse all versions from the homepage (three tiles per row) and
   open any version to play.
 - Homepage ordering is based on `metadata.json.createdTime` and new fork
   directories appear on the next `/` request.
-- Pressing Return/Go in the slide-down prompt box triggers fire-and-forget
-  fork-then-edit behavior: backend runs `codex exec` against the new fork with
-  `game-build-prompt.md` prepended, handling arbitrary prompt formatting safely.
 - `npm run dev` builds, serves, and watches games; source edits trigger rebuilds.
 - `npm run build` includes game builds for production.
 - Per-game dependency isolation prevents framework changes from breaking old
   games.
+- Use the chrome-devtools MCP to spin up a browser and verify the app works as
+  expected; if verification fails, fix the app and re-verify.
+- Do not verify prompt submission or game editing behavior in this verification
+  pass.
