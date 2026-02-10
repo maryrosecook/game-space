@@ -147,6 +147,8 @@ describe('express app integration', () => {
     expect(css.text).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
     expect(css.text).toContain('--render-aspect-width: 9;');
     expect(css.text).toContain('width: min(100vw, calc(100vh * var(--render-aspect-width) / var(--render-aspect-height)));');
+    expect(css.text).toContain('flex: 0 0 min(calc(100vh * var(--render-aspect-width) / var(--render-aspect-height)), 58vw);');
+    expect(css.text).toContain('.codex-session-view--game');
 
     await createGameFixture({
       gamesRootPath,
@@ -181,8 +183,11 @@ describe('express app integration', () => {
     });
 
     const gameView = await request(app).get('/game/v1').expect(200);
+    expect(gameView.text).toContain('class="game-layout"');
     expect(gameView.text).toContain('class="game-stage"');
     expect(gameView.text).toContain('class="game-render-area"');
+    expect(gameView.text).toContain('class="game-codex-panel"');
+    expect(gameView.text).toContain('id="game-codex-session-view"');
     expect(gameView.text).toContain('id="edit-button"');
     expect(gameView.text).toContain('✏️');
     expect(gameView.text).toContain('id="prompt-panel"');
