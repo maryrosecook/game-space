@@ -175,3 +175,163 @@ body {
   outline: 2px solid rgba(88, 148, 255, 0.9);
   outline-offset: 1px;
 }
+
+.codex-page {
+  overflow-y: auto;
+}
+
+.codex-shell {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 44px;
+}
+
+.codex-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.codex-home-link {
+  color: #b7ceff;
+  text-decoration: none;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(183, 206, 255, 0.4);
+}
+
+.codex-home-link:hover,
+.codex-home-link:focus-visible {
+  color: #e4efff;
+  border-bottom-color: rgba(228, 239, 255, 0.8);
+}
+
+.codex-controls {
+  margin-top: 18px;
+  margin-bottom: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.codex-label {
+  font-size: 0.92rem;
+  color: #d5e3ff;
+  letter-spacing: 0.03em;
+}
+
+.codex-select {
+  width: 100%;
+  border: 1px solid rgba(165, 193, 255, 0.55);
+  border-radius: 10px;
+  background: linear-gradient(170deg, rgba(16, 29, 63, 0.95), rgba(8, 15, 35, 0.95));
+  color: #f4f8ff;
+  padding: 12px;
+  font-size: 0.98rem;
+}
+
+.codex-select:focus-visible {
+  outline: 2px solid rgba(103, 163, 255, 0.95);
+  outline-offset: 1px;
+}
+
+.codex-session-view {
+  min-height: 300px;
+  border-radius: 14px;
+  border: 1px solid rgba(128, 163, 244, 0.45);
+  background: linear-gradient(155deg, rgba(7, 14, 34, 0.97), rgba(5, 10, 24, 0.97));
+  box-shadow: 0 10px 26px rgba(2, 6, 17, 0.5);
+  padding: 16px;
+}
+
+.codex-session-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 14px;
+}
+
+.codex-session-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.codex-session-id {
+  font-size: 0.82rem;
+  color: #a9c6ff;
+  background: rgba(37, 63, 120, 0.26);
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(117, 155, 247, 0.35);
+}
+
+.codex-thread {
+  display: grid;
+  gap: 12px;
+}
+
+.codex-message {
+  border-radius: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(121, 158, 239, 0.28);
+}
+
+.codex-message--user {
+  margin-left: 12%;
+  background: linear-gradient(155deg, rgba(19, 50, 108, 0.6), rgba(12, 30, 73, 0.65));
+}
+
+.codex-message--assistant {
+  margin-right: 12%;
+  background: linear-gradient(155deg, rgba(18, 27, 51, 0.9), rgba(14, 18, 36, 0.9));
+}
+
+.codex-message-role {
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #b7cdfd;
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+.codex-message-text {
+  margin: 0;
+  white-space: pre-wrap;
+  color: #f2f7ff;
+  font-family: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  line-height: 1.5;
+  font-size: 0.89rem;
+}
+
+.codex-empty-shell {
+  padding: 6px 0;
+}
+
+.codex-empty-title {
+  margin: 0 0 8px 0;
+  font-size: 1rem;
+  color: #d6e6ff;
+}
+
+.codex-empty {
+  margin: 0;
+  color: #b6caef;
+}
+
+@media (max-width: 760px) {
+  .codex-shell {
+    padding: 20px 14px 30px;
+  }
+
+  .codex-message--user,
+  .codex-message--assistant {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .codex-session-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

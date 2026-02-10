@@ -48,12 +48,38 @@ describe('game version discovery', () => {
       createdTime: '2026-02-01T12:00:00-05:00'
     });
 
+    expect(normalized?.codexSessionId).toBeNull();
     expect(normalized?.createdTime).toBe('2026-02-01T17:00:00.000Z');
     expect(
       parseGameMetadata({
         id: 'bad',
         parentId: 3,
         createdTime: '2026-02-01T17:00:00.000Z'
+      })
+    ).toBeNull();
+  });
+
+  it('preserves codexSessionId when present and rejects invalid codexSessionId values', () => {
+    expect(
+      parseGameMetadata({
+        id: 'v2',
+        parentId: 'v1',
+        createdTime: '2026-02-02T00:00:00.000Z',
+        codexSessionId: '019c48a7-3918-7123-bc60-0d7cddb4d5d4'
+      })
+    ).toEqual({
+      id: 'v2',
+      parentId: 'v1',
+      createdTime: '2026-02-02T00:00:00.000Z',
+      codexSessionId: '019c48a7-3918-7123-bc60-0d7cddb4d5d4'
+    });
+
+    expect(
+      parseGameMetadata({
+        id: 'v2',
+        parentId: null,
+        createdTime: '2026-02-02T00:00:00.000Z',
+        codexSessionId: 42
       })
     ).toBeNull();
   });

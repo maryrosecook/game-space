@@ -52,6 +52,47 @@ export function renderHomepage(versions: readonly GameVersion[]): string {
 </html>`;
 }
 
+export function renderCodexView(versions: readonly GameVersion[]): string {
+  const options = versions
+    .map((version) => {
+      const id = escapeHtml(version.id);
+      const createdLabel = escapeHtml(formatDate(version.createdTime));
+      return `<option value="${id}">${id} (${createdLabel})</option>`;
+    })
+    .join('');
+
+  const selectorContent =
+    versions.length > 0
+      ? `<select id="codex-game-select" class="codex-select" name="versionId">${options}</select>`
+      : '<p class="codex-empty">No game versions are available yet.</p>';
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codex Sessions</title>
+    <link rel="stylesheet" href="/public/styles.css" />
+  </head>
+  <body class="codex-page">
+    <main class="codex-shell">
+      <header class="page-header codex-header">
+        <h1>Codex Sessions</h1>
+        <a class="codex-home-link" href="/">Back to games</a>
+      </header>
+      <section class="codex-controls">
+        <label class="codex-label" for="codex-game-select">Game version</label>
+        ${selectorContent}
+      </section>
+      <section id="codex-session-view" class="codex-session-view" aria-live="polite">
+        <p class="codex-empty">Select a game version to inspect its Codex transcript.</p>
+      </section>
+    </main>
+    <script type="module" src="/public/codex-view.js"></script>
+  </body>
+</html>`;
+}
+
 export function renderGameView(versionId: string): string {
   const encodedVersionId = encodeURIComponent(versionId);
   return `<!doctype html>

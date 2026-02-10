@@ -3,7 +3,11 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { composeCodexPrompt, readBuildPromptFile } from '../src/services/promptExecution';
+import {
+  composeCodexPrompt,
+  parseSessionIdFromCodexEventLine,
+  readBuildPromptFile
+} from '../src/services/promptExecution';
 import { createTempDirectory } from './testHelpers';
 
 describe('composeCodexPrompt', () => {
@@ -22,5 +26,22 @@ describe('composeCodexPrompt', () => {
     await fs.writeFile(buildPromptPath, text, 'utf8');
 
     expect(await readBuildPromptFile(buildPromptPath)).toBe(text);
+  });
+
+  it('extracts session id from legacy session_meta events', () => {
+    const line =
+      '{"type":"session_meta","payload":{"id":"019c48a7-3918-7123-bc60-0d7cddb4d5d4","source":"exec"}}';
+    expect(parseSessionIdFromCodexEventLine(line)).toBe('019c48a7-3918-7123-bc60-0d7cddb4d5d4');
+  });
+
+  it('extracts session id from thread.started events', () => {
+    const line = '{"type":"thread.started","thread_id":"019c49ac-5744-71f1-9a0d-c2a98885e4d4"}';
+    expect(parseSessionIdFromCodexEventLine(line)).toBe('019c49ac-5744-71f1-9a0d-c2a98885e4d4');
+  });
+
+  it('returns null for unrelated or invalid JSONL lines', () => {
+    expect(parseSessionIdFromCodexEventLine('{"type":"response_item","payload":{}}')).toBeNull();
+    expect(parseSessionIdFromCodexEventLine('{"type":"thread.started","thread_id":""}')).toBeNull();
+    expect(parseSessionIdFromCodexEventLine('not-json')).toBeNull();
   });
 });

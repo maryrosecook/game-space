@@ -1,11 +1,12 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 
 import { createApp } from '../src/app';
-import type { CodexRunner } from '../src/services/promptExecution';
+import type { CodexRunOptions, CodexRunResult, CodexRunner } from '../src/services/promptExecution';
 import { createGameFixture, createTempDirectory } from './testHelpers';
 
 type CapturedRun = {
@@ -15,10 +16,95 @@ type CapturedRun = {
 
 class CapturingRunner implements CodexRunner {
   public readonly calls: CapturedRun[] = [];
+  private readonly sessionId: string | null;
 
-  async run(prompt: string, cwd: string): Promise<void> {
-    this.calls.push({ prompt, cwd });
+  constructor(sessionId: string | null = null) {
+    this.sessionId = sessionId;
   }
+
+  async run(prompt: string, cwd: string, options?: CodexRunOptions): Promise<CodexRunResult> {
+    void options;
+    this.calls.push({ prompt, cwd });
+    return {
+      sessionId: this.sessionId,
+      success: true,
+      failureMessage: null
+    };
+  }
+}
+
+class FailingRunner implements CodexRunner {
+  private readonly sessionId: string | null;
+
+  constructor(sessionId: string | null = null) {
+    this.sessionId = sessionId;
+  }
+
+  async run(prompt: string, cwd: string, options?: CodexRunOptions): Promise<CodexRunResult> {
+    void prompt;
+    void cwd;
+    void options;
+    return {
+      sessionId: this.sessionId,
+      success: false,
+      failureMessage: 'codex exec failed with exit code 1: approval denied'
+    };
+  }
+}
+
+class SessionCallbackOnlyRunner implements CodexRunner {
+  private readonly sessionId: string;
+
+  constructor(sessionId: string) {
+    this.sessionId = sessionId;
+  }
+
+  async run(prompt: string, cwd: string, options?: CodexRunOptions): Promise<CodexRunResult> {
+    void prompt;
+    void cwd;
+    options?.onSessionId?.(this.sessionId);
+
+    return new Promise<CodexRunResult>(() => {
+      // Simulate a long-running codex process that has started but not exited yet.
+    });
+  }
+}
+
+type StoredMetadata = {
+  id: string;
+  parentId: string | null;
+  createdTime: string;
+  codexSessionId?: string | null;
+};
+
+async function readMetadata(metadataPath: string): Promise<StoredMetadata> {
+  const serialized = await fs.readFile(metadataPath, 'utf8');
+  return JSON.parse(serialized) as StoredMetadata;
+}
+
+async function waitForSessionId(metadataPath: string, expectedSessionId: string): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const metadata = await readMetadata(metadataPath);
+    if (metadata.codexSessionId === expectedSessionId) {
+      return;
+    }
+
+    await delay(5);
+  }
+
+  throw new Error(`Session id ${expectedSessionId} was not persisted in time`);
+}
+
+async function waitForErrorLog(loggedErrors: readonly string[], expectedMessagePart: string): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (loggedErrors.some((message) => message.includes(expectedMessagePart))) {
+      return;
+    }
+
+    await delay(5);
+  }
+
+  throw new Error(`Expected log containing "${expectedMessagePart}" was not emitted in time`);
 }
 
 describe('express app integration', () => {
@@ -104,7 +190,151 @@ describe('express app integration', () => {
     expect(gameView.text).toContain('×');
   });
 
-  it('forks before launching codex prompt execution and returns immediately', async () => {
+  it('renders codex page with a version selector', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-codex-page-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v1',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v2',
+        parentId: 'v1',
+        createdTime: '2026-02-02T00:00:00.000Z'
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md')
+    });
+
+    const codexPage = await request(app).get('/codex').expect(200);
+    expect(codexPage.text).toContain('id="codex-game-select"');
+    expect(codexPage.text).toContain('<option value="v1">');
+    expect(codexPage.text).toContain('<option value="v2">');
+    expect(codexPage.text).toContain('/public/codex-view.js');
+  });
+
+  it('returns transcript data for a game linked to a codex session id', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-codex-api-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    const codexSessionsRootPath = path.join(tempDirectoryPath, 'codex-sessions');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    const sessionId = '019c48a7-3918-7123-bc60-0d7cddb4d5d4';
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v1',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z',
+        codexSessionId: sessionId
+      }
+    });
+
+    const sessionDirectoryPath = path.join(codexSessionsRootPath, '2026', '02', '10');
+    await fs.mkdir(sessionDirectoryPath, { recursive: true });
+    await fs.writeFile(
+      path.join(sessionDirectoryPath, `rollout-2026-02-10T10-00-00-${sessionId}.jsonl`),
+      [
+        '{"timestamp":"2026-02-10T10:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"add gravity"}]}}',
+        '{"timestamp":"2026-02-10T10:00:01.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Adding gravity now."}]}}'
+      ].join('\n'),
+      'utf8'
+    );
+
+    const app = createApp({
+      gamesRootPath,
+      codexSessionsRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md')
+    });
+
+    const response = await request(app).get('/api/codex-sessions/v1').expect(200);
+    expect(response.body.status).toBe('ok');
+    expect(response.body.sessionId).toBe(sessionId);
+    expect(response.body.messages).toEqual([
+      {
+        role: 'user',
+        text: 'add gravity',
+        timestamp: '2026-02-10T10:00:00.000Z'
+      },
+      {
+        role: 'assistant',
+        text: 'Adding gravity now.',
+        timestamp: '2026-02-10T10:00:01.000Z'
+      }
+    ]);
+  });
+
+  it('returns no-session status when metadata has no linked codex session', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-codex-none-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v1',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md')
+    });
+
+    const response = await request(app).get('/api/codex-sessions/v1').expect(200);
+    expect(response.body).toEqual({
+      status: 'no-session',
+      versionId: 'v1'
+    });
+  });
+
+  it('returns session-file-missing when metadata references a missing session file', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-codex-missing-file-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    const codexSessionsRootPath = path.join(tempDirectoryPath, 'codex-sessions');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+    await fs.mkdir(codexSessionsRootPath, { recursive: true });
+
+    const sessionId = '019c48a7-3918-7123-bc60-0d7cddb4d5d4';
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v1',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z',
+        codexSessionId: sessionId
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      codexSessionsRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md')
+    });
+
+    const response = await request(app).get('/api/codex-sessions/v1').expect(200);
+    expect(response.body).toEqual({
+      status: 'session-file-missing',
+      versionId: 'v1',
+      sessionId
+    });
+  });
+
+  it('forks before launching codex prompt execution, returns immediately, and stores session id', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-app-prompt-');
     const gamesRootPath = path.join(tempDirectoryPath, 'games');
     await fs.mkdir(gamesRootPath, { recursive: true });
@@ -121,7 +351,8 @@ describe('express app integration', () => {
     const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
     await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
 
-    const codexRunner = new CapturingRunner();
+    const persistedSessionId = '019c48a7-3918-7123-bc60-0d7cddb4d5d4';
+    const codexRunner = new CapturingRunner(persistedSessionId);
     const app = createApp({
       gamesRootPath,
       buildPromptPath,
@@ -139,19 +370,98 @@ describe('express app integration', () => {
 
     const forkId = response.body.forkId as string;
     expect(forkId).toMatch(/^[a-z]+-[a-z]+-[a-z]+$/);
-    const forkMetadataPath = path.join(gamesRootPath, forkId, 'metadata.json');
-    const forkMetadataText = await fs.readFile(forkMetadataPath, 'utf8');
-    const forkMetadata = JSON.parse(forkMetadataText) as {
-      id: string;
-      parentId: string | null;
-      createdTime: string;
-    };
-
-    expect(forkMetadata.id).toBe(forkId);
-    expect(forkMetadata.parentId).toBe('source');
 
     expect(codexRunner.calls).toHaveLength(1);
     expect(codexRunner.calls[0]?.cwd).toBe(path.join(gamesRootPath, forkId));
     expect(codexRunner.calls[0]?.prompt).toBe(`BASE PROMPT\n\n${userPrompt}`);
+
+    const forkMetadataPath = path.join(gamesRootPath, forkId, 'metadata.json');
+    await waitForSessionId(forkMetadataPath, persistedSessionId);
+
+    const forkMetadata = await readMetadata(forkMetadataPath);
+    expect(forkMetadata.id).toBe(forkId);
+    expect(forkMetadata.parentId).toBe('source');
+    expect(forkMetadata.codexSessionId).toBe(persistedSessionId);
+  });
+
+  it('stores session id and logs failure when codex run returns unsuccessful result', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-prompt-failure-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'source',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
+    await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
+
+    const persistedSessionId = '019c48a7-3918-7123-bc60-0d7cddb4d5d4';
+    const loggedErrors: string[] = [];
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath,
+      codexRunner: new FailingRunner(persistedSessionId),
+      logError: (message: string) => {
+        loggedErrors.push(message);
+      }
+    });
+
+    const response = await request(app)
+      .post('/api/games/source/prompts')
+      .send({ prompt: 'try to change movement' })
+      .set('Content-Type', 'application/json')
+      .expect(202);
+
+    const forkId = response.body.forkId as string;
+    const forkMetadataPath = path.join(gamesRootPath, forkId, 'metadata.json');
+    await waitForSessionId(forkMetadataPath, persistedSessionId);
+    await waitForErrorLog(loggedErrors, `codex exec failed for ${forkId}`);
+
+    const forkMetadata = await readMetadata(forkMetadataPath);
+    expect(forkMetadata.codexSessionId).toBe(persistedSessionId);
+  });
+
+  it('stores session id immediately when runner emits it before completion', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-prompt-early-session-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'source',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
+    await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
+
+    const emittedSessionId = '019c49ae-107f-7790-8634-176d6ce7df3b';
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath,
+      codexRunner: new SessionCallbackOnlyRunner(emittedSessionId)
+    });
+
+    const response = await request(app)
+      .post('/api/games/source/prompts')
+      .send({ prompt: 'darken the ball fill color' })
+      .set('Content-Type', 'application/json')
+      .expect(202);
+
+    const forkId = response.body.forkId as string;
+    const forkMetadataPath = path.join(gamesRootPath, forkId, 'metadata.json');
+    await waitForSessionId(forkMetadataPath, emittedSessionId);
+
+    const forkMetadata = await readMetadata(forkMetadataPath);
+    expect(forkMetadata.codexSessionId).toBe(emittedSessionId);
   });
 });
