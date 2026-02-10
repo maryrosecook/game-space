@@ -45,7 +45,6 @@ export function renderHomepage(versions: readonly GameVersion[]): string {
     <main class="homepage-shell">
       <header class="page-header">
         <h1>Game Space</h1>
-        <p>Choose any version to play.</p>
       </header>
       ${content}
     </main>
@@ -64,7 +63,11 @@ export function renderGameView(versionId: string): string {
     <link rel="stylesheet" href="/public/styles.css" />
   </head>
   <body class="game-page" data-version-id="${escapeHtml(versionId)}">
-    <canvas id="game-canvas" aria-label="Game canvas"></canvas>
+    <main class="game-stage">
+      <div class="game-render-area">
+        <canvas id="game-canvas" aria-label="Game canvas"></canvas>
+      </div>
+    </main>
 
     <button id="edit-button" class="edit-button" type="button" aria-label="Open prompt panel">✏️</button>
 

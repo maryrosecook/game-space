@@ -1,11 +1,46 @@
-import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
+import { pathExists } from './fsUtils';
 import { gameDirectoryPath, isSafeVersionId, readMetadataFile } from './gameVersions';
 import type { GameMetadata } from '../types';
 
 const excludedDirectoryNames = new Set(['node_modules']);
+const maxForkIdAttempts = 32;
+const forkIdWords = [
+  'acorn',
+  'amber',
+  'brook',
+  'calm',
+  'cedar',
+  'cloud',
+  'coast',
+  'copper',
+  'dawn',
+  'drift',
+  'elm',
+  'field',
+  'flint',
+  'glade',
+  'harbor',
+  'heather',
+  'hollow',
+  'iris',
+  'ivy',
+  'linen',
+  'meadow',
+  'mist',
+  'oak',
+  'opal',
+  'palm',
+  'pebble',
+  'pine',
+  'river',
+  'sage',
+  'spruce',
+  'stone',
+  'willow'
+] as const;
 
 type CreateForkedGameVersionOptions = {
   gamesRootPath: string;
@@ -14,11 +49,38 @@ type CreateForkedGameVersionOptions = {
   now?: () => Date;
 };
 
+function randomIndex(maxExclusive: number): number {
+  return Math.floor(Math.random() * maxExclusive);
+}
+
+function createWordTripletId(): string {
+  const first = forkIdWords[randomIndex(forkIdWords.length)] ?? forkIdWords[0];
+  const second = forkIdWords[randomIndex(forkIdWords.length)] ?? forkIdWords[0];
+  const third = forkIdWords[randomIndex(forkIdWords.length)] ?? forkIdWords[0];
+  return `${first}-${second}-${third}`;
+}
+
+async function createUniqueForkVersionId(gamesRootPath: string, idFactory: () => string): Promise<string> {
+  for (let attempt = 0; attempt < maxForkIdAttempts; attempt += 1) {
+    const candidateId = idFactory();
+    if (!isSafeVersionId(candidateId)) {
+      throw new Error(`Generated fork version id is invalid: ${candidateId}`);
+    }
+
+    const candidateDirectoryPath = gameDirectoryPath(gamesRootPath, candidateId);
+    if (!(await pathExists(candidateDirectoryPath))) {
+      return candidateId;
+    }
+  }
+
+  throw new Error(`Unable to generate unique fork version id after ${maxForkIdAttempts} attempts`);
+}
+
 export async function createForkedGameVersion(options: CreateForkedGameVersionOptions): Promise<GameMetadata> {
   const {
     gamesRootPath,
     sourceVersionId,
-    idFactory = randomUUID,
+    idFactory = createWordTripletId,
     now = () => new Date()
   } = options;
 
@@ -33,10 +95,7 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
     throw new Error(`Source version metadata missing: ${sourceVersionId}`);
   }
 
-  const forkVersionId = idFactory();
-  if (!isSafeVersionId(forkVersionId)) {
-    throw new Error(`Generated fork version id is invalid: ${forkVersionId}`);
-  }
+  const forkVersionId = await createUniqueForkVersionId(gamesRootPath, idFactory);
 
   const forkDirectoryPath = gameDirectoryPath(gamesRootPath, forkVersionId);
   await fs.cp(sourceDirectoryPath, forkDirectoryPath, {
