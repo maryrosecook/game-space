@@ -84,6 +84,7 @@ export function renderGameView(versionId: string): string {
           required
         />
       </form>
+      <p id="prompt-status" class="prompt-status" aria-live="polite"></p>
     </section>
 
     <script type="module">

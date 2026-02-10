@@ -5,10 +5,14 @@ export interface CodexRunner {
   run(prompt: string, cwd: string): Promise<void>;
 }
 
+export function buildCodexExecArgs(): string[] {
+  return ['exec', '--sandbox', 'danger-full-access', '-'];
+}
+
 export class SpawnCodexRunner implements CodexRunner {
   async run(prompt: string, cwd: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      const childProcess = spawn('codex', ['exec', '-'], {
+      const childProcess = spawn('codex', buildCodexExecArgs(), {
         cwd,
         stdio: ['pipe', 'ignore', 'pipe']
       });

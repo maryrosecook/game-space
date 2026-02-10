@@ -3,7 +3,11 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { composeCodexPrompt, readBuildPromptFile } from '../src/services/promptExecution';
+import {
+  buildCodexExecArgs,
+  composeCodexPrompt,
+  readBuildPromptFile
+} from '../src/services/promptExecution';
 import { createTempDirectory } from './testHelpers';
 
 describe('composeCodexPrompt', () => {
@@ -22,5 +26,9 @@ describe('composeCodexPrompt', () => {
     await fs.writeFile(buildPromptPath, text, 'utf8');
 
     expect(await readBuildPromptFile(buildPromptPath)).toBe(text);
+  });
+
+  it('uses danger-full-access sandbox for codex exec runs', () => {
+    expect(buildCodexExecArgs()).toEqual(['exec', '--sandbox', 'danger-full-access', '-']);
   });
 });

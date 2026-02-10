@@ -159,3 +159,22 @@ body {
   outline: 2px solid rgba(88, 148, 255, 0.9);
   outline-offset: 1px;
 }
+
+.prompt-status {
+  min-height: 1.2rem;
+  margin: 10px 2px 0;
+  font-size: 0.88rem;
+  color: #d6e2ff;
+}
+
+.prompt-status[data-state='running'] {
+  color: #9ec8ff;
+}
+
+.prompt-status[data-state='succeeded'] {
+  color: #88f0b6;
+}
+
+.prompt-status[data-state='failed'] {
+  color: #ff9ca0;
+}
