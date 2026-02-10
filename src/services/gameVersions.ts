@@ -15,7 +15,7 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     return null;
   }
 
-  const { id, parentId, createdTime } = value;
+  const { id, parentId, createdTime, codexSessionId } = value;
   if (typeof id !== 'string' || id.length === 0) {
     return null;
   }
@@ -33,10 +33,17 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     return null;
   }
 
+  if (!(codexSessionId === undefined || codexSessionId === null || typeof codexSessionId === 'string')) {
+    return null;
+  }
+
+  const normalizedSessionId = typeof codexSessionId === 'string' && codexSessionId.trim().length > 0 ? codexSessionId : null;
+
   return {
     id,
     parentId,
-    createdTime: new Date(createdTimestamp).toISOString()
+    createdTime: new Date(createdTimestamp).toISOString(),
+    codexSessionId: normalizedSessionId
   };
 }
 
@@ -71,6 +78,14 @@ export async function readMetadataFile(metadataPath: string): Promise<GameMetada
   }
 
   return parseGameMetadata(rawMetadata);
+}
+
+export async function writeMetadataFile(metadataPath: string, metadata: GameMetadata): Promise<void> {
+  const normalizedMetadata: GameMetadata = {
+    ...metadata,
+    codexSessionId: metadata.codexSessionId ?? null
+  };
+  await fs.writeFile(metadataPath, `${JSON.stringify(normalizedMetadata, null, 2)}\n`, 'utf8');
 }
 
 export async function listGameVersions(gamesRootPath: string): Promise<GameVersion[]> {

@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { pathExists } from './fsUtils';
-import { gameDirectoryPath, isSafeVersionId, readMetadataFile } from './gameVersions';
+import { gameDirectoryPath, isSafeVersionId, readMetadataFile, writeMetadataFile } from './gameVersions';
 import type { GameMetadata } from '../types';
 
 const excludedDirectoryNames = new Set(['node_modules']);
@@ -109,11 +109,12 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
   const forkMetadata: GameMetadata = {
     id: forkVersionId,
     parentId: sourceVersionId,
-    createdTime: now().toISOString()
+    createdTime: now().toISOString(),
+    codexSessionId: null
   };
 
   const forkMetadataPath = path.join(forkDirectoryPath, 'metadata.json');
-  await fs.writeFile(forkMetadataPath, `${JSON.stringify(forkMetadata, null, 2)}\n`, 'utf8');
+  await writeMetadataFile(forkMetadataPath, forkMetadata);
 
   return forkMetadata;
 }
