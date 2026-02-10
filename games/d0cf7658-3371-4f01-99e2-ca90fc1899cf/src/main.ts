@@ -2,9 +2,11 @@ const vertexShaderSource = `
 attribute vec2 a_position;
 uniform vec2 u_center;
 uniform float u_radius;
+uniform float u_viewportScale;
 
 void main() {
-  vec2 worldPosition = (a_position * u_radius) + u_center;
+  vec2 localPosition = a_position * u_radius;
+  vec2 worldPosition = vec2(localPosition.x * u_viewportScale, localPosition.y) + u_center;
   gl_Position = vec4(worldPosition, 0.0, 1.0);
 }
 `;
@@ -22,6 +24,7 @@ type ProgramInfo = {
   positionLocation: number;
   centerLocation: WebGLUniformLocation;
   radiusLocation: WebGLUniformLocation;
+  viewportScaleLocation: WebGLUniformLocation;
 };
 
 function createShader(gl: WebGLRenderingContext, shaderType: number, source: string): WebGLShader {
@@ -67,8 +70,9 @@ function createProgram(gl: WebGLRenderingContext): ProgramInfo {
   const positionLocation = gl.getAttribLocation(program, 'a_position');
   const centerLocation = gl.getUniformLocation(program, 'u_center');
   const radiusLocation = gl.getUniformLocation(program, 'u_radius');
+  const viewportScaleLocation = gl.getUniformLocation(program, 'u_viewportScale');
 
-  if (positionLocation < 0 || !centerLocation || !radiusLocation) {
+  if (positionLocation < 0 || !centerLocation || !radiusLocation || !viewportScaleLocation) {
     throw new Error('Program location lookup failed');
   }
 
@@ -76,7 +80,8 @@ function createProgram(gl: WebGLRenderingContext): ProgramInfo {
     program,
     positionLocation,
     centerLocation,
-    radiusLocation
+    radiusLocation,
+    viewportScaleLocation
   };
 }
 
@@ -96,8 +101,8 @@ function createCircleVertices(segments: number): Float32Array {
 }
 
 function resizeCanvasToViewport(canvas: HTMLCanvasElement, gl: WebGLRenderingContext): void {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
+  const width = Math.max(1, Math.floor(canvas.clientWidth));
+  const height = Math.max(1, Math.floor(canvas.clientHeight));
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width;
     canvas.height = height;
@@ -112,7 +117,7 @@ export function startGame(canvas: HTMLCanvasElement): void {
     throw new Error('WebGL is unavailable in this browser');
   }
 
-  const { program, positionLocation, centerLocation, radiusLocation } = createProgram(gl);
+  const { program, positionLocation, centerLocation, radiusLocation, viewportScaleLocation } = createProgram(gl);
   const vertices = createCircleVertices(48);
   const vertexBuffer = gl.createBuffer();
   if (!vertexBuffer) {
@@ -142,16 +147,18 @@ export function startGame(canvas: HTMLCanvasElement): void {
     previousTimestamp = timestamp;
 
     resizeCanvasToViewport(canvas, gl);
+    const viewportScale = canvas.height / Math.max(canvas.width, 1);
+    const horizontalRadius = radius * viewportScale;
 
     x += velocityX * deltaSeconds;
     y += velocityY * deltaSeconds;
 
-    if (x >= 1 - radius) {
-      x = 1 - radius;
+    if (x >= 1 - horizontalRadius) {
+      x = 1 - horizontalRadius;
       velocityX *= -1;
     }
-    if (x <= -1 + radius) {
-      x = -1 + radius;
+    if (x <= -1 + horizontalRadius) {
+      x = -1 + horizontalRadius;
       velocityX *= -1;
     }
     if (y >= 1 - radius) {
@@ -168,6 +175,7 @@ export function startGame(canvas: HTMLCanvasElement): void {
 
     gl.uniform2f(centerLocation, x, y);
     gl.uniform1f(radiusLocation, radius);
+    gl.uniform1f(viewportScaleLocation, viewportScale);
 
     gl.drawArrays(gl.TRIANGLE_FAN, 0, vertices.length / 2);
     window.requestAnimationFrame(animate);
@@ -180,7 +188,3 @@ export function startGame(canvas: HTMLCanvasElement): void {
   resizeCanvasToViewport(canvas, gl);
   window.requestAnimationFrame(animate);
 }
-
-
-
-

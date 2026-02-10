@@ -95,6 +95,7 @@ describe('express app integration', () => {
     });
 
     const homepage = await request(app).get('/').expect(200);
+    expect(homepage.text).not.toContain('Choose any version to play.');
     const newerIndex = homepage.text.indexOf('data-version-id="newer"');
     const olderIndex = homepage.text.indexOf('data-version-id="older"');
     expect(newerIndex).toBeGreaterThan(-1);
@@ -102,6 +103,8 @@ describe('express app integration', () => {
 
     const css = await request(app).get('/public/styles.css').expect(200);
     expect(css.text).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
+    expect(css.text).toContain('--render-aspect-width: 9;');
+    expect(css.text).toContain('width: min(100vw, calc(100vh * var(--render-aspect-width) / var(--render-aspect-height)));');
 
     await createGameFixture({
       gamesRootPath,
@@ -136,6 +139,8 @@ describe('express app integration', () => {
     });
 
     const gameView = await request(app).get('/game/v1').expect(200);
+    expect(gameView.text).toContain('class="game-stage"');
+    expect(gameView.text).toContain('class="game-render-area"');
     expect(gameView.text).toContain('id="edit-button"');
     expect(gameView.text).toContain('✏️');
     expect(gameView.text).toContain('id="prompt-panel"');
@@ -179,6 +184,7 @@ describe('express app integration', () => {
     expect(typeof response.body.statusUrl).toBe('string');
 
     const forkId = response.body.forkId as string;
+    expect(forkId).toMatch(/^[a-z]+-[a-z]+-[a-z]+$/);
     const forkMetadataPath = path.join(gamesRootPath, forkId, 'metadata.json');
     const forkMetadataText = await fs.readFile(forkMetadataPath, 'utf8');
     const forkMetadata = JSON.parse(forkMetadataText) as {
