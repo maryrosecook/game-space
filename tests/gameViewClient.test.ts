@@ -143,6 +143,7 @@ async function runGameViewScript(fetchImplementation: FetchImplementation): Prom
   const closeButton = new TestHTMLButtonElement();
   const promptForm = new TestHTMLFormElement();
   const promptInput = new TestHTMLInputElement();
+  const gameSessionView = new TestHTMLElement();
 
   const document = new TestDocument('source-version');
   document.registerElement('edit-button', editButton);
@@ -150,6 +151,7 @@ async function runGameViewScript(fetchImplementation: FetchImplementation): Prom
   document.registerElement('prompt-close', closeButton);
   document.registerElement('prompt-form', promptForm);
   document.registerElement('prompt-input', promptInput);
+  document.registerElement('game-codex-session-view', gameSessionView);
 
   const fetchCalls: FetchCall[] = [];
   const assignCalls: string[] = [];
@@ -168,6 +170,12 @@ async function runGameViewScript(fetchImplementation: FetchImplementation): Prom
 
   const scriptPath = path.join(process.cwd(), 'src/public/game-view.js');
   const source = await readFile(scriptPath, 'utf8');
+  const runnableSource = source
+    .replace(
+      "import { createCodexTranscriptPresenter } from './codex-transcript-presenter.js';\n\n",
+      ''
+    )
+    .replace('\nstartTranscriptPolling();\n', '\n');
 
   const context = {
     document,
@@ -180,11 +188,17 @@ async function runGameViewScript(fetchImplementation: FetchImplementation): Prom
     HTMLElement: TestHTMLElement,
     HTMLFormElement: TestHTMLFormElement,
     HTMLInputElement: TestHTMLInputElement,
+    createCodexTranscriptPresenter() {
+      return {
+        showEmptyState() {},
+        renderTranscript() {}
+      };
+    },
     encodeURIComponent,
     Error
   };
 
-  vm.runInNewContext(source, context, { filename: scriptPath });
+  vm.runInNewContext(runnableSource, context, { filename: scriptPath });
 
   return {
     fetchCalls,
