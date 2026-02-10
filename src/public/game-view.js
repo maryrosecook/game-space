@@ -148,6 +148,27 @@ function startTranscriptPolling() {
   );
 }
 
+async function submitPrompt(prompt) {
+  const response = await fetch(`/api/games/${encodeURIComponent(versionId)}/prompts`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ prompt })
+  });
+
+  if (!response.ok) {
+    return;
+  }
+
+  const payload = await response.json();
+  if (!payload || typeof payload !== 'object' || typeof payload.forkId !== 'string') {
+    return;
+  }
+
+  window.location.assign(`/game/${encodeURIComponent(payload.forkId)}`);
+}
+
 editButton.addEventListener('click', () => {
   openPromptPanel();
 });
@@ -164,14 +185,8 @@ promptForm.addEventListener('submit', (event) => {
     return;
   }
 
-  void fetch(`/api/games/${encodeURIComponent(versionId)}/prompts`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ prompt })
-  }).catch(() => {
-    // Fire-and-forget UX in V1: no blocking status UI.
+  void submitPrompt(prompt).catch(() => {
+    // Keep prompt submit non-blocking if networking or payload parsing fails.
   });
 
   promptInput.value = '';
