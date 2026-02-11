@@ -8,6 +8,7 @@ import {
   buildGameDirectory,
   extractVersionIdFromSourcePath
 } from '../src/services/gameBuildPipeline';
+import { writeReloadToken } from '../src/services/devLiveReload';
 
 const gamesRootPath = path.join(process.cwd(), 'games');
 
@@ -26,11 +27,23 @@ function shouldIgnoreWatchPath(watchedPath: string): boolean {
 }
 
 async function main(): Promise<void> {
-  await buildAllGames(gamesRootPath);
+  async function writeTokenOrLog(versionId: string): Promise<void> {
+    try {
+      await writeReloadToken(gamesRootPath, versionId);
+    } catch (error: unknown) {
+      console.error(`Failed to write reload token for ${versionId}`, error);
+    }
+  }
+
+  const startupBuildDirectories = await buildAllGames(gamesRootPath);
+  await Promise.all(startupBuildDirectories.map((gameDirectoryPath) => writeTokenOrLog(path.basename(gameDirectoryPath))));
 
   const backendProcess = spawn('tsx', ['src/server.ts'], {
     stdio: 'inherit',
-    env: process.env
+    env: {
+      ...process.env,
+      GAME_SPACE_DEV_LIVE_RELOAD: '1'
+    }
   });
 
   const pendingBuildTimers = new Map<string, NodeJS.Timeout>();
@@ -45,6 +58,7 @@ async function main(): Promise<void> {
     const gameDirectoryPath = path.join(gamesRootPath, versionId);
     try {
       await buildGameDirectory(gameDirectoryPath);
+      await writeTokenOrLog(versionId);
       console.log(`Rebuilt ${versionId}`);
     } catch (error: unknown) {
       console.error(`Failed to rebuild ${versionId}`, error);

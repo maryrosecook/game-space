@@ -93,8 +93,15 @@ export function renderCodexView(versions: readonly GameVersion[]): string {
 </html>`;
 }
 
-export function renderGameView(versionId: string): string {
+type GameViewRenderOptions = {
+  enableLiveReload?: boolean;
+};
+
+export function renderGameView(versionId: string, options: GameViewRenderOptions = {}): string {
   const encodedVersionId = encodeURIComponent(versionId);
+  const liveReloadScript = options.enableLiveReload
+    ? '\n    <script type="module" src="/public/game-live-reload.js"></script>'
+    : '';
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -138,6 +145,7 @@ export function renderGameView(versionId: string): string {
       }
     </script>
     <script type="module" src="/public/game-view.js"></script>
+${liveReloadScript}
   </body>
 </html>`;
 }
