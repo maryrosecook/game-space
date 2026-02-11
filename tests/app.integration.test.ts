@@ -193,6 +193,31 @@ describe('express app integration', () => {
     expect(gameView.text).toContain('id="prompt-panel"');
     expect(gameView.text).toContain('id="prompt-close"');
     expect(gameView.text).toContain('×');
+    expect(gameView.text).not.toContain('/public/game-live-reload.js');
+  });
+
+  it('injects live reload script into game view when enabled', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-game-live-reload-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v1',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md'),
+      enableGameLiveReload: true
+    });
+
+    const gameView = await request(app).get('/game/v1').expect(200);
+    expect(gameView.text).toContain('/public/game-live-reload.js');
   });
 
   it('renders codex page with a version selector', async () => {

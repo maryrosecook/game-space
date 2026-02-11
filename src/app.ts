@@ -33,6 +33,7 @@ type AppOptions = {
   codexRunner?: CodexRunner;
   logError?: ErrorLogger;
   shouldBuildGamesOnStartup?: boolean;
+  enableGameLiveReload?: boolean;
 };
 
 function defaultLogger(message: string, error: unknown): void {
@@ -47,6 +48,8 @@ export function createApp(options: AppOptions = {}): express.Express {
   const codexRunner = options.codexRunner ?? new SpawnCodexRunner();
   const logError = options.logError ?? defaultLogger;
   const shouldBuildGamesOnStartup = options.shouldBuildGamesOnStartup ?? false;
+  const enableGameLiveReload =
+    options.enableGameLiveReload ?? process.env.GAME_SPACE_DEV_LIVE_RELOAD === '1';
 
   if (shouldBuildGamesOnStartup) {
     void buildAllGames(gamesRootPath).catch((error) => {
@@ -96,7 +99,10 @@ export function createApp(options: AppOptions = {}): express.Express {
         return;
       }
 
-      response.status(200).type('html').send(renderGameView(versionId));
+      response
+        .status(200)
+        .type('html')
+        .send(renderGameView(versionId, { enableLiveReload: enableGameLiveReload }));
     } catch (error: unknown) {
       next(error);
     }
