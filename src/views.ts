@@ -111,10 +111,20 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
     <link rel="stylesheet" href="/public/styles.css" />
   </head>
   <body class="game-page" data-version-id="${escapeHtml(versionId)}">
-    <main class="game-stage">
-      <div class="game-render-area">
-        <canvas id="game-canvas" aria-label="Game canvas"></canvas>
-      </div>
+    <main class="game-layout">
+      <section class="game-stage">
+        <div class="game-render-area">
+          <canvas id="game-canvas" aria-label="Game canvas"></canvas>
+        </div>
+      </section>
+      <aside class="game-codex-panel" aria-label="Codex transcript for this game">
+        <header class="game-codex-panel-header">
+          <h2>Codex Transcript</h2>
+        </header>
+        <section id="game-codex-session-view" class="codex-session-view codex-session-view--game" aria-live="polite">
+          <p class="codex-empty">Loading transcript...</p>
+        </section>
+      </aside>
     </main>
 
     <button id="edit-button" class="edit-button" type="button" aria-label="Open prompt panel">✏️</button>
