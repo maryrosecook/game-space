@@ -1,18 +1,16 @@
 import { createCodexTranscriptPresenter } from './codex-transcript-presenter.js';
 
-const editButton = document.getElementById('edit-button');
 const promptPanel = document.getElementById('prompt-panel');
-const closeButton = document.getElementById('prompt-close');
 const promptForm = document.getElementById('prompt-form');
 const promptInput = document.getElementById('prompt-input');
+const promptRecord = document.getElementById('prompt-record');
 const gameSessionView = document.getElementById('game-codex-session-view');
 
 if (
-  !(editButton instanceof HTMLButtonElement) ||
   !(promptPanel instanceof HTMLElement) ||
-  !(closeButton instanceof HTMLButtonElement) ||
   !(promptForm instanceof HTMLFormElement) ||
   !(promptInput instanceof HTMLInputElement) ||
+  !(promptRecord instanceof HTMLButtonElement) ||
   !(gameSessionView instanceof HTMLElement)
 ) {
   throw new Error('Game view controls missing from page');
@@ -24,18 +22,119 @@ const transcriptPollIntervalMs = 2000;
 let transcriptStatusKey = '';
 let transcriptSignature = '';
 let transcriptRequestInFlight = false;
+const speechRecognitionConstructor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+let activeSpeechRecognition = null;
+let pendingSpeechTranscript = '';
+let applySpeechTranscriptOnStop = false;
 
-function openPromptPanel() {
+function setPromptPanelOpenState() {
   promptPanel.classList.add('prompt-panel--open');
   promptPanel.setAttribute('aria-hidden', 'false');
+}
+
+function setRecordButtonState(isRecording) {
+  promptRecord.classList.toggle('prompt-record--recording', isRecording);
+  promptRecord.setAttribute('aria-pressed', isRecording ? 'true' : 'false');
+}
+
+function focusPromptInput() {
   window.requestAnimationFrame(() => {
     promptInput.focus();
   });
 }
 
-function closePromptPanel() {
-  promptPanel.classList.remove('prompt-panel--open');
-  promptPanel.setAttribute('aria-hidden', 'true');
+function appendTranscriptToPromptInput(transcriptText) {
+  const trimmedTranscript = transcriptText.trim();
+  if (trimmedTranscript.length === 0) {
+    focusPromptInput();
+    return;
+  }
+
+  const hasExistingText = promptInput.value.trim().length > 0;
+  const needsSeparator = hasExistingText && !promptInput.value.endsWith(' ');
+  const separator = needsSeparator ? ' ' : '';
+  promptInput.value = `${promptInput.value}${separator}${trimmedTranscript}`;
+  focusPromptInput();
+}
+
+function buildTranscriptFromRecognitionResults(results) {
+  if (!results || typeof results.length !== 'number') {
+    return '';
+  }
+
+  let transcriptText = '';
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
+    if (!result || typeof result.length !== 'number') {
+      continue;
+    }
+
+    const alternative = result[0];
+    const transcriptSegment = typeof alternative?.transcript === 'string' ? alternative.transcript : '';
+    transcriptText += transcriptSegment;
+  }
+
+  return transcriptText.trim();
+}
+
+function resetSpeechRecognitionState() {
+  activeSpeechRecognition = null;
+  pendingSpeechTranscript = '';
+  applySpeechTranscriptOnStop = false;
+  setRecordButtonState(false);
+}
+
+function stopRecordingAndQueueTranscriptInsert() {
+  if (!activeSpeechRecognition) {
+    return;
+  }
+
+  applySpeechTranscriptOnStop = true;
+  try {
+    activeSpeechRecognition.stop();
+  } catch {
+    resetSpeechRecognitionState();
+    focusPromptInput();
+  }
+}
+
+function startRecording() {
+  if (typeof speechRecognitionConstructor !== 'function' || activeSpeechRecognition) {
+    return;
+  }
+
+  const speechRecognition = new speechRecognitionConstructor();
+  speechRecognition.continuous = true;
+  speechRecognition.interimResults = true;
+  speechRecognition.lang = 'en-US';
+  activeSpeechRecognition = speechRecognition;
+  pendingSpeechTranscript = '';
+  applySpeechTranscriptOnStop = false;
+  setRecordButtonState(true);
+
+  speechRecognition.onresult = (event) => {
+    pendingSpeechTranscript = buildTranscriptFromRecognitionResults(event?.results);
+  };
+
+  speechRecognition.onerror = () => {
+    resetSpeechRecognitionState();
+  };
+
+  speechRecognition.onend = () => {
+    const shouldApplyTranscript = applySpeechTranscriptOnStop;
+    const transcriptText = pendingSpeechTranscript;
+    resetSpeechRecognitionState();
+
+    if (shouldApplyTranscript) {
+      appendTranscriptToPromptInput(transcriptText);
+    }
+  };
+
+  try {
+    speechRecognition.start();
+  } catch {
+    resetSpeechRecognitionState();
+  }
 }
 
 function showTranscriptState(statusKey, title, description) {
@@ -169,13 +268,13 @@ async function submitPrompt(prompt) {
   window.location.assign(`/game/${encodeURIComponent(payload.forkId)}`);
 }
 
-editButton.addEventListener('click', () => {
-  openPromptPanel();
-});
+if (typeof speechRecognitionConstructor !== 'function') {
+  promptRecord.disabled = true;
+}
 
-closeButton.addEventListener('click', () => {
-  closePromptPanel();
-});
+setPromptPanelOpenState();
+setRecordButtonState(false);
+focusPromptInput();
 
 promptForm.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -190,19 +289,22 @@ promptForm.addEventListener('submit', (event) => {
   });
 
   promptInput.value = '';
-  closePromptPanel();
+  focusPromptInput();
+});
+
+promptRecord.addEventListener('click', () => {
+  if (activeSpeechRecognition) {
+    stopRecordingAndQueueTranscriptInsert();
+    return;
+  }
+
+  startRecording();
 });
 
 promptInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     event.preventDefault();
     promptForm.requestSubmit();
-  }
-});
-
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
-    closePromptPanel();
   }
 });
 
