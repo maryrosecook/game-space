@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx scripts/dev.ts",
-    "start": "node dist/server.js",
+    "start": "npm run dev",
     "build": "npm run build:games && tsc -p tsconfig.build.json",
     "build:games": "tsx scripts/build-games.ts",
     "lint": "eslint . --ext .ts,.js",
