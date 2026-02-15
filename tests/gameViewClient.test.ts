@@ -62,12 +62,28 @@ class TestClassList {
       this.values.delete(token);
     }
   }
+
+  contains(token: string): boolean {
+    return this.values.has(token);
+  }
+
+  toggle(token: string, force?: boolean): boolean {
+    const shouldEnable = force === undefined ? !this.values.has(token) : force;
+    if (shouldEnable) {
+      this.values.add(token);
+      return true;
+    }
+
+    this.values.delete(token);
+    return false;
+  }
 }
 
 class TestHTMLElement extends TestEventTarget {
   public readonly classList = new TestClassList();
   private readonly attributes = new Map<string, string>();
   public focused = false;
+  public textContent: string | null = null;
 
   setAttribute(name: string, value: string): void {
     this.attributes.set(name, value);
@@ -82,7 +98,9 @@ class TestHTMLElement extends TestEventTarget {
   }
 }
 
-class TestHTMLButtonElement extends TestHTMLElement {}
+class TestHTMLButtonElement extends TestHTMLElement {
+  public disabled = false;
+}
 
 class TestHTMLFormElement extends TestHTMLElement {
   requestSubmit(): void {
@@ -92,6 +110,42 @@ class TestHTMLFormElement extends TestHTMLElement {
 
 class TestHTMLInputElement extends TestHTMLElement {
   public value = '';
+}
+
+type TestSpeechRecognitionResultEvent = {
+  results: Array<Array<{ transcript: string }>>;
+};
+
+class TestSpeechRecognition {
+  public static instances: TestSpeechRecognition[] = [];
+  public continuous = false;
+  public interimResults = false;
+  public lang = '';
+  public onresult: ((event: TestSpeechRecognitionResultEvent) => void) | null = null;
+  public onerror: (() => void) | null = null;
+  public onend: (() => void) | null = null;
+  public started = false;
+  public stopCallCount = 0;
+
+  constructor() {
+    TestSpeechRecognition.instances.push(this);
+  }
+
+  start(): void {
+    this.started = true;
+  }
+
+  stop(): void {
+    this.started = false;
+    this.stopCallCount += 1;
+    this.onend?.();
+  }
+
+  emitTranscript(transcript: string): void {
+    this.onresult?.({
+      results: [[{ transcript }]]
+    });
+  }
 }
 
 class TestDocument extends TestEventTarget {
@@ -122,6 +176,12 @@ type GameViewHarness = {
   promptForm: TestHTMLFormElement;
   promptInput: TestHTMLInputElement;
   promptPanel: TestHTMLElement;
+  promptRecord: TestHTMLButtonElement;
+  speechRecognitions: TestSpeechRecognition[];
+};
+
+type RunGameViewOptions = {
+  withSpeechRecognition?: boolean;
 };
 
 function createEvent(overrides: Partial<TestEvent> = {}): TestEvent {
@@ -137,24 +197,29 @@ async function flushAsyncOperations(): Promise<void> {
   }
 }
 
-async function runGameViewScript(fetchImplementation: FetchImplementation): Promise<GameViewHarness> {
-  const editButton = new TestHTMLButtonElement();
+async function runGameViewScript(
+  fetchImplementation: FetchImplementation,
+  options: RunGameViewOptions = {}
+): Promise<GameViewHarness> {
+  const withSpeechRecognition = options.withSpeechRecognition ?? true;
   const promptPanel = new TestHTMLElement();
-  const closeButton = new TestHTMLButtonElement();
   const promptForm = new TestHTMLFormElement();
   const promptInput = new TestHTMLInputElement();
+  const promptRecord = new TestHTMLButtonElement();
+  promptRecord.textContent = 'Record';
   const gameSessionView = new TestHTMLElement();
 
   const document = new TestDocument('source-version');
-  document.registerElement('edit-button', editButton);
   document.registerElement('prompt-panel', promptPanel);
-  document.registerElement('prompt-close', closeButton);
   document.registerElement('prompt-form', promptForm);
   document.registerElement('prompt-input', promptInput);
+  document.registerElement('prompt-record', promptRecord);
   document.registerElement('game-codex-session-view', gameSessionView);
 
   const fetchCalls: FetchCall[] = [];
   const assignCalls: string[] = [];
+  TestSpeechRecognition.instances = [];
+  const speechRecognitions = TestSpeechRecognition.instances;
 
   const window = {
     requestAnimationFrame(callback: () => void): number {
@@ -165,7 +230,8 @@ async function runGameViewScript(fetchImplementation: FetchImplementation): Prom
       assign(url: string): void {
         assignCalls.push(url);
       }
-    }
+    },
+    SpeechRecognition: withSpeechRecognition ? TestSpeechRecognition : undefined
   };
 
   const scriptPath = path.join(process.cwd(), 'src/public/game-view.js');
@@ -205,7 +271,9 @@ async function runGameViewScript(fetchImplementation: FetchImplementation): Prom
     assignCalls,
     promptForm,
     promptInput,
-    promptPanel
+    promptPanel,
+    promptRecord,
+    speechRecognitions
   };
 }
 
@@ -235,7 +303,7 @@ describe('game view prompt submit client', () => {
     });
     expect(harness.assignCalls).toEqual(['/game/pebble-iris-dawn']);
     expect(harness.promptInput.value).toBe('');
-    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('true');
+    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
   });
 
   it('does not redirect when prompt submit response is missing fork id', async () => {
@@ -252,5 +320,46 @@ describe('game view prompt submit client', () => {
 
     expect(harness.fetchCalls).toHaveLength(1);
     expect(harness.assignCalls).toHaveLength(0);
+  });
+
+  it('records speech and inserts transcript into the prompt on the second click', async () => {
+    const harness = await runGameViewScript(async () => ({
+      ok: true,
+      async json() {
+        return { forkId: 'unused' };
+      }
+    }));
+
+    harness.promptInput.value = 'make';
+    harness.promptRecord.dispatchEvent('click', createEvent());
+    expect(harness.speechRecognitions).toHaveLength(1);
+    expect(harness.promptRecord.classList.contains('prompt-record--recording')).toBe(true);
+    expect(harness.promptRecord.getAttribute('aria-pressed')).toBe('true');
+    expect(harness.promptRecord.textContent).toBe('Record');
+    expect(harness.promptInput.value).toBe('make');
+
+    harness.speechRecognitions[0]?.emitTranscript('the ball glow');
+    harness.promptRecord.dispatchEvent('click', createEvent());
+
+    expect(harness.promptRecord.classList.contains('prompt-record--recording')).toBe(false);
+    expect(harness.promptRecord.getAttribute('aria-pressed')).toBe('false');
+    expect(harness.promptRecord.textContent).toBe('Record');
+    expect(harness.speechRecognitions[0]?.stopCallCount).toBe(1);
+    expect(harness.promptInput.value).toBe('make the ball glow');
+    expect(harness.promptInput.focused).toBe(true);
+  });
+
+  it('disables the record button when speech recognition is unavailable', async () => {
+    const harness = await runGameViewScript(
+      async () => ({
+        ok: true,
+        async json() {
+          return { forkId: 'unused' };
+        }
+      }),
+      { withSpeechRecognition: false }
+    );
+
+    expect(harness.promptRecord.disabled).toBe(true);
   });
 });

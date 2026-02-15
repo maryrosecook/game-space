@@ -146,8 +146,13 @@ describe('express app integration', () => {
     const css = await request(app).get('/public/styles.css').expect(200);
     expect(css.text).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
     expect(css.text).toContain('--render-aspect-width: 9;');
-    expect(css.text).toContain('width: min(100vw, calc(100vh * var(--render-aspect-width) / var(--render-aspect-height)));');
-    expect(css.text).toContain('flex: 0 0 min(calc(100vh * var(--render-aspect-width) / var(--render-aspect-height)), 58vw);');
+    expect(css.text).toContain('--game-layout-height: calc(100vh - var(--prompt-panel-height));');
+    expect(css.text).toContain(
+      'width: min(100%, calc(var(--game-layout-height) * var(--render-aspect-width) / var(--render-aspect-height)));'
+    );
+    expect(css.text).toContain(
+      'flex: 0 0 min(calc(var(--game-layout-height) * var(--render-aspect-width) / var(--render-aspect-height)), 58vw);'
+    );
     expect(css.text).toContain('.codex-session-view--game');
 
     await createGameFixture({
@@ -163,7 +168,7 @@ describe('express app integration', () => {
     expect(refreshedHomepage.text).toContain('data-version-id="newest"');
   });
 
-  it('renders game view with edit button and slide-down prompt controls', async () => {
+  it('renders game view with an always-open prompt bar and record button', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-app-game-');
     const gamesRootPath = path.join(tempDirectoryPath, 'games');
     await fs.mkdir(gamesRootPath, { recursive: true });
@@ -188,11 +193,12 @@ describe('express app integration', () => {
     expect(gameView.text).toContain('class="game-render-area"');
     expect(gameView.text).toContain('class="game-codex-panel"');
     expect(gameView.text).toContain('id="game-codex-session-view"');
-    expect(gameView.text).toContain('id="edit-button"');
-    expect(gameView.text).toContain('✏️');
     expect(gameView.text).toContain('id="prompt-panel"');
-    expect(gameView.text).toContain('id="prompt-close"');
-    expect(gameView.text).toContain('×');
+    expect(gameView.text).toContain('prompt-panel--open');
+    expect(gameView.text).toContain('id="prompt-record"');
+    expect(gameView.text).toContain('Record');
+    expect(gameView.text).not.toContain('id="edit-button"');
+    expect(gameView.text).not.toContain('id="prompt-close"');
     expect(gameView.text).not.toContain('/public/game-live-reload.js');
   });
 

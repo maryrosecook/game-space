@@ -81,19 +81,22 @@ body {
 
 .game-page {
   overflow: hidden;
+  --prompt-panel-height: 72px;
+  --game-layout-height: calc(100vh - var(--prompt-panel-height));
 }
 
 .game-layout {
   width: 100vw;
-  height: 100vh;
+  height: var(--game-layout-height);
+  margin-top: var(--prompt-panel-height);
   display: flex;
   align-items: stretch;
   justify-content: flex-start;
 }
 
 .game-stage {
-  flex: 0 0 min(calc(100vh * var(--render-aspect-width) / var(--render-aspect-height)), 58vw);
-  height: 100vh;
+  flex: 0 0 min(calc(var(--game-layout-height) * var(--render-aspect-width) / var(--render-aspect-height)), 58vw);
+  height: var(--game-layout-height);
   display: grid;
   place-items: center;
   background: #030712;
@@ -101,8 +104,8 @@ body {
 }
 
 .game-render-area {
-  width: min(100%, calc(100vh * var(--render-aspect-width) / var(--render-aspect-height)));
-  height: min(100vh, calc(100% * var(--render-aspect-height) / var(--render-aspect-width)));
+  width: min(100%, calc(var(--game-layout-height) * var(--render-aspect-width) / var(--render-aspect-height)));
+  height: min(var(--game-layout-height), calc(100% * var(--render-aspect-height) / var(--render-aspect-width)));
   background: #02060f;
 }
 
@@ -115,7 +118,7 @@ body {
 .game-codex-panel {
   flex: 1 1 auto;
   min-width: 300px;
-  height: 100vh;
+  height: var(--game-layout-height);
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -133,64 +136,32 @@ body {
   letter-spacing: 0.03em;
 }
 
-.edit-button {
-  position: fixed;
-  left: 16px;
-  top: 16px;
-  z-index: 10;
-  width: 52px;
-  height: 52px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  background: rgba(255, 255, 255, 0.93);
-  color: #111;
-  font-size: 1.5rem;
-  cursor: pointer;
-}
-
 .prompt-panel {
   position: fixed;
   inset: 0 0 auto 0;
   z-index: 12;
-  padding: 12px;
+  height: var(--prompt-panel-height);
+  padding: 12px 14px;
   background: rgba(5, 10, 28, 0.95);
   border-bottom: 1px solid rgba(151, 180, 255, 0.45);
-  transform: translateY(-110%);
-  transition: transform 0.24s ease;
+  display: flex;
+  align-items: center;
 }
 
 .prompt-panel--open {
-  transform: translateY(0);
-}
-
-.prompt-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.prompt-panel-header h2 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.prompt-close {
-  border: 0;
-  background: transparent;
-  color: #eaf1ff;
-  font-size: 1.4rem;
-  cursor: pointer;
-  line-height: 1;
+  opacity: 1;
 }
 
 .prompt-form {
   display: flex;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
 }
 
 .prompt-form input {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   border: 1px solid rgba(185, 207, 255, 0.6);
   border-radius: 10px;
   background: rgba(10, 17, 40, 1);
@@ -202,6 +173,49 @@ body {
 .prompt-form input:focus {
   outline: 2px solid rgba(88, 148, 255, 0.9);
   outline-offset: 1px;
+}
+
+.prompt-record {
+  flex: 0 0 auto;
+  min-width: 86px;
+  border: 1px solid rgba(185, 207, 255, 0.7);
+  border-radius: 10px;
+  background: rgba(28, 45, 87, 0.88);
+  color: #f7f9ff;
+  font-size: 0.93rem;
+  font-weight: 700;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.prompt-record:focus-visible {
+  outline: 2px solid rgba(88, 148, 255, 0.9);
+  outline-offset: 1px;
+}
+
+.prompt-record:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.prompt-record--recording {
+  background: rgba(181, 14, 39, 0.94);
+  border-color: rgba(255, 183, 195, 0.95);
+  animation: prompt-record-pulse 0.92s ease-in-out infinite;
+}
+
+@keyframes prompt-record-pulse {
+  0% {
+    filter: brightness(0.85);
+  }
+
+  50% {
+    filter: brightness(1.25);
+  }
+
+  100% {
+    filter: brightness(0.85);
+  }
 }
 
 .codex-page {
@@ -382,21 +396,16 @@ body {
 
   .game-stage {
     width: 100vw;
-    height: 100vh;
+    height: var(--game-layout-height);
     border-right: 0;
   }
 
   .game-render-area {
-    width: min(100vw, calc(100vh * var(--render-aspect-width) / var(--render-aspect-height)));
-    height: min(100vh, calc(100vw * var(--render-aspect-height) / var(--render-aspect-width)));
+    width: min(100vw, calc(var(--game-layout-height) * var(--render-aspect-width) / var(--render-aspect-height)));
+    height: min(var(--game-layout-height), calc(100vw * var(--render-aspect-height) / var(--render-aspect-width)));
   }
 
   .game-codex-panel {
     display: none;
-  }
-
-  .edit-button {
-    left: auto;
-    right: 16px;
   }
 }

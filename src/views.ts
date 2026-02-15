@@ -127,13 +127,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
       </aside>
     </main>
 
-    <button id="edit-button" class="edit-button" type="button" aria-label="Open prompt panel">✏️</button>
-
-    <section id="prompt-panel" class="prompt-panel" aria-hidden="true">
-      <div class="prompt-panel-header">
-        <h2>Create Next Version</h2>
-        <button id="prompt-close" class="prompt-close" type="button" aria-label="Close prompt panel">×</button>
-      </div>
+    <section id="prompt-panel" class="prompt-panel prompt-panel--open" aria-hidden="false" aria-label="Create next version prompt">
       <form id="prompt-form" class="prompt-form">
         <input
           id="prompt-input"
@@ -144,6 +138,9 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           enterkeyhint="go"
           required
         />
+        <button id="prompt-record" class="prompt-record" type="button" aria-label="Record prompt" aria-pressed="false">
+          Record
+        </button>
       </form>
     </section>
 
