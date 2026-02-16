@@ -36,11 +36,14 @@ Top three features:
   - `build-games.ts` - One-shot build for all game directories.
 - `.github/workflows/` - CI/CD workflow automation.
   - `deploy-main.yml` - Deploys `main` to the DigitalOcean server over SSH and restarts/starts `game-space` with PM2.
+  - `pr-feature-videos.yml` - PR-scoped, opt-in Playwright video workflow that records only selected E2E specs and upserts one PR comment with artifact links.
+- `.github/pull_request_template.md` - PR template with `video-tests` selector block for requesting feature-video runs.
 - `games/` - Versioned game sandboxes (one runtime/build boundary per version).
   - `v1-bounce/` - Initial bouncing-ball WebGL game implementation.
   - `d0cf7658-3371-4f01-99e2-ca90fc1899cf/` - Forked bouncing-ball variant.
   - `elm-cloud-sage/` - Fork rendering 1000 animated shimmering bowls via a point-sprite WebGL shader.
-- `tests/` - Vitest unit/integration coverage for app routes and core services.
+- `tests/` - Vitest unit/integration coverage for app routes and core services, plus Playwright E2E specs under `tests/e2e/`.
+- `playwright.config.ts` - Default E2E test runner config (video off unless explicitly enabled).
 - `docs/`
   - `overview.md` - High-level architecture and operational summary.
 - `.env.example` - Template for required admin auth secrets.
@@ -83,6 +86,7 @@ Top three features:
 - Static serving model: Express serves shared `src/public/*`; `/games/*` is runtime-allowlisted and blocks metadata/source/config/dev artifacts.
 - Dev live-reload model: token file stays on disk under each game `dist/`, but browser access is routed through `/api/dev/reload-token/:versionId` when dev mode is enabled.
 - Deployment model: GitHub Actions deploys `main` to DigitalOcean over SSH using repository secrets and PM2 process management.
+- PR video model: Playwright videos are opt-in per PR update; selectors come from PR metadata/template block (or `.github/video-tests.txt`), and workflow comments are edited in place.
 
 # Testing
 
@@ -95,6 +99,15 @@ Top three features:
   - `/games` runtime allowlist allow/deny behavior and dev reload-token API route.
   - Prompt fork/session persistence flow and transcript parsing behavior.
   - Game page client behavior for CSRF header inclusion and admin/public UI states.
+- End-to-end automation flow:
+  - Baseline E2E run (no recording): `npm run test:e2e`.
+  - Video run (opt-in only): `npm run test:e2e:video` or set `PLAYWRIGHT_CAPTURE_VIDEO=1`.
+  - For new user-visible features, add or update at least one Playwright E2E test covering the feature path.
+  - In PRs, request feature video generation only when needed by adding target selectors inside the PR template block:
+    - `<!-- video-tests:start -->`
+    - `<selector per line>`
+    - `<!-- video-tests:end -->`
+  - On later commits to the same PR, keep that selector block current; the workflow reruns on `synchronize` and updates the existing “Feature Video Artifacts” comment instead of posting duplicates.
 - End-to-end/manual flow:
   - Run `npm run dev`.
   - Verify logged-out behavior: `/` and `/game/:versionId` are playable, `/codex` and prompt API are unavailable.
