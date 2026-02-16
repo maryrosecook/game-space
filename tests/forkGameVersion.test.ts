@@ -45,6 +45,22 @@ describe('createForkedGameVersion', () => {
     const copiedSource = await fs.readFile(path.join(gamesRootPath, 'fork-game', 'src/main.ts'), 'utf8');
     expect(copiedSource).toContain('export const value = 1;');
 
+
+    const forkPackageJson = JSON.parse(
+      await fs.readFile(path.join(gamesRootPath, 'fork-game', 'package.json'), 'utf8')
+    ) as {
+      scripts?: Record<string, unknown>;
+      devDependencies?: Record<string, unknown>;
+    };
+    expect(forkPackageJson.scripts?.typecheck).toBe('tsc --noEmit');
+    expect(forkPackageJson.devDependencies?.typescript).toBe('^5.6.3');
+
+    const sourcePackageJson = JSON.parse(await fs.readFile(path.join(sourceDirectoryPath, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, unknown>;
+      devDependencies?: Record<string, unknown>;
+    };
+    expect(sourcePackageJson.scripts?.typecheck).toBeUndefined();
+    expect(sourcePackageJson.devDependencies?.typescript).toBeUndefined();
     await expect(fs.access(path.join(gamesRootPath, 'fork-game', 'node_modules'))).rejects.toThrow();
 
     const sourceMetadata = await readMetadataFile(path.join(gamesRootPath, 'source-game', 'metadata.json'));
