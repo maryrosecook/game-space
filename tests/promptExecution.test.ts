@@ -28,6 +28,15 @@ describe('composeCodexPrompt', () => {
     expect(await readBuildPromptFile(buildPromptPath)).toBe(text);
   });
 
+  it('ships a self-contained default game-build prompt for in-directory edits', async () => {
+    const buildPromptText = await readBuildPromptFile(path.resolve('game-build-prompt.md'));
+
+    expect(buildPromptText).toContain('Treat the current working directory (`pwd`) as the full project scope.');
+    expect(buildPromptText).toContain('Do not read, depend on, or modify files outside the current directory.');
+    expect(buildPromptText).toContain('startGame');
+    expect(buildPromptText).toContain('dist/game.js');
+  });
+
   it('extracts session id from legacy session_meta events', () => {
     const line =
       '{"type":"session_meta","payload":{"id":"019c48a7-3918-7123-bc60-0d7cddb4d5d4","source":"exec"}}';
