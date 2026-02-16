@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-import { pathExists } from './fsUtils';
+import { isObjectRecord, pathExists } from './fsUtils';
 import { gameDirectoryPath, isSafeVersionId, readMetadataFile, writeMetadataFile } from './gameVersions';
 import type { GameMetadata } from '../types';
 
@@ -76,6 +76,46 @@ async function createUniqueForkVersionId(gamesRootPath: string, idFactory: () =>
   throw new Error(`Unable to generate unique fork version id after ${maxForkIdAttempts} attempts`);
 }
 
+function ensureStringRecord(value: unknown, label: string): Record<string, unknown> {
+  if (!isObjectRecord(value)) {
+    throw new Error(`${label} must be a JSON object`);
+  }
+
+  return value;
+}
+
+async function ensureForkPackageTypeScriptTooling(forkDirectoryPath: string): Promise<void> {
+  const packageJsonPath = path.join(forkDirectoryPath, 'package.json');
+  const rawPackageJson = await fs.readFile(packageJsonPath, 'utf8');
+
+  let parsedPackageJson: unknown;
+  try {
+    parsedPackageJson = JSON.parse(rawPackageJson) as unknown;
+  } catch {
+    throw new Error(`Invalid package.json in forked game directory: ${packageJsonPath}`);
+  }
+
+  const packageJson = ensureStringRecord(parsedPackageJson, 'package.json');
+  const scripts = ensureStringRecord(packageJson.scripts ?? {}, 'package.json scripts');
+  const devDependencies = ensureStringRecord(
+    packageJson.devDependencies ?? {},
+    'package.json devDependencies'
+  );
+
+  if (!('typecheck' in scripts) || typeof scripts.typecheck !== 'string' || scripts.typecheck.trim().length === 0) {
+    scripts.typecheck = 'tsc --noEmit';
+  }
+
+  if (!('typescript' in devDependencies) || typeof devDependencies.typescript !== 'string') {
+    devDependencies.typescript = '^5.6.3';
+  }
+
+  packageJson.scripts = scripts;
+  packageJson.devDependencies = devDependencies;
+
+  await fs.writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, 'utf8');
+}
+
 export async function createForkedGameVersion(options: CreateForkedGameVersionOptions): Promise<GameMetadata> {
   const {
     gamesRootPath,
@@ -105,6 +145,8 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
       return !excludedDirectoryNames.has(baseName);
     }
   });
+
+  await ensureForkPackageTypeScriptTooling(forkDirectoryPath);
 
   const forkMetadata: GameMetadata = {
     id: forkVersionId,
