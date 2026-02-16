@@ -217,17 +217,27 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         <button id="prompt-record" class="prompt-record" type="button" aria-label="Record prompt" aria-pressed="false">
           Record
         </button>
+        <button
+          id="game-codex-toggle"
+          class="prompt-codex-toggle"
+          type="button"
+          aria-controls="game-codex-panel"
+          aria-expanded="false"
+          aria-label="Toggle Codex transcript"
+        >
+          <span aria-hidden="true">🤖</span>
+        </button>
       </form>
     </section>
 
     <nav class="game-bottom-tabs" aria-label="Game tools">
       <a
         id="game-home-button"
-        class="game-nav-button game-nav-button--home"
+        class="game-home-link"
         href="/"
         aria-label="Back to homepage"
       >
-        <span aria-hidden="true">&#x2039;</span>
+        <span aria-hidden="true">🏠</span>
       </a>
       <button
         id="game-tab-edit"
@@ -237,16 +247,6 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         aria-expanded="false"
       >
         Edit
-      </button>
-      <button
-        id="game-codex-toggle"
-        class="game-nav-button game-nav-button--codex-toggle"
-        type="button"
-        aria-controls="game-codex-panel"
-        aria-expanded="false"
-        aria-label="Toggle Codex transcript"
-      >
-        <span id="game-codex-toggle-chevron" class="game-nav-chevron" aria-hidden="true"></span>
       </button>
     </nav>`
     : '';
