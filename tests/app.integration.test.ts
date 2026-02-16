@@ -316,7 +316,7 @@ describe('express app integration', () => {
     expect(css.text).toContain('--game-layout-height: calc(100dvh - var(--bottom-tab-height));');
     expect(css.text).toContain('border-radius: 18px 18px 0 0;');
     expect(css.text).toContain('overflow-wrap: anywhere;');
-    expect(css.text).toContain('.game-page--edit-open .game-bottom-tabs');
+    expect(css.text).toContain('.game-page--codex-expanded .game-codex-panel');
     expect(css.text).not.toContain('border-bottom-left-radius: 0;');
     expect(css.text).not.toContain('border-bottom-right-radius: 0;');
     expect(css.text).toContain(
@@ -575,7 +575,7 @@ describe('express app integration', () => {
     expect(publicView.text).not.toContain('Prompt editing and Codex transcripts require admin login.');
     expect(publicView.text).not.toContain('game-admin-notice');
     expect(publicView.text).not.toContain('id="prompt-panel"');
-    expect(publicView.text).not.toContain('id="game-tab-codex"');
+    expect(publicView.text).not.toContain('id="game-codex-toggle"');
     expect(publicView.text).not.toContain('/public/game-view.js');
     expect(publicView.text).toContain('/public/game-live-reload.js');
 
@@ -587,7 +587,7 @@ describe('express app integration', () => {
       .expect(200);
 
     expect(adminView.text).toContain('id="prompt-panel"');
-    expect(adminView.text).toContain('id="game-tab-codex"');
+    expect(adminView.text).toContain('id="game-codex-toggle"');
     expect(adminView.text).toContain('/public/game-view.js');
     expect(adminView.text).toContain('data-csrf-token="');
   });

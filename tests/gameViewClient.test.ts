@@ -180,7 +180,8 @@ type GameViewHarness = {
   assignCalls: string[];
   body: TestBodyElement;
   editTab: TestHTMLButtonElement;
-  codexTab: TestHTMLButtonElement;
+  codexToggle: TestHTMLButtonElement;
+  codexChevron: TestHTMLElement;
   promptForm: TestHTMLFormElement;
   promptInput: TestHTMLInputElement;
   promptPanel: TestHTMLElement;
@@ -190,7 +191,6 @@ type GameViewHarness = {
 
 type RunGameViewOptions = {
   withSpeechRecognition?: boolean;
-  mobileViewport?: boolean;
   csrfToken?: string | undefined;
 };
 
@@ -212,14 +212,14 @@ async function runGameViewScript(
   options: RunGameViewOptions = {}
 ): Promise<GameViewHarness> {
   const withSpeechRecognition = options.withSpeechRecognition ?? true;
-  const mobileViewport = options.mobileViewport ?? false;
   const csrfToken = Object.hasOwn(options, 'csrfToken') ? options.csrfToken : 'csrf-token-123';
   const promptPanel = new TestHTMLElement();
   const promptForm = new TestHTMLFormElement();
   const promptInput = new TestHTMLInputElement();
   const promptRecord = new TestHTMLButtonElement();
   const editTab = new TestHTMLButtonElement();
-  const codexTab = new TestHTMLButtonElement();
+  const codexToggle = new TestHTMLButtonElement();
+  const codexChevron = new TestHTMLElement();
   const codexPanel = new TestHTMLElement();
   promptRecord.textContent = 'Record';
   const gameSessionView = new TestHTMLElement();
@@ -230,7 +230,8 @@ async function runGameViewScript(
   document.registerElement('prompt-input', promptInput);
   document.registerElement('prompt-record', promptRecord);
   document.registerElement('game-tab-edit', editTab);
-  document.registerElement('game-tab-codex', codexTab);
+  document.registerElement('game-codex-toggle', codexToggle);
+  document.registerElement('game-codex-toggle-chevron', codexChevron);
   document.registerElement('game-codex-panel', codexPanel);
   document.registerElement('game-codex-session-view', gameSessionView);
 
@@ -249,11 +250,6 @@ async function runGameViewScript(
       assign(url: string): void {
         assignCalls.push(url);
       }
-    },
-    matchMedia() {
-      return {
-        matches: mobileViewport
-      };
     },
     SpeechRecognition: withSpeechRecognition ? TestSpeechRecognition : undefined
   };
@@ -295,7 +291,8 @@ async function runGameViewScript(
     assignCalls,
     body: document.body,
     editTab,
-    codexTab,
+    codexToggle,
+    codexChevron,
     promptForm,
     promptInput,
     promptPanel,
@@ -441,7 +438,7 @@ describe('game view prompt submit client', () => {
     expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(false);
   });
 
-  it('opens the mobile Codex panel from the Codex tab', async () => {
+  it('toggles codex transcript expansion from the chevron button', async () => {
     const harness = await runGameViewScript(
       async () => ({
         ok: true,
@@ -449,15 +446,18 @@ describe('game view prompt submit client', () => {
           return { forkId: 'unused' };
         }
       }),
-      { mobileViewport: true }
     );
 
-    expect(harness.body.classList.contains('game-page--codex-open')).toBe(false);
-    expect(harness.codexTab.classList.contains('game-view-tab--active')).toBe(false);
+    expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(false);
+    expect(harness.codexToggle.getAttribute('aria-expanded')).toBe('false');
 
-    harness.codexTab.dispatchEvent('click', createEvent());
-    expect(harness.body.classList.contains('game-page--codex-open')).toBe(true);
-    expect(harness.codexTab.classList.contains('game-view-tab--active')).toBe(true);
-    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('true');
+    harness.codexToggle.dispatchEvent('click', createEvent());
+    expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(true);
+    expect(harness.codexToggle.getAttribute('aria-expanded')).toBe('true');
+    expect(harness.codexChevron.classList.contains('game-nav-chevron--expanded')).toBe(true);
+
+    harness.codexToggle.dispatchEvent('click', createEvent());
+    expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(false);
+    expect(harness.codexChevron.classList.contains('game-nav-chevron--expanded')).toBe(false);
   });
 });
