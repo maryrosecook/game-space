@@ -3,7 +3,7 @@
 Local-first game version browser and editor where every version is playable, forkable, and independently buildable.
 
 Top three features:
-- Filesystem-backed version catalog rendered as reverse-chronological homepage tiles, with each version opening into a playable centered portrait (`9:16`) WebGL runtime.
+- Filesystem-backed version catalog rendered as reverse-chronological responsive homepage tiles (`Infinity`), with hyphen-normalized labels and month/year timestamps; each tile opens into a playable centered portrait (`9:16`) WebGL runtime.
 - Cookie-authenticated admin workflow (`/auth`) that unlocks prompt execution and Codex transcript access while keeping public gameplay (`/` and `/game/:versionId`) available without login.
 - Prompt-to-fork execution flow that creates new game versions, launches Codex runs, and persists transcript session linkage for `/codex` and game-page transcript panels.
 
@@ -15,7 +15,7 @@ Top three features:
   - `views.ts` - Homepage/auth/game/codex HTML rendering.
   - `types.ts` - Shared metadata/version TypeScript types.
   - `public/` - Static browser assets.
-    - `styles.css` - Homepage/game/auth styling, admin/public game states, and transcript layouts.
+    - `styles.css` - Homepage/game/auth styling (including responsive homepage tile wrapping), admin/public game states, and transcript layouts.
     - `game-view.js` - Admin game-page prompt submit/CSRF header, bottom-tab behavior, speech-to-text UX, and transcript polling.
     - `game-live-reload.js` - Dev-only game-page polling via `/api/dev/reload-token/:versionId`.
     - `codex-view.js` - `/codex` selector wiring and transcript loading.
@@ -52,8 +52,8 @@ Top three features:
 # Most important code paths
 
 - Auth flow: `GET /auth` renders `renderAuthView()` with CSRF token; `POST /auth/login` validates CSRF + password hash + rate limits, sets an iron-session sealed admin cookie, and redirects; `POST /auth/logout` validates CSRF and clears the admin cookie.
-- Homepage flow: `GET /` calls `listGameVersions()` and renders `renderHomepage()` with auth-aware top-right CTA (`Login` or `Auth`).
-- Game page flow: `GET /game/:versionId` validates game availability, renders `renderGameView()` in admin/public mode, and conditionally includes prompt/transcript controls plus CSRF data token when authenticated.
+- Homepage flow: `GET /` calls `listGameVersions()` and renders `renderHomepage()` with the `Infinity` title, auth-aware top-right CTA (`Login` or `Auth`), hyphen-to-space display labels, and month/year timestamps.
+- Game page flow: `GET /game/:versionId` validates game availability, renders `renderGameView()` in admin/public mode, and only injects prompt/transcript UI plus CSRF data token for authenticated admins.
 - Prompt fork flow: `POST /api/games/:versionId/prompts` requires admin + CSRF, forks via `createForkedGameVersion()`, composes full prompt, launches Codex runner, and persists `codexSessionId` metadata as soon as available.
 - Codex transcript flow: `/codex` and `/api/codex-sessions/:versionId` require admin; transcript API resolves metadata `codexSessionId`, reads session JSONL, and returns user/assistant turns.
 - Static/runtime serving flow: `/games/*` first passes `requireRuntimeGameAssetPathMiddleware()` so only runtime-safe `dist` assets are public; sensitive or dev files (including `dist/reload-token.txt`) return `404`.
