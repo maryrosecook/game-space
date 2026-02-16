@@ -3,20 +3,18 @@ import { createCodexTranscriptPresenter } from './codex-transcript-presenter.js'
 const promptPanel = document.getElementById('prompt-panel');
 const promptForm = document.getElementById('prompt-form');
 const promptInput = document.getElementById('prompt-input');
-const promptRecord = document.getElementById('prompt-record');
 const editTab = document.getElementById('game-tab-edit');
 const codexToggle = document.getElementById('game-codex-toggle');
-const codexPanel = document.getElementById('game-codex-panel');
+const codexTranscript = document.getElementById('game-codex-transcript');
 const gameSessionView = document.getElementById('game-codex-session-view');
 
 if (
   !(promptPanel instanceof HTMLElement) ||
   !(promptForm instanceof HTMLFormElement) ||
   !(promptInput instanceof HTMLInputElement) ||
-  !(promptRecord instanceof HTMLButtonElement) ||
   !(editTab instanceof HTMLButtonElement) ||
   !(codexToggle instanceof HTMLButtonElement) ||
-  !(codexPanel instanceof HTMLElement) ||
+  !(codexTranscript instanceof HTMLElement) ||
   !(gameSessionView instanceof HTMLElement)
 ) {
   throw new Error('Game view controls missing from page');
@@ -29,13 +27,8 @@ const transcriptPollIntervalMs = 2000;
 let transcriptStatusKey = '';
 let transcriptSignature = '';
 let transcriptRequestInFlight = false;
-const speechRecognitionConstructor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-let activeSpeechRecognition = null;
-let pendingSpeechTranscript = '';
-let applySpeechTranscriptOnStop = false;
 let editPanelOpen = false;
 let codexPanelExpanded = false;
-
 
 function applyBottomPanelState() {
   promptPanel.classList.toggle('prompt-panel--open', editPanelOpen);
@@ -46,127 +39,43 @@ function applyBottomPanelState() {
 
   codexToggle.setAttribute('aria-expanded', codexPanelExpanded ? 'true' : 'false');
 
+  codexTranscript.classList.toggle('game-codex-transcript--open', codexPanelExpanded);
+  codexTranscript.setAttribute('aria-hidden', codexPanelExpanded ? 'false' : 'true');
+
   document.body.classList.toggle('game-page--edit-open', editPanelOpen);
   document.body.classList.toggle('game-page--codex-expanded', codexPanelExpanded);
 }
 
 function toggleEditPanel() {
-  editPanelOpen = !editPanelOpen;
-  applyBottomPanelState();
-
   if (editPanelOpen) {
-    focusPromptInput();
+    editPanelOpen = false;
+    codexPanelExpanded = false;
+    applyBottomPanelState();
+    return;
   }
+
+  editPanelOpen = true;
+  applyBottomPanelState();
+  focusPromptInput();
 }
 
 function toggleCodexPanelExpanded() {
+  if (!editPanelOpen) {
+    editPanelOpen = true;
+  }
+
   codexPanelExpanded = !codexPanelExpanded;
   applyBottomPanelState();
-}
 
-function setRecordButtonState(isRecording) {
-  promptRecord.classList.toggle('prompt-record--recording', isRecording);
-  promptRecord.setAttribute('aria-pressed', isRecording ? 'true' : 'false');
+  if (!codexPanelExpanded) {
+    focusPromptInput();
+  }
 }
 
 function focusPromptInput() {
   window.requestAnimationFrame(() => {
     promptInput.focus();
   });
-}
-
-function appendTranscriptToPromptInput(transcriptText) {
-  const trimmedTranscript = transcriptText.trim();
-  if (trimmedTranscript.length === 0) {
-    focusPromptInput();
-    return;
-  }
-
-  const hasExistingText = promptInput.value.trim().length > 0;
-  const needsSeparator = hasExistingText && !promptInput.value.endsWith(' ');
-  const separator = needsSeparator ? ' ' : '';
-  promptInput.value = `${promptInput.value}${separator}${trimmedTranscript}`;
-  focusPromptInput();
-}
-
-function buildTranscriptFromRecognitionResults(results) {
-  if (!results || typeof results.length !== 'number') {
-    return '';
-  }
-
-  let transcriptText = '';
-  for (let index = 0; index < results.length; index += 1) {
-    const result = results[index];
-    if (!result || typeof result.length !== 'number') {
-      continue;
-    }
-
-    const alternative = result[0];
-    const transcriptSegment = typeof alternative?.transcript === 'string' ? alternative.transcript : '';
-    transcriptText += transcriptSegment;
-  }
-
-  return transcriptText.trim();
-}
-
-function resetSpeechRecognitionState() {
-  activeSpeechRecognition = null;
-  pendingSpeechTranscript = '';
-  applySpeechTranscriptOnStop = false;
-  setRecordButtonState(false);
-}
-
-function stopRecordingAndQueueTranscriptInsert() {
-  if (!activeSpeechRecognition) {
-    return;
-  }
-
-  applySpeechTranscriptOnStop = true;
-  try {
-    activeSpeechRecognition.stop();
-  } catch {
-    resetSpeechRecognitionState();
-    focusPromptInput();
-  }
-}
-
-function startRecording() {
-  if (typeof speechRecognitionConstructor !== 'function' || activeSpeechRecognition) {
-    return;
-  }
-
-  const speechRecognition = new speechRecognitionConstructor();
-  speechRecognition.continuous = true;
-  speechRecognition.interimResults = true;
-  speechRecognition.lang = 'en-US';
-  activeSpeechRecognition = speechRecognition;
-  pendingSpeechTranscript = '';
-  applySpeechTranscriptOnStop = false;
-  setRecordButtonState(true);
-
-  speechRecognition.onresult = (event) => {
-    pendingSpeechTranscript = buildTranscriptFromRecognitionResults(event?.results);
-  };
-
-  speechRecognition.onerror = () => {
-    resetSpeechRecognitionState();
-  };
-
-  speechRecognition.onend = () => {
-    const shouldApplyTranscript = applySpeechTranscriptOnStop;
-    const transcriptText = pendingSpeechTranscript;
-    resetSpeechRecognitionState();
-
-    if (shouldApplyTranscript) {
-      appendTranscriptToPromptInput(transcriptText);
-    }
-  };
-
-  try {
-    speechRecognition.start();
-  } catch {
-    resetSpeechRecognitionState();
-  }
 }
 
 function showTranscriptState(statusKey, title, description) {
@@ -306,13 +215,7 @@ async function submitPrompt(prompt) {
   window.location.assign(`/game/${encodeURIComponent(payload.forkId)}`);
 }
 
-if (typeof speechRecognitionConstructor !== 'function') {
-  promptRecord.disabled = true;
-}
-
-setRecordButtonState(false);
 applyBottomPanelState();
-
 
 editTab.addEventListener('click', () => {
   toggleEditPanel();
@@ -336,15 +239,6 @@ promptForm.addEventListener('submit', (event) => {
 
   promptInput.value = '';
   focusPromptInput();
-});
-
-promptRecord.addEventListener('click', () => {
-  if (activeSpeechRecognition) {
-    stopRecordingAndQueueTranscriptInsert();
-    return;
-  }
-
-  startRecording();
 });
 
 promptInput.addEventListener('keydown', (event) => {

@@ -114,7 +114,7 @@ body {
 
 @media (max-width: 520px) {
   .page-header--with-auth {
-    align-items: flex-start;
+    align-items: stretch;
   }
 }
 
@@ -179,27 +179,6 @@ body {
   height: 100%;
 }
 
-.game-codex-panel {
-  flex: 1 1 auto;
-  min-width: 300px;
-  height: var(--game-layout-height);
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: linear-gradient(165deg, rgba(9, 17, 40, 0.96), rgba(6, 10, 22, 0.98));
-}
-
-.game-codex-panel-header {
-  padding: 14px 18px;
-  border-bottom: 1px solid rgba(128, 163, 244, 0.35);
-}
-
-.game-codex-panel-header h2 {
-  margin: 0;
-  font-size: 1rem;
-  letter-spacing: 0.03em;
-}
-
 .prompt-panel {
   position: fixed;
   inset: auto 0 0 0;
@@ -210,7 +189,7 @@ body {
   border-top: 1px solid rgba(120, 157, 237, 0.38);
   box-shadow: 0 -12px 24px rgba(2, 6, 17, 0.45);
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   transform: translateY(calc(100% + 6px));
   opacity: 0.9;
   pointer-events: none;
@@ -228,6 +207,34 @@ body {
   gap: 10px;
   width: 100%;
   min-width: 0;
+  margin-top: auto;
+}
+
+.game-codex-transcript {
+  display: none;
+  min-height: 0;
+  border: 1px solid rgba(120, 157, 237, 0.35);
+  border-radius: 12px;
+  background: rgba(6, 12, 31, 0.72);
+  overflow: hidden;
+}
+
+.game-codex-transcript--open {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  margin-bottom: 10px;
+}
+
+.game-codex-transcript-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(128, 163, 244, 0.28);
+}
+
+.game-codex-transcript-header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
 }
 
 .prompt-form input,
@@ -252,38 +259,9 @@ body {
   outline-offset: 1px;
 }
 
-.prompt-record {
-  flex: 0 0 auto;
-  min-width: 86px;
-  border: 1px solid rgba(185, 207, 255, 0.7);
-  border-radius: 10px;
-  background: rgba(28, 45, 87, 0.88);
-  color: #f7f9ff;
-  font-size: 0.93rem;
-  font-weight: 700;
-  padding: 0 14px;
-  cursor: pointer;
-}
-
-.prompt-record:focus-visible {
-  outline: 2px solid rgba(88, 148, 255, 0.9);
-  outline-offset: 1px;
-}
-
-.prompt-record:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.prompt-record--recording {
-  background: rgba(181, 14, 39, 0.94);
-  border-color: rgba(255, 183, 195, 0.95);
-  animation: prompt-record-pulse 0.92s ease-in-out infinite;
-}
-
 .prompt-codex-toggle {
   flex: 0 0 auto;
-  width: 42px;
+  width: 52px;
   border: 1px solid rgba(185, 207, 255, 0.7);
   border-radius: 10px;
   background: rgba(28, 45, 87, 0.88);
@@ -327,10 +305,12 @@ body {
   align-items: center;
   justify-content: center;
   text-decoration: none;
-  font-size: 1.85rem;
+  font-size: 2.15rem;
+  font-weight: 700;
   line-height: 1;
-  width: 48px;
-  height: calc(var(--bottom-tab-height) - 12px);
+  width: 40px;
+  height: calc(var(--bottom-tab-height) - 16px);
+  background: transparent;
 }
 
 .game-home-link:focus-visible,
@@ -342,8 +322,9 @@ body {
 .game-view-tab {
   --tab-fill: rgba(7, 22, 54, 0.98);
   position: relative;
-  height: var(--bottom-tab-height);
-  width: 100%;
+  height: calc(var(--bottom-tab-height) - 10px);
+  width: auto;
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -356,7 +337,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  padding: 0 18px 6px;
+  padding: 8px 20px 10px;
   cursor: pointer;
   transition: border-color 0.2s ease, color 0.2s ease;
 }
@@ -377,34 +358,13 @@ body {
   border-color: rgba(132, 168, 245, 0.55);
 }
 
-.game-page--codex-expanded .game-layout {
-  height: 100dvh;
-}
-
-.game-page--codex-expanded .game-codex-panel {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100dvh;
-  z-index: 26;
+.game-page--codex-expanded .prompt-panel {
+  height: calc(100dvh - var(--bottom-tab-height));
+  padding-top: 10px;
 }
 
 .game-page--codex-expanded .codex-session-view--game {
-  padding-bottom: calc(var(--bottom-tab-height) + 18px);
-}
-
-@keyframes prompt-record-pulse {
-  0% {
-    filter: brightness(0.85);
-  }
-
-  50% {
-    filter: brightness(1.25);
-  }
-
-  100% {
-    filter: brightness(0.85);
-  }
+  max-height: none;
 }
 
 .codex-page {
@@ -674,7 +634,7 @@ body {
 
   .codex-session-header {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
   }
 }
 

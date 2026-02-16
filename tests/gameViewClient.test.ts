@@ -121,42 +121,6 @@ class TestBodyElement extends TestHTMLElement {
   }
 }
 
-type TestSpeechRecognitionResultEvent = {
-  results: Array<Array<{ transcript: string }>>;
-};
-
-class TestSpeechRecognition {
-  public static instances: TestSpeechRecognition[] = [];
-  public continuous = false;
-  public interimResults = false;
-  public lang = '';
-  public onresult: ((event: TestSpeechRecognitionResultEvent) => void) | null = null;
-  public onerror: (() => void) | null = null;
-  public onend: (() => void) | null = null;
-  public started = false;
-  public stopCallCount = 0;
-
-  constructor() {
-    TestSpeechRecognition.instances.push(this);
-  }
-
-  start(): void {
-    this.started = true;
-  }
-
-  stop(): void {
-    this.started = false;
-    this.stopCallCount += 1;
-    this.onend?.();
-  }
-
-  emitTranscript(transcript: string): void {
-    this.onresult?.({
-      results: [[{ transcript }]]
-    });
-  }
-}
-
 class TestDocument extends TestEventTarget {
   public readonly body: TestBodyElement;
   private readonly elements = new Map<string, unknown>();
@@ -184,12 +148,9 @@ type GameViewHarness = {
   promptForm: TestHTMLFormElement;
   promptInput: TestHTMLInputElement;
   promptPanel: TestHTMLElement;
-  promptRecord: TestHTMLButtonElement;
-  speechRecognitions: TestSpeechRecognition[];
 };
 
 type RunGameViewOptions = {
-  withSpeechRecognition?: boolean;
   csrfToken?: string | undefined;
 };
 
@@ -210,32 +171,26 @@ async function runGameViewScript(
   fetchImplementation: FetchImplementation,
   options: RunGameViewOptions = {}
 ): Promise<GameViewHarness> {
-  const withSpeechRecognition = options.withSpeechRecognition ?? true;
   const csrfToken = Object.hasOwn(options, 'csrfToken') ? options.csrfToken : 'csrf-token-123';
   const promptPanel = new TestHTMLElement();
   const promptForm = new TestHTMLFormElement();
   const promptInput = new TestHTMLInputElement();
-  const promptRecord = new TestHTMLButtonElement();
   const editTab = new TestHTMLButtonElement();
   const codexToggle = new TestHTMLButtonElement();
-  const codexPanel = new TestHTMLElement();
-  promptRecord.textContent = 'Record';
+  const codexTranscript = new TestHTMLElement();
   const gameSessionView = new TestHTMLElement();
 
   const document = new TestDocument('source-version', csrfToken);
   document.registerElement('prompt-panel', promptPanel);
   document.registerElement('prompt-form', promptForm);
   document.registerElement('prompt-input', promptInput);
-  document.registerElement('prompt-record', promptRecord);
   document.registerElement('game-tab-edit', editTab);
   document.registerElement('game-codex-toggle', codexToggle);
-  document.registerElement('game-codex-panel', codexPanel);
+  document.registerElement('game-codex-transcript', codexTranscript);
   document.registerElement('game-codex-session-view', gameSessionView);
 
   const fetchCalls: FetchCall[] = [];
   const assignCalls: string[] = [];
-  TestSpeechRecognition.instances = [];
-  const speechRecognitions = TestSpeechRecognition.instances;
 
   const window = {
     requestAnimationFrame(callback: () => void): number {
@@ -247,8 +202,7 @@ async function runGameViewScript(
       assign(url: string): void {
         assignCalls.push(url);
       }
-    },
-    SpeechRecognition: withSpeechRecognition ? TestSpeechRecognition : undefined
+    }
   };
 
   const scriptPath = path.join(process.cwd(), 'src/public/game-view.js');
@@ -291,9 +245,7 @@ async function runGameViewScript(
     codexToggle,
     promptForm,
     promptInput,
-    promptPanel,
-    promptRecord,
-    speechRecognitions
+    promptPanel
   };
 }
 
@@ -372,47 +324,7 @@ describe('game view prompt submit client', () => {
     expect(harness.assignCalls).toHaveLength(0);
   });
 
-  it('records speech and inserts transcript into the prompt on the second click', async () => {
-    const harness = await runGameViewScript(async () => ({
-      ok: true,
-      async json() {
-        return { forkId: 'unused' };
-      }
-    }));
 
-    harness.editTab.dispatchEvent('click', createEvent());
-    harness.promptInput.value = 'make';
-    harness.promptRecord.dispatchEvent('click', createEvent());
-    expect(harness.speechRecognitions).toHaveLength(1);
-    expect(harness.promptRecord.classList.contains('prompt-record--recording')).toBe(true);
-    expect(harness.promptRecord.getAttribute('aria-pressed')).toBe('true');
-    expect(harness.promptRecord.textContent).toBe('Record');
-    expect(harness.promptInput.value).toBe('make');
-
-    harness.speechRecognitions[0]?.emitTranscript('the ball glow');
-    harness.promptRecord.dispatchEvent('click', createEvent());
-
-    expect(harness.promptRecord.classList.contains('prompt-record--recording')).toBe(false);
-    expect(harness.promptRecord.getAttribute('aria-pressed')).toBe('false');
-    expect(harness.promptRecord.textContent).toBe('Record');
-    expect(harness.speechRecognitions[0]?.stopCallCount).toBe(1);
-    expect(harness.promptInput.value).toBe('make the ball glow');
-    expect(harness.promptInput.focused).toBe(true);
-  });
-
-  it('disables the record button when speech recognition is unavailable', async () => {
-    const harness = await runGameViewScript(
-      async () => ({
-        ok: true,
-        async json() {
-          return { forkId: 'unused' };
-        }
-      }),
-      { withSpeechRecognition: false }
-    );
-
-    expect(harness.promptRecord.disabled).toBe(true);
-  });
 
   it('toggles the edit panel open and closed from the bottom Edit tab', async () => {
     const harness = await runGameViewScript(async () => ({
@@ -429,9 +341,13 @@ describe('game view prompt submit client', () => {
     expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
     expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(true);
 
+    harness.codexToggle.dispatchEvent('click', createEvent());
+    expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(true);
+
     harness.editTab.dispatchEvent('click', createEvent());
     expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('true');
     expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(false);
+    expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(false);
   });
 
   it('toggles codex transcript expansion from the robot button', async () => {
@@ -441,17 +357,20 @@ describe('game view prompt submit client', () => {
         async json() {
           return { forkId: 'unused' };
         }
-      }),
+      })
     );
 
+    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('true');
     expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(false);
     expect(harness.codexToggle.getAttribute('aria-expanded')).toBe('false');
 
     harness.codexToggle.dispatchEvent('click', createEvent());
+    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
     expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(true);
     expect(harness.codexToggle.getAttribute('aria-expanded')).toBe('true');
 
     harness.codexToggle.dispatchEvent('click', createEvent());
+    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
     expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(false);
   });
 });

@@ -191,19 +191,16 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
     ? `data-version-id="${escapeHtml(versionId)}" data-csrf-token="${csrfToken}"`
     : `data-version-id="${escapeHtml(versionId)}"`;
 
-  const codexPanelMarkup = isAdmin
-    ? `<aside id="game-codex-panel" class="game-codex-panel" aria-label="Codex transcript for this game">
-        <header class="game-codex-panel-header">
+  const adminPanelsMarkup = isAdmin
+    ? `<section id="prompt-panel" class="prompt-panel" aria-hidden="true" aria-label="Create next version prompt">
+      <section id="game-codex-transcript" class="game-codex-transcript" aria-hidden="true">
+        <header class="game-codex-transcript-header">
           <h2>Codex Transcript</h2>
         </header>
         <section id="game-codex-session-view" class="codex-session-view codex-session-view--game" aria-live="polite">
           <p class="codex-empty">Loading transcript...</p>
         </section>
-      </aside>`
-    : '';
-
-  const adminPanelsMarkup = isAdmin
-    ? `<section id="prompt-panel" class="prompt-panel" aria-hidden="true" aria-label="Create next version prompt">
+      </section>
       <form id="prompt-form" class="prompt-form">
         <input
           id="prompt-input"
@@ -214,14 +211,11 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           enterkeyhint="go"
           required
         />
-        <button id="prompt-record" class="prompt-record" type="button" aria-label="Record prompt" aria-pressed="false">
-          Record
-        </button>
         <button
           id="game-codex-toggle"
           class="prompt-codex-toggle"
           type="button"
-          aria-controls="game-codex-panel"
+          aria-controls="game-codex-transcript"
           aria-expanded="false"
           aria-label="Toggle Codex transcript"
         >
@@ -237,7 +231,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         href="/"
         aria-label="Back to homepage"
       >
-        <span aria-hidden="true">🏠</span>
+        <span aria-hidden="true">‹</span>
       </a>
       <button
         id="game-tab-edit"
@@ -268,7 +262,6 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           <canvas id="game-canvas" aria-label="Game canvas"></canvas>
         </div>
       </section>
-      ${codexPanelMarkup}
     </main>
 
     ${adminPanelsMarkup}
