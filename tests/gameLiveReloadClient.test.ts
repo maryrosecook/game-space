@@ -94,7 +94,7 @@ describe('game live reload client', () => {
     await harness.tick();
 
     expect(harness.reloadCalls).toBe(1);
-    expect(harness.fetchCalls[0]?.url).toContain('/games/source-version/dist/reload-token.txt');
+    expect(harness.fetchCalls[0]?.url).toContain('/api/dev/reload-token/source-version');
     expect(harness.fetchCalls[0]?.init).toEqual({ cache: 'no-store' });
   });
 

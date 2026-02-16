@@ -1,10 +1,23 @@
 import express from 'express';
+import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import {
+  clearAdminSessionCookie,
+  isAdminAuthenticated,
+  LoginAttemptLimiter,
+  readAdminAuthConfigFromEnv,
+  requireAdminOr404,
+  setAdminSessionCookie,
+  verifyAdminPassword
+} from './services/adminAuth';
 import { readCodexTranscriptBySessionId } from './services/codexSessions';
+import { ensureCsrfToken, isCsrfRequestValid, issueCsrfToken, requireValidCsrfMiddleware } from './services/csrf';
+import { reloadTokenPath } from './services/devLiveReload';
 import { pathExists } from './services/fsUtils';
 import { buildAllGames } from './services/gameBuildPipeline';
+import { requireRuntimeGameAssetPathMiddleware } from './services/gameAssetAllowlist';
 import { createForkedGameVersion } from './services/forkGameVersion';
 import {
   composeCodexPrompt,
@@ -21,7 +34,7 @@ import {
   readMetadataFile,
   writeMetadataFile
 } from './services/gameVersions';
-import { renderCodexView, renderGameView, renderHomepage } from './views';
+import { renderAuthView, renderCodexView, renderGameView, renderHomepage } from './views';
 
 type ErrorLogger = (message: string, error: unknown) => void;
 
@@ -40,6 +53,31 @@ function defaultLogger(message: string, error: unknown): void {
   console.error(message, error);
 }
 
+function requestRateLimitKey(request: express.Request): string {
+  if (typeof request.ip === 'string' && request.ip.length > 0) {
+    return request.ip;
+  }
+
+  return 'unknown';
+}
+
+function renderAuthPage(
+  request: express.Request,
+  response: express.Response,
+  isAdmin: boolean,
+  statusCode: number,
+  errorMessage: string | null = null
+): void {
+  const csrfToken = ensureCsrfToken(request, response);
+  response.status(statusCode).type('html').send(
+    renderAuthView({
+      isAdmin,
+      csrfToken,
+      errorMessage
+    })
+  );
+}
+
 export function createApp(options: AppOptions = {}): express.Express {
   const repoRootPath = options.repoRootPath ?? process.cwd();
   const gamesRootPath = options.gamesRootPath ?? path.join(repoRootPath, 'games');
@@ -51,6 +89,11 @@ export function createApp(options: AppOptions = {}): express.Express {
   const enableGameLiveReload =
     options.enableGameLiveReload ?? process.env.GAME_SPACE_DEV_LIVE_RELOAD === '1';
 
+  const authConfig = readAdminAuthConfigFromEnv();
+  const requireAdmin = requireAdminOr404(authConfig);
+  const requireValidCsrf = requireValidCsrfMiddleware();
+  const loginAttemptLimiter = new LoginAttemptLimiter();
+
   if (shouldBuildGamesOnStartup) {
     void buildAllGames(gamesRootPath).catch((error) => {
       logError('Failed to build games on app startup', error);
@@ -59,19 +102,95 @@ export function createApp(options: AppOptions = {}): express.Express {
 
   const app = express();
   app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ extended: false }));
   app.use('/public', express.static(path.join(repoRootPath, 'src/public')));
-  app.use('/games', express.static(gamesRootPath));
+  app.use('/games', requireRuntimeGameAssetPathMiddleware(), express.static(gamesRootPath));
 
-  app.get('/', async (_request, response, next) => {
+  app.get('/auth', async (request, response, next) => {
     try {
-      const versions = await listGameVersions(gamesRootPath);
-      response.status(200).type('html').send(renderHomepage(versions));
+      const isAdmin = await isAdminAuthenticated(request, authConfig);
+      renderAuthPage(request, response, isAdmin, 200);
     } catch (error: unknown) {
       next(error);
     }
   });
 
-  app.get('/codex', async (_request, response, next) => {
+  app.post('/auth/login', async (request, response, next) => {
+    try {
+      if (!isCsrfRequestValid(request)) {
+        renderAuthPage(request, response, false, 403, 'Invalid CSRF token. Refresh and try again.');
+        return;
+      }
+
+      const limiterKey = requestRateLimitKey(request);
+      const remainingBlockMs = loginAttemptLimiter.getBlockRemainingMs(limiterKey);
+      if (remainingBlockMs > 0) {
+        renderAuthPage(request, response, false, 429, 'Too many attempts. Wait a moment and try again.');
+        return;
+      }
+
+      const passwordInput = request.body?.password;
+      if (typeof passwordInput !== 'string' || passwordInput.length === 0) {
+        loginAttemptLimiter.registerFailure(limiterKey);
+        renderAuthPage(request, response, false, 401, 'Invalid password.');
+        return;
+      }
+
+      const isValidPassword = await verifyAdminPassword(passwordInput, authConfig.passwordHash);
+      if (!isValidPassword) {
+        loginAttemptLimiter.registerFailure(limiterKey);
+        renderAuthPage(request, response, false, 401, 'Invalid password.');
+        return;
+      }
+
+      loginAttemptLimiter.registerSuccess(limiterKey);
+      await setAdminSessionCookie(response, authConfig.sessionSecret);
+      issueCsrfToken(response);
+      response.redirect(303, '/auth');
+    } catch (error: unknown) {
+      next(error);
+    }
+  });
+
+  app.post('/auth/logout', async (request, response, next) => {
+    try {
+      const isAdmin = await isAdminAuthenticated(request, authConfig);
+      if (!isAdmin) {
+        response.status(404).type('text/plain').send('Not found');
+        return;
+      }
+
+      if (!isCsrfRequestValid(request)) {
+        renderAuthPage(request, response, true, 403, 'Invalid CSRF token. Refresh and try again.');
+        return;
+      }
+
+      clearAdminSessionCookie(response);
+      issueCsrfToken(response);
+      response.redirect(303, '/auth');
+    } catch (error: unknown) {
+      next(error);
+    }
+  });
+
+  app.get('/', async (request, response, next) => {
+    try {
+      const versions = await listGameVersions(gamesRootPath);
+      const isAdmin = await isAdminAuthenticated(request, authConfig);
+      response
+        .status(200)
+        .type('html')
+        .send(
+          renderHomepage(versions, {
+            isAdmin
+          })
+        );
+    } catch (error: unknown) {
+      next(error);
+    }
+  });
+
+  app.get('/codex', requireAdmin, async (_request, response, next) => {
     try {
       const versions = await listGameVersions(gamesRootPath);
       response.status(200).type('html').send(renderCodexView(versions));
@@ -99,19 +218,54 @@ export function createApp(options: AppOptions = {}): express.Express {
         return;
       }
 
+      const isAdmin = await isAdminAuthenticated(request, authConfig);
+      const csrfToken = isAdmin ? ensureCsrfToken(request, response) : undefined;
       response
         .status(200)
         .type('html')
-        .send(renderGameView(versionId, { enableLiveReload: enableGameLiveReload }));
+        .send(renderGameView(versionId, { enableLiveReload: enableGameLiveReload, isAdmin, csrfToken }));
     } catch (error: unknown) {
       next(error);
     }
   });
 
-  app.get('/api/codex-sessions/:versionId', async (request, response, next) => {
+  if (enableGameLiveReload) {
+    app.get('/api/dev/reload-token/:versionId', async (request, response, next) => {
+      try {
+        const versionId = request.params.versionId;
+        if (typeof versionId !== 'string' || !isSafeVersionId(versionId)) {
+          response.status(400).json({ error: 'Invalid version id' });
+          return;
+        }
+
+        if (!(await hasGameDirectory(gamesRootPath, versionId))) {
+          response.status(404).json({ error: 'Game version not found' });
+          return;
+        }
+
+        const tokenPath = reloadTokenPath(gamesRootPath, versionId);
+        if (!(await pathExists(tokenPath))) {
+          response.status(404).json({ error: 'Reload token not found' });
+          return;
+        }
+
+        const token = (await fs.readFile(tokenPath, 'utf8')).trim();
+        if (token.length === 0) {
+          response.status(404).json({ error: 'Reload token not found' });
+          return;
+        }
+
+        response.status(200).type('text/plain').send(token);
+      } catch (error: unknown) {
+        next(error);
+      }
+    });
+  }
+
+  app.get('/api/codex-sessions/:versionId', requireAdmin, async (request, response, next) => {
     try {
-      const { versionId } = request.params;
-      if (!isSafeVersionId(versionId)) {
+      const versionId = request.params.versionId;
+      if (typeof versionId !== 'string' || !isSafeVersionId(versionId)) {
         response.status(400).json({ error: 'Invalid version id' });
         return;
       }
@@ -158,10 +312,10 @@ export function createApp(options: AppOptions = {}): express.Express {
     }
   });
 
-  app.post('/api/games/:versionId/prompts', async (request, response, next) => {
+  app.post('/api/games/:versionId/prompts', requireAdmin, requireValidCsrf, async (request, response, next) => {
     try {
-      const { versionId } = request.params;
-      if (!isSafeVersionId(versionId)) {
+      const versionId = request.params.versionId;
+      if (typeof versionId !== 'string' || !isSafeVersionId(versionId)) {
         response.status(400).json({ error: 'Invalid version id' });
         return;
       }

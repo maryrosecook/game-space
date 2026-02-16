@@ -14,7 +14,13 @@ function formatDate(value: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-export function renderHomepage(versions: readonly GameVersion[]): string {
+type HomepageRenderOptions = {
+  isAdmin?: boolean;
+};
+
+export function renderHomepage(versions: readonly GameVersion[], options: HomepageRenderOptions = {}): string {
+  const isAdmin = options.isAdmin ?? false;
+  const authLabel = isAdmin ? 'Auth' : 'Login';
   const tiles = versions
     .map((version) => {
       const id = escapeHtml(version.id);
@@ -43,8 +49,9 @@ export function renderHomepage(versions: readonly GameVersion[]): string {
   </head>
   <body class="homepage">
     <main class="homepage-shell">
-      <header class="page-header">
+      <header class="page-header page-header--with-auth">
         <h1>Game Space</h1>
+        <a class="auth-link" href="/auth">${authLabel}</a>
       </header>
       ${content}
     </main>
@@ -93,41 +100,94 @@ export function renderCodexView(versions: readonly GameVersion[]): string {
 </html>`;
 }
 
-type GameViewRenderOptions = {
-  enableLiveReload?: boolean;
+type AuthViewRenderOptions = {
+  isAdmin: boolean;
+  csrfToken: string;
+  errorMessage?: string | null;
 };
 
-export function renderGameView(versionId: string, options: GameViewRenderOptions = {}): string {
-  const encodedVersionId = encodeURIComponent(versionId);
-  const liveReloadScript = options.enableLiveReload
-    ? '\n    <script type="module" src="/public/game-live-reload.js"></script>'
-    : '';
+export function renderAuthView(options: AuthViewRenderOptions): string {
+  const isAdmin = options.isAdmin;
+  const csrfToken = escapeHtml(options.csrfToken);
+  const errorMessage =
+    typeof options.errorMessage === 'string' && options.errorMessage.length > 0
+      ? `<p class="auth-error" role="alert">${escapeHtml(options.errorMessage)}</p>`
+      : '';
+
+  const formMarkup = isAdmin
+    ? `<p class="auth-status">Admin session is active.</p>
+      <form class="auth-form" method="post" action="/auth/logout">
+        <input type="hidden" name="csrfToken" value="${csrfToken}" />
+        <button class="auth-submit" type="submit">Logout</button>
+      </form>`
+    : `<p class="auth-status">Enter the admin password to unlock prompt and transcript tools.</p>
+      <form class="auth-form" method="post" action="/auth/login">
+        <input type="hidden" name="csrfToken" value="${csrfToken}" />
+        <label class="auth-label" for="admin-password">Password</label>
+        <input
+          id="admin-password"
+          class="auth-input"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          required
+        />
+        <button class="auth-submit" type="submit">Login</button>
+      </form>`;
+
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Game ${escapeHtml(versionId)}</title>
+    <title>Admin Auth</title>
     <link rel="stylesheet" href="/public/styles.css" />
   </head>
-  <body class="game-page" data-version-id="${escapeHtml(versionId)}">
-    <main class="game-layout">
-      <section class="game-stage">
-        <div class="game-render-area">
-          <canvas id="game-canvas" aria-label="Game canvas"></canvas>
-        </div>
-      </section>
-      <aside id="game-codex-panel" class="game-codex-panel" aria-label="Codex transcript for this game">
+  <body class="auth-page">
+    <main class="auth-shell">
+      <header class="page-header auth-header">
+        <h1>Admin Auth</h1>
+        <a class="auth-home-link" href="/">Back to games</a>
+      </header>
+      ${errorMessage}
+      ${formMarkup}
+    </main>
+  </body>
+</html>`;
+}
+
+type GameViewRenderOptions = {
+  enableLiveReload?: boolean;
+  isAdmin?: boolean;
+  csrfToken?: string;
+};
+
+export function renderGameView(versionId: string, options: GameViewRenderOptions = {}): string {
+  const encodedVersionId = encodeURIComponent(versionId);
+  const enableLiveReload = options.enableLiveReload ?? false;
+  const isAdmin = options.isAdmin ?? false;
+  const csrfToken = isAdmin && typeof options.csrfToken === 'string' ? escapeHtml(options.csrfToken) : null;
+  const liveReloadScript = enableLiveReload
+    ? '\n    <script type="module" src="/public/game-live-reload.js"></script>'
+    : '';
+  const bodyClass = isAdmin ? 'game-page game-page--admin' : 'game-page game-page--public';
+  const bodyDataAttributes = csrfToken
+    ? `data-version-id="${escapeHtml(versionId)}" data-csrf-token="${csrfToken}"`
+    : `data-version-id="${escapeHtml(versionId)}"`;
+
+  const codexPanelMarkup = isAdmin
+    ? `<aside id="game-codex-panel" class="game-codex-panel" aria-label="Codex transcript for this game">
         <header class="game-codex-panel-header">
           <h2>Codex Transcript</h2>
         </header>
         <section id="game-codex-session-view" class="codex-session-view codex-session-view--game" aria-live="polite">
           <p class="codex-empty">Loading transcript...</p>
         </section>
-      </aside>
-    </main>
+      </aside>`
+    : '';
 
-    <section id="prompt-panel" class="prompt-panel" aria-hidden="true" aria-label="Create next version prompt">
+  const adminPanelsMarkup = isAdmin
+    ? `<section id="prompt-panel" class="prompt-panel" aria-hidden="true" aria-label="Create next version prompt">
       <form id="prompt-form" class="prompt-form">
         <input
           id="prompt-input"
@@ -163,7 +223,33 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
       >
         Codex
       </button>
-    </nav>
+    </nav>`
+    : `<section class="game-admin-notice" aria-live="polite">
+      <p>Prompt editing and Codex transcripts require admin login.</p>
+      <a class="auth-link" href="/auth">Login</a>
+    </section>`;
+
+  const gameViewScriptMarkup = isAdmin ? '\n    <script type="module" src="/public/game-view.js"></script>' : '';
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Game ${escapeHtml(versionId)}</title>
+    <link rel="stylesheet" href="/public/styles.css" />
+  </head>
+  <body class="${bodyClass}" ${bodyDataAttributes}>
+    <main class="game-layout${isAdmin ? '' : ' game-layout--public'}">
+      <section class="game-stage">
+        <div class="game-render-area">
+          <canvas id="game-canvas" aria-label="Game canvas"></canvas>
+        </div>
+      </section>
+      ${codexPanelMarkup}
+    </main>
+
+    ${adminPanelsMarkup}
 
     <script type="module">
       import { startGame } from '/games/${encodedVersionId}/dist/game.js';
@@ -171,8 +257,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
       if (canvas instanceof HTMLCanvasElement) {
         startGame(canvas);
       }
-    </script>
-    <script type="module" src="/public/game-view.js"></script>
+    </script>${gameViewScriptMarkup}
 ${liveReloadScript}
   </body>
 </html>`;

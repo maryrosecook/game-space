@@ -23,6 +23,7 @@ if (
 }
 
 const versionId = document.body.dataset.versionId;
+const csrfToken = document.body.dataset.csrfToken;
 const transcriptPresenter = createCodexTranscriptPresenter(gameSessionView);
 const transcriptPollIntervalMs = 2000;
 let transcriptStatusKey = '';
@@ -292,11 +293,17 @@ function startTranscriptPolling() {
 }
 
 async function submitPrompt(prompt) {
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+
+  if (typeof csrfToken === 'string' && csrfToken.length > 0) {
+    headers['X-CSRF-Token'] = csrfToken;
+  }
+
   const response = await fetch(`/api/games/${encodeURIComponent(versionId)}/prompts`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: JSON.stringify({ prompt })
   });
 

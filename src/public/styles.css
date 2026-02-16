@@ -31,10 +31,30 @@ body {
   margin-bottom: 24px;
 }
 
+.page-header--with-auth {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .page-header h1 {
   margin: 0;
   font-size: 2rem;
   letter-spacing: 0.04em;
+}
+
+.auth-link {
+  color: #b7ceff;
+  text-decoration: none;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(183, 206, 255, 0.45);
+}
+
+.auth-link:hover,
+.auth-link:focus-visible {
+  color: #f2f7ff;
+  border-bottom-color: rgba(242, 247, 255, 0.82);
 }
 
 .game-grid {
@@ -86,12 +106,34 @@ body {
   --game-layout-height: calc(100dvh - var(--bottom-tab-height));
 }
 
+.game-page--public {
+  --bottom-tab-height: 0px;
+  --edit-drawer-height: 0px;
+  --game-layout-height: 100dvh;
+}
+
 .game-layout {
   width: 100vw;
   height: var(--game-layout-height);
   display: flex;
   align-items: stretch;
   justify-content: flex-start;
+}
+
+.game-layout--public {
+  display: block;
+}
+
+.game-layout--public .game-stage {
+  width: 100vw;
+  height: var(--game-layout-height);
+  flex: 1 1 auto;
+  border-right: 0;
+}
+
+.game-layout--public .game-render-area {
+  width: min(100vw, calc(var(--game-layout-height) * var(--render-aspect-width) / var(--render-aspect-height)));
+  height: min(var(--game-layout-height), calc(100vw * var(--render-aspect-height) / var(--render-aspect-width)));
 }
 
 .game-stage {
@@ -272,6 +314,26 @@ body {
   border-color: rgba(132, 168, 245, 0.55);
 }
 
+.game-admin-notice {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 20;
+  background: rgba(6, 14, 34, 0.92);
+  border: 1px solid rgba(126, 163, 244, 0.5);
+  border-radius: 999px;
+  padding: 10px 14px;
+  color: #d7e7ff;
+  font-size: 0.86rem;
+}
+
+.game-admin-notice p {
+  margin: 0;
+}
+
 @keyframes prompt-record-pulse {
   0% {
     filter: brightness(0.85);
@@ -288,6 +350,92 @@ body {
 
 .codex-page {
   overflow-y: auto;
+}
+
+.auth-page {
+  overflow-y: auto;
+}
+
+.auth-shell {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 30px 18px 44px;
+}
+
+.auth-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auth-home-link {
+  color: #b7ceff;
+  text-decoration: none;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(183, 206, 255, 0.4);
+}
+
+.auth-home-link:hover,
+.auth-home-link:focus-visible {
+  color: #eff5ff;
+  border-bottom-color: rgba(239, 245, 255, 0.82);
+}
+
+.auth-status {
+  margin: 4px 0 14px;
+  color: #ccddff;
+}
+
+.auth-form {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-label {
+  color: #d5e5ff;
+  font-size: 0.92rem;
+}
+
+.auth-input {
+  width: 100%;
+  border: 1px solid rgba(165, 193, 255, 0.55);
+  border-radius: 10px;
+  background: rgba(8, 15, 35, 0.95);
+  color: #f4f8ff;
+  padding: 12px;
+  font-size: 1rem;
+}
+
+.auth-input:focus-visible {
+  outline: 2px solid rgba(103, 163, 255, 0.95);
+  outline-offset: 1px;
+}
+
+.auth-submit {
+  width: fit-content;
+  border: 1px solid rgba(182, 207, 255, 0.72);
+  border-radius: 10px;
+  background: rgba(24, 46, 96, 0.96);
+  color: #f7fbff;
+  padding: 10px 16px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.auth-submit:focus-visible {
+  outline: 2px solid rgba(103, 163, 255, 0.95);
+  outline-offset: 1px;
+}
+
+.auth-error {
+  margin: 0 0 12px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 180, 192, 0.65);
+  background: rgba(127, 18, 39, 0.34);
+  color: #ffcad4;
 }
 
 .codex-shell {
@@ -545,5 +693,12 @@ body {
   .codex-message--assistant {
     margin-left: 0;
     margin-right: 0;
+  }
+
+  .game-admin-notice {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    justify-content: space-between;
   }
 }
