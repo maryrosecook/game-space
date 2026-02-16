@@ -113,11 +113,11 @@ class TestHTMLInputElement extends TestHTMLElement {
 }
 
 class TestBodyElement extends TestHTMLElement {
-  public readonly dataset: { versionId?: string };
+  public readonly dataset: { versionId?: string; csrfToken?: string };
 
-  constructor(versionId: string) {
+  constructor(versionId: string, csrfToken: string | undefined) {
     super();
-    this.dataset = { versionId };
+    this.dataset = { versionId, csrfToken };
   }
 }
 
@@ -161,9 +161,9 @@ class TestDocument extends TestEventTarget {
   public readonly body: TestBodyElement;
   private readonly elements = new Map<string, unknown>();
 
-  constructor(versionId: string) {
+  constructor(versionId: string, csrfToken: string | undefined) {
     super();
-    this.body = new TestBodyElement(versionId);
+    this.body = new TestBodyElement(versionId, csrfToken);
   }
 
   registerElement(id: string, element: unknown): void {
@@ -191,6 +191,7 @@ type GameViewHarness = {
 type RunGameViewOptions = {
   withSpeechRecognition?: boolean;
   mobileViewport?: boolean;
+  csrfToken?: string | undefined;
 };
 
 function createEvent(overrides: Partial<TestEvent> = {}): TestEvent {
@@ -212,6 +213,7 @@ async function runGameViewScript(
 ): Promise<GameViewHarness> {
   const withSpeechRecognition = options.withSpeechRecognition ?? true;
   const mobileViewport = options.mobileViewport ?? false;
+  const csrfToken = Object.hasOwn(options, 'csrfToken') ? options.csrfToken : 'csrf-token-123';
   const promptPanel = new TestHTMLElement();
   const promptForm = new TestHTMLFormElement();
   const promptInput = new TestHTMLInputElement();
@@ -222,7 +224,7 @@ async function runGameViewScript(
   promptRecord.textContent = 'Record';
   const gameSessionView = new TestHTMLElement();
 
-  const document = new TestDocument('source-version');
+  const document = new TestDocument('source-version', csrfToken);
   document.registerElement('prompt-panel', promptPanel);
   document.registerElement('prompt-form', promptForm);
   document.registerElement('prompt-input', promptInput);
@@ -322,7 +324,8 @@ describe('game view prompt submit client', () => {
       init: {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': 'csrf-token-123'
         },
         body: JSON.stringify({ prompt: 'darken the ball' })
       }
@@ -331,6 +334,32 @@ describe('game view prompt submit client', () => {
     expect(harness.promptInput.value).toBe('');
     expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
     expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(true);
+  });
+
+  it('omits the CSRF header when no token exists on the page', async () => {
+    const harness = await runGameViewScript(
+      async () => ({
+        ok: true,
+        async json() {
+          return { forkId: 'pebble-iris-dawn' };
+        }
+      }),
+      { csrfToken: undefined }
+    );
+
+    harness.editTab.dispatchEvent('click', createEvent());
+    harness.promptInput.value = 'darken the ball';
+    harness.promptForm.dispatchEvent('submit', createEvent());
+    await flushAsyncOperations();
+
+    expect(harness.fetchCalls).toHaveLength(1);
+    expect(harness.fetchCalls[0]?.init).toEqual({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ prompt: 'darken the ball' })
+    });
   });
 
   it('does not redirect when prompt submit response is missing fork id', async () => {

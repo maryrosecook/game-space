@@ -1,7 +1,7 @@
 const versionId = document.body.dataset.versionId;
 
 if (typeof versionId === 'string' && versionId.length > 0) {
-  const tokenUrl = `/games/${encodeURIComponent(versionId)}/dist/reload-token.txt`;
+  const tokenUrl = `/api/dev/reload-token/${encodeURIComponent(versionId)}`;
   let hasBaseline = false;
   let lastSeenToken = null;
   let pollInFlight = false;
