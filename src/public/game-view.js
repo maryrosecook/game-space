@@ -5,7 +5,8 @@ const promptForm = document.getElementById('prompt-form');
 const promptInput = document.getElementById('prompt-input');
 const promptRecord = document.getElementById('prompt-record');
 const editTab = document.getElementById('game-tab-edit');
-const codexTab = document.getElementById('game-tab-codex');
+const codexToggle = document.getElementById('game-codex-toggle');
+const codexChevron = document.getElementById('game-codex-toggle-chevron');
 const codexPanel = document.getElementById('game-codex-panel');
 const gameSessionView = document.getElementById('game-codex-session-view');
 
@@ -15,7 +16,8 @@ if (
   !(promptInput instanceof HTMLInputElement) ||
   !(promptRecord instanceof HTMLButtonElement) ||
   !(editTab instanceof HTMLButtonElement) ||
-  !(codexTab instanceof HTMLButtonElement) ||
+  !(codexToggle instanceof HTMLButtonElement) ||
+  !(codexChevron instanceof HTMLElement) ||
   !(codexPanel instanceof HTMLElement) ||
   !(gameSessionView instanceof HTMLElement)
 ) {
@@ -33,47 +35,35 @@ const speechRecognitionConstructor = window.SpeechRecognition ?? window.webkitSp
 let activeSpeechRecognition = null;
 let pendingSpeechTranscript = '';
 let applySpeechTranscriptOnStop = false;
-let activeBottomPanel = 'closed';
+let editPanelOpen = false;
+let codexPanelExpanded = false;
 
-function isMobileViewport() {
-  return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 980px)').matches;
-}
 
 function applyBottomPanelState() {
-  const editPanelOpen = activeBottomPanel === 'edit';
-  const codexPanelOpen = activeBottomPanel === 'codex' && isMobileViewport();
-
   promptPanel.classList.toggle('prompt-panel--open', editPanelOpen);
   promptPanel.setAttribute('aria-hidden', editPanelOpen ? 'false' : 'true');
 
   editTab.classList.toggle('game-view-tab--active', editPanelOpen);
   editTab.setAttribute('aria-expanded', editPanelOpen ? 'true' : 'false');
 
-  codexTab.classList.toggle('game-view-tab--active', codexPanelOpen);
-  codexTab.setAttribute('aria-expanded', codexPanelOpen ? 'true' : 'false');
+  codexToggle.setAttribute('aria-expanded', codexPanelExpanded ? 'true' : 'false');
+  codexChevron.classList.toggle('game-nav-chevron--expanded', codexPanelExpanded);
 
   document.body.classList.toggle('game-page--edit-open', editPanelOpen);
-  document.body.classList.toggle('game-page--codex-open', codexPanelOpen);
+  document.body.classList.toggle('game-page--codex-expanded', codexPanelExpanded);
 }
 
-function setActiveBottomPanel(nextPanel) {
-  activeBottomPanel = nextPanel;
+function toggleEditPanel() {
+  editPanelOpen = !editPanelOpen;
   applyBottomPanelState();
 
-  if (nextPanel === 'edit') {
+  if (editPanelOpen) {
     focusPromptInput();
   }
 }
 
-function toggleBottomPanel(nextPanel) {
-  setActiveBottomPanel(activeBottomPanel === nextPanel ? 'closed' : nextPanel);
-}
-
-function syncBottomPanelForViewport() {
-  if (activeBottomPanel === 'codex' && !isMobileViewport()) {
-    activeBottomPanel = 'closed';
-  }
-
+function toggleCodexPanelExpanded() {
+  codexPanelExpanded = !codexPanelExpanded;
   applyBottomPanelState();
 }
 
@@ -324,24 +314,15 @@ if (typeof speechRecognitionConstructor !== 'function') {
 }
 
 setRecordButtonState(false);
-setActiveBottomPanel('closed');
+applyBottomPanelState();
 
-if (typeof window.addEventListener === 'function') {
-  window.addEventListener('resize', () => {
-    syncBottomPanelForViewport();
-  });
-}
 
 editTab.addEventListener('click', () => {
-  toggleBottomPanel('edit');
+  toggleEditPanel();
 });
 
-codexTab.addEventListener('click', () => {
-  if (!isMobileViewport()) {
-    return;
-  }
-
-  toggleBottomPanel('codex');
+codexToggle.addEventListener('click', () => {
+  toggleCodexPanelExpanded();
 });
 
 promptForm.addEventListener('submit', (event) => {

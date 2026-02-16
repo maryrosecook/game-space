@@ -221,6 +221,14 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
     </section>
 
     <nav class="game-bottom-tabs" aria-label="Game tools">
+      <a
+        id="game-home-button"
+        class="game-nav-button game-nav-button--home"
+        href="/"
+        aria-label="Back to homepage"
+      >
+        <span aria-hidden="true">&#x2039;</span>
+      </a>
       <button
         id="game-tab-edit"
         class="game-view-tab game-view-tab--edit"
@@ -231,13 +239,14 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         Edit
       </button>
       <button
-        id="game-tab-codex"
-        class="game-view-tab game-view-tab--codex"
+        id="game-codex-toggle"
+        class="game-nav-button game-nav-button--codex-toggle"
         type="button"
         aria-controls="game-codex-panel"
         aria-expanded="false"
+        aria-label="Toggle Codex transcript"
       >
-        Codex
+        <span id="game-codex-toggle-chevron" class="game-nav-chevron" aria-hidden="true"></span>
       </button>
     </nav>`
     : '';

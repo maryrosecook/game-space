@@ -123,6 +123,9 @@ body {
   --bottom-tab-height: 68px;
   --edit-drawer-height: 86px;
   --game-layout-height: calc(100dvh - var(--bottom-tab-height));
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .game-page--public {
@@ -227,6 +230,12 @@ body {
   min-width: 0;
 }
 
+.prompt-form input,
+.prompt-form textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .prompt-form input {
   flex: 1 1 auto;
   min-width: 0;
@@ -278,8 +287,9 @@ body {
   z-index: 30;
   height: var(--bottom-tab-height);
   padding: 0 14px;
-  display: flex;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: flex-end;
   background: linear-gradient(180deg, rgba(3, 7, 20, 0.02) 0%, rgba(3, 7, 20, 0.96) 44%, rgba(3, 7, 20, 0.98) 100%);
   box-shadow: 0 -10px 24px rgba(3, 8, 24, 0.55);
@@ -287,10 +297,38 @@ body {
   transition: transform 0.24s ease;
 }
 
+.game-nav-button {
+  height: calc(var(--bottom-tab-height) - 12px);
+  align-self: center;
+  min-width: 48px;
+  border: 1px solid rgba(161, 191, 255, 0.52);
+  border-radius: 14px;
+  background: linear-gradient(165deg, rgba(13, 30, 72, 0.98), rgba(7, 22, 54, 0.98));
+  color: #d8e6ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.game-nav-button:focus-visible,
+.game-view-tab:focus-visible {
+  outline: 2px solid rgba(103, 163, 255, 0.95);
+  outline-offset: 1px;
+}
+
+.game-nav-button--home {
+  font-size: 2rem;
+  line-height: 1;
+  padding: 0;
+}
+
 .game-view-tab {
   --tab-fill: rgba(7, 22, 54, 0.98);
   position: relative;
   height: var(--bottom-tab-height);
+  width: 100%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -308,11 +346,6 @@ body {
   transition: border-color 0.2s ease, color 0.2s ease;
 }
 
-.game-view-tab:focus-visible {
-  outline: 2px solid rgba(103, 163, 255, 0.95);
-  outline-offset: 1px;
-}
-
 .game-view-tab--active {
   --tab-fill: rgba(25, 63, 140, 0.96);
   color: #f5f8ff;
@@ -320,8 +353,18 @@ body {
   background: linear-gradient(170deg, rgba(37, 82, 172, 0.95), var(--tab-fill));
 }
 
-.game-view-tab--codex {
-  display: none;
+.game-nav-chevron {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-right: 2px solid currentcolor;
+  border-bottom: 2px solid currentcolor;
+  transform: rotate(-45deg);
+  transition: transform 0.18s ease;
+}
+
+.game-nav-chevron--expanded {
+  transform: rotate(45deg) translateY(-1px);
 }
 
 .game-page--edit-open .game-bottom-tabs {
@@ -331,6 +374,22 @@ body {
 .game-page--edit-open .game-view-tab--edit {
   --tab-fill: rgba(6, 12, 31, 0.97);
   border-color: rgba(132, 168, 245, 0.55);
+}
+
+.game-page--codex-expanded .game-layout {
+  height: 100dvh;
+}
+
+.game-page--codex-expanded .game-codex-panel {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  z-index: 26;
+}
+
+.game-page--codex-expanded .codex-session-view--game {
+  padding-bottom: calc(var(--bottom-tab-height) + 18px);
 }
 
 @keyframes prompt-record-pulse {
@@ -634,64 +693,9 @@ body {
     height: min(var(--game-layout-height), calc(100vw * var(--render-aspect-height) / var(--render-aspect-width)));
   }
 
-  .game-bottom-tabs {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .game-view-tab {
-    width: 100%;
-    margin: 0;
-  }
-
-  .game-view-tab--codex {
-    display: inline-flex;
-    justify-content: center;
-    align-items: center;
-  }
-
-  .game-codex-panel {
-    position: fixed;
-    inset: 0;
-    width: 100vw;
-    max-width: 100vw;
-    min-width: 0;
-    height: 100dvh;
-    z-index: 26;
-    transform: translateY(100%);
-    overflow-x: hidden;
-    pointer-events: none;
-    transition: transform 0.28s ease;
-  }
-
-  .game-page--codex-open .game-codex-panel {
-    transform: translateY(0);
-    pointer-events: auto;
-  }
-
-  .game-page--codex-open .game-bottom-tabs {
-    transform: translateY(calc(-1 * (100dvh - var(--bottom-tab-height))));
-  }
-
-  .game-page--codex-open .game-view-tab--codex {
-    --tab-fill: rgba(9, 17, 40, 0.97);
-    border-color: rgba(132, 168, 245, 0.55);
-  }
-
-  .game-page--codex-open .prompt-panel {
-    transform: translateY(calc(100% + 16px));
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .codex-session-view--game {
-    padding: 14px 14px calc(var(--bottom-tab-height) + 18px);
-  }
-
   .codex-message--user,
   .codex-message--assistant {
     margin-left: 0;
     margin-right: 0;
   }
-
 }
