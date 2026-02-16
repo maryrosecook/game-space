@@ -189,6 +189,7 @@ body {
   border-top: 1px solid rgba(120, 157, 237, 0.38);
   box-shadow: 0 -12px 24px rgba(2, 6, 17, 0.45);
   display: flex;
+  flex-direction: column;
   align-items: stretch;
   transform: translateY(calc(100% + 6px));
   opacity: 0.9;
@@ -207,7 +208,7 @@ body {
   gap: 10px;
   width: 100%;
   min-width: 0;
-  margin-top: auto;
+  margin: 0;
 }
 
 .game-codex-transcript {
@@ -360,7 +361,11 @@ body {
 
 .game-page--codex-expanded .prompt-panel {
   height: calc(100dvh - var(--bottom-tab-height));
-  padding-top: 10px;
+  padding-top: calc(var(--bottom-tab-height) + 10px);
+}
+
+.game-page--codex-expanded .game-bottom-tabs {
+  transform: translateY(calc(-100dvh + var(--bottom-tab-height)));
 }
 
 .game-page--codex-expanded .codex-session-view--game {

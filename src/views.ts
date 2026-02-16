@@ -193,14 +193,6 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
 
   const adminPanelsMarkup = isAdmin
     ? `<section id="prompt-panel" class="prompt-panel" aria-hidden="true" aria-label="Create next version prompt">
-      <section id="game-codex-transcript" class="game-codex-transcript" aria-hidden="true">
-        <header class="game-codex-transcript-header">
-          <h2>Codex Transcript</h2>
-        </header>
-        <section id="game-codex-session-view" class="codex-session-view codex-session-view--game" aria-live="polite">
-          <p class="codex-empty">Loading transcript...</p>
-        </section>
-      </section>
       <form id="prompt-form" class="prompt-form">
         <input
           id="prompt-input"
@@ -222,6 +214,14 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           <span aria-hidden="true">🤖</span>
         </button>
       </form>
+      <section id="game-codex-transcript" class="game-codex-transcript" aria-hidden="true">
+        <header class="game-codex-transcript-header">
+          <h2>Codex Transcript</h2>
+        </header>
+        <section id="game-codex-session-view" class="codex-session-view codex-session-view--game" aria-live="polite">
+          <p class="codex-empty">Loading transcript...</p>
+        </section>
+      </section>
     </section>
 
     <nav class="game-bottom-tabs" aria-label="Game tools">
