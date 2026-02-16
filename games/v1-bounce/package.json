@@ -4,11 +4,9 @@
   "private": true,
   "scripts": {
     "build": "esbuild src/main.ts --bundle --format=esm --platform=browser --target=es2020 --outfile=dist/game.js",
-    "watch": "esbuild src/main.ts --bundle --format=esm --platform=browser --target=es2020 --outfile=dist/game.js --watch",
-    "typecheck": "tsc --noEmit"
+    "watch": "esbuild src/main.ts --bundle --format=esm --platform=browser --target=es2020 --outfile=dist/game.js --watch"
   },
   "devDependencies": {
-    "esbuild": "^0.25.10",
-    "typescript": "^5.6.3"
+    "esbuild": "^0.25.10"
   }
 }

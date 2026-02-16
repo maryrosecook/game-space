@@ -17,6 +17,8 @@ The host page will load and run your game with this fixed contract:
 ## Build/output contract
 - Keep `package.json` scripts compatible with the existing build pipeline.
 - `npm run build` in this directory must output `dist/game.js`.
+- Ensure `package.json` includes a `typecheck` script: `tsc --noEmit`.
+- Ensure `typescript` is present in this game directory's `devDependencies`.
 - Use the existing TypeScript/WebGL/browser setup already present in this game directory.
 
 ## Game design constraints
