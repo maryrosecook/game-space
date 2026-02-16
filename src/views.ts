@@ -117,7 +117,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           <canvas id="game-canvas" aria-label="Game canvas"></canvas>
         </div>
       </section>
-      <aside class="game-codex-panel" aria-label="Codex transcript for this game">
+      <aside id="game-codex-panel" class="game-codex-panel" aria-label="Codex transcript for this game">
         <header class="game-codex-panel-header">
           <h2>Codex Transcript</h2>
         </header>
@@ -127,7 +127,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
       </aside>
     </main>
 
-    <section id="prompt-panel" class="prompt-panel prompt-panel--open" aria-hidden="false" aria-label="Create next version prompt">
+    <section id="prompt-panel" class="prompt-panel" aria-hidden="true" aria-label="Create next version prompt">
       <form id="prompt-form" class="prompt-form">
         <input
           id="prompt-input"
@@ -143,6 +143,27 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         </button>
       </form>
     </section>
+
+    <nav class="game-bottom-tabs" aria-label="Game tools">
+      <button
+        id="game-tab-edit"
+        class="game-view-tab game-view-tab--edit"
+        type="button"
+        aria-controls="prompt-panel"
+        aria-expanded="false"
+      >
+        Edit
+      </button>
+      <button
+        id="game-tab-codex"
+        class="game-view-tab game-view-tab--codex"
+        type="button"
+        aria-controls="game-codex-panel"
+        aria-expanded="false"
+      >
+        Codex
+      </button>
+    </nav>
 
     <script type="module">
       import { startGame } from '/games/${encodedVersionId}/dist/game.js';
