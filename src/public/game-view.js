@@ -6,7 +6,6 @@ const promptInput = document.getElementById('prompt-input');
 const promptRecord = document.getElementById('prompt-record');
 const editTab = document.getElementById('game-tab-edit');
 const codexToggle = document.getElementById('game-codex-toggle');
-const codexChevron = document.getElementById('game-codex-toggle-chevron');
 const codexPanel = document.getElementById('game-codex-panel');
 const gameSessionView = document.getElementById('game-codex-session-view');
 
@@ -17,7 +16,6 @@ if (
   !(promptRecord instanceof HTMLButtonElement) ||
   !(editTab instanceof HTMLButtonElement) ||
   !(codexToggle instanceof HTMLButtonElement) ||
-  !(codexChevron instanceof HTMLElement) ||
   !(codexPanel instanceof HTMLElement) ||
   !(gameSessionView instanceof HTMLElement)
 ) {
@@ -47,7 +45,6 @@ function applyBottomPanelState() {
   editTab.setAttribute('aria-expanded', editPanelOpen ? 'true' : 'false');
 
   codexToggle.setAttribute('aria-expanded', codexPanelExpanded ? 'true' : 'false');
-  codexChevron.classList.toggle('game-nav-chevron--expanded', codexPanelExpanded);
 
   document.body.classList.toggle('game-page--edit-open', editPanelOpen);
   document.body.classList.toggle('game-page--codex-expanded', codexPanelExpanded);
