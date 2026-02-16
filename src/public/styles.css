@@ -21,10 +21,14 @@ body {
   min-height: 100vh;
 }
 
+.homepage {
+  overflow-x: hidden;
+}
+
 .homepage-shell {
-  max-width: 1040px;
+  width: min(100%, 1040px);
   margin: 0 auto;
-  padding: 24px;
+  padding: clamp(14px, 4vw, 24px);
 }
 
 .page-header {
@@ -35,12 +39,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
 }
 
 .page-header h1 {
   margin: 0;
-  font-size: 2rem;
+  font-size: clamp(2rem, 8vw, 3rem);
   letter-spacing: 0.04em;
 }
 
@@ -59,14 +64,18 @@ body {
 
 .game-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
   gap: 14px;
+  min-width: 0;
 }
 
 .game-tile {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   text-decoration: none;
   color: #e9f2ff;
   padding: 12px;
@@ -87,16 +96,26 @@ body {
 .tile-id {
   font-size: 1.05rem;
   font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .tile-created {
   font-size: 0.82rem;
   color: #becfff;
+  overflow-wrap: anywhere;
 }
 
 .empty-state {
   margin-top: 32px;
   color: #cfdbff;
+}
+
+@media (max-width: 520px) {
+  .page-header--with-auth {
+    align-items: flex-start;
+  }
 }
 
 .game-page {
@@ -312,26 +331,6 @@ body {
 .game-page--edit-open .game-view-tab--edit {
   --tab-fill: rgba(6, 12, 31, 0.97);
   border-color: rgba(132, 168, 245, 0.55);
-}
-
-.game-admin-notice {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  z-index: 20;
-  background: rgba(6, 14, 34, 0.92);
-  border: 1px solid rgba(126, 163, 244, 0.5);
-  border-radius: 999px;
-  padding: 10px 14px;
-  color: #d7e7ff;
-  font-size: 0.86rem;
-}
-
-.game-admin-notice p {
-  margin: 0;
 }
 
 @keyframes prompt-record-pulse {
@@ -695,10 +694,4 @@ body {
     margin-right: 0;
   }
 
-  .game-admin-notice {
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
-    justify-content: space-between;
-  }
 }

@@ -267,7 +267,7 @@ describe('express app integration', () => {
     await createGameFixture({
       gamesRootPath,
       metadata: {
-        id: 'older',
+        id: 'older-build',
         parentId: null,
         createdTime: '2026-01-01T00:00:00.000Z'
       }
@@ -276,8 +276,8 @@ describe('express app integration', () => {
     await createGameFixture({
       gamesRootPath,
       metadata: {
-        id: 'newer',
-        parentId: 'older',
+        id: 'newer-game',
+        parentId: 'older-build',
         createdTime: '2026-02-01T00:00:00.000Z'
       }
     });
@@ -288,9 +288,16 @@ describe('express app integration', () => {
     });
 
     const homepage = await request(app).get('/').set('Host', TEST_HOST).expect(200);
+    expect(homepage.text).toContain('<title>Infinity</title>');
+    expect(homepage.text).toContain('<h1>Infinity</h1>');
     expect(homepage.text).toContain('>Login<');
-    const newerIndex = homepage.text.indexOf('data-version-id="newer"');
-    const olderIndex = homepage.text.indexOf('data-version-id="older"');
+    expect(homepage.text).toContain('>newer game<');
+    expect(homepage.text).not.toContain('>newer-game<');
+    expect(homepage.text).toContain('>February, 2026<');
+    expect(homepage.text).toContain('>January, 2026<');
+    expect(homepage.text).not.toMatch(/<span class="tile-created">[^<]*\d{1,2}:\d{2}/);
+    const newerIndex = homepage.text.indexOf('data-version-id="newer-game"');
+    const olderIndex = homepage.text.indexOf('data-version-id="older-build"');
     expect(newerIndex).toBeGreaterThan(-1);
     expect(olderIndex).toBeGreaterThan(newerIndex);
 
@@ -303,7 +310,7 @@ describe('express app integration', () => {
     expect(adminHomepage.text).toContain('>Auth<');
 
     const css = await request(app).get('/public/styles.css').expect(200);
-    expect(css.text).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
+    expect(css.text).toContain('grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));');
     expect(css.text).toContain('--render-aspect-width: 9;');
     expect(css.text).toContain('--bottom-tab-height: 68px;');
     expect(css.text).toContain('--game-layout-height: calc(100dvh - var(--bottom-tab-height));');
@@ -565,7 +572,8 @@ describe('express app integration', () => {
     });
 
     const publicView = await request(app).get('/game/v1').set('Host', TEST_HOST).expect(200);
-    expect(publicView.text).toContain('Prompt editing and Codex transcripts require admin login.');
+    expect(publicView.text).not.toContain('Prompt editing and Codex transcripts require admin login.');
+    expect(publicView.text).not.toContain('game-admin-notice');
     expect(publicView.text).not.toContain('id="prompt-panel"');
     expect(publicView.text).not.toContain('id="game-tab-codex"');
     expect(publicView.text).not.toContain('/public/game-view.js');

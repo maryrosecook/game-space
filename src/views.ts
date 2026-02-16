@@ -9,9 +9,24 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
-function formatDate(value: string): string {
+function formatDateTime(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function formatMonthYear(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const month = date.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+  const year = date.toLocaleString('en-US', { year: 'numeric', timeZone: 'UTC' });
+  return `${month}, ${year}`;
+}
+
+function formatHomepageVersionName(versionId: string): string {
+  return versionId.replaceAll('-', ' ');
 }
 
 type HomepageRenderOptions = {
@@ -24,11 +39,12 @@ export function renderHomepage(versions: readonly GameVersion[], options: Homepa
   const tiles = versions
     .map((version) => {
       const id = escapeHtml(version.id);
+      const displayId = escapeHtml(formatHomepageVersionName(version.id));
       const createdTime = escapeHtml(version.createdTime);
       return `
         <a class="game-tile" href="/game/${encodeURIComponent(version.id)}" data-version-id="${id}" data-created-time="${createdTime}">
-          <span class="tile-id">${id}</span>
-          <span class="tile-created">${escapeHtml(formatDate(version.createdTime))}</span>
+          <span class="tile-id">${displayId}</span>
+          <span class="tile-created">${escapeHtml(formatMonthYear(version.createdTime))}</span>
         </a>
       `;
     })
@@ -44,13 +60,13 @@ export function renderHomepage(versions: readonly GameVersion[], options: Homepa
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Game Space</title>
+    <title>Infinity</title>
     <link rel="stylesheet" href="/public/styles.css" />
   </head>
   <body class="homepage">
     <main class="homepage-shell">
       <header class="page-header page-header--with-auth">
-        <h1>Game Space</h1>
+        <h1>Infinity</h1>
         <a class="auth-link" href="/auth">${authLabel}</a>
       </header>
       ${content}
@@ -63,7 +79,7 @@ export function renderCodexView(versions: readonly GameVersion[]): string {
   const options = versions
     .map((version) => {
       const id = escapeHtml(version.id);
-      const createdLabel = escapeHtml(formatDate(version.createdTime));
+      const createdLabel = escapeHtml(formatDateTime(version.createdTime));
       return `<option value="${id}">${id} (${createdLabel})</option>`;
     })
     .join('');
@@ -224,10 +240,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         Codex
       </button>
     </nav>`
-    : `<section class="game-admin-notice" aria-live="polite">
-      <p>Prompt editing and Codex transcripts require admin login.</p>
-      <a class="auth-link" href="/auth">Login</a>
-    </section>`;
+    : '';
 
   const gameViewScriptMarkup = isAdmin ? '\n    <script type="module" src="/public/game-view.js"></script>' : '';
 
