@@ -146,7 +146,13 @@ describe('express app integration', () => {
     const css = await request(app).get('/public/styles.css').expect(200);
     expect(css.text).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
     expect(css.text).toContain('--render-aspect-width: 9;');
-    expect(css.text).toContain('--game-layout-height: calc(100vh - var(--prompt-panel-height));');
+    expect(css.text).toContain('--bottom-tab-height: 68px;');
+    expect(css.text).toContain('--game-layout-height: calc(100dvh - var(--bottom-tab-height));');
+    expect(css.text).toContain('border-radius: 18px 18px 0 0;');
+    expect(css.text).toContain('overflow-wrap: anywhere;');
+    expect(css.text).toContain('.game-page--edit-open .game-bottom-tabs');
+    expect(css.text).not.toContain('border-bottom-left-radius: 0;');
+    expect(css.text).not.toContain('border-bottom-right-radius: 0;');
     expect(css.text).toContain(
       'width: min(100%, calc(var(--game-layout-height) * var(--render-aspect-width) / var(--render-aspect-height)));'
     );
@@ -168,7 +174,7 @@ describe('express app integration', () => {
     expect(refreshedHomepage.text).toContain('data-version-id="newest"');
   });
 
-  it('renders game view with an always-open prompt bar and record button', async () => {
+  it('renders game view with bottom Edit/Codex tabs and a hidden prompt drawer', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-app-game-');
     const gamesRootPath = path.join(tempDirectoryPath, 'games');
     await fs.mkdir(gamesRootPath, { recursive: true });
@@ -194,8 +200,12 @@ describe('express app integration', () => {
     expect(gameView.text).toContain('class="game-codex-panel"');
     expect(gameView.text).toContain('id="game-codex-session-view"');
     expect(gameView.text).toContain('id="prompt-panel"');
-    expect(gameView.text).toContain('prompt-panel--open');
+    expect(gameView.text).toContain('aria-hidden="true"');
     expect(gameView.text).toContain('id="prompt-record"');
+    expect(gameView.text).toContain('id="game-tab-edit"');
+    expect(gameView.text).toContain('id="game-tab-codex"');
+    expect(gameView.text).toContain('Edit');
+    expect(gameView.text).toContain('Codex');
     expect(gameView.text).toContain('Record');
     expect(gameView.text).not.toContain('id="edit-button"');
     expect(gameView.text).not.toContain('id="prompt-close"');

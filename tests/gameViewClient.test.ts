@@ -112,6 +112,15 @@ class TestHTMLInputElement extends TestHTMLElement {
   public value = '';
 }
 
+class TestBodyElement extends TestHTMLElement {
+  public readonly dataset: { versionId?: string };
+
+  constructor(versionId: string) {
+    super();
+    this.dataset = { versionId };
+  }
+}
+
 type TestSpeechRecognitionResultEvent = {
   results: Array<Array<{ transcript: string }>>;
 };
@@ -149,16 +158,12 @@ class TestSpeechRecognition {
 }
 
 class TestDocument extends TestEventTarget {
-  public readonly body: { dataset: { versionId?: string } };
+  public readonly body: TestBodyElement;
   private readonly elements = new Map<string, unknown>();
 
   constructor(versionId: string) {
     super();
-    this.body = {
-      dataset: {
-        versionId
-      }
-    };
+    this.body = new TestBodyElement(versionId);
   }
 
   registerElement(id: string, element: unknown): void {
@@ -173,6 +178,9 @@ class TestDocument extends TestEventTarget {
 type GameViewHarness = {
   fetchCalls: FetchCall[];
   assignCalls: string[];
+  body: TestBodyElement;
+  editTab: TestHTMLButtonElement;
+  codexTab: TestHTMLButtonElement;
   promptForm: TestHTMLFormElement;
   promptInput: TestHTMLInputElement;
   promptPanel: TestHTMLElement;
@@ -182,6 +190,7 @@ type GameViewHarness = {
 
 type RunGameViewOptions = {
   withSpeechRecognition?: boolean;
+  mobileViewport?: boolean;
 };
 
 function createEvent(overrides: Partial<TestEvent> = {}): TestEvent {
@@ -202,10 +211,14 @@ async function runGameViewScript(
   options: RunGameViewOptions = {}
 ): Promise<GameViewHarness> {
   const withSpeechRecognition = options.withSpeechRecognition ?? true;
+  const mobileViewport = options.mobileViewport ?? false;
   const promptPanel = new TestHTMLElement();
   const promptForm = new TestHTMLFormElement();
   const promptInput = new TestHTMLInputElement();
   const promptRecord = new TestHTMLButtonElement();
+  const editTab = new TestHTMLButtonElement();
+  const codexTab = new TestHTMLButtonElement();
+  const codexPanel = new TestHTMLElement();
   promptRecord.textContent = 'Record';
   const gameSessionView = new TestHTMLElement();
 
@@ -214,6 +227,9 @@ async function runGameViewScript(
   document.registerElement('prompt-form', promptForm);
   document.registerElement('prompt-input', promptInput);
   document.registerElement('prompt-record', promptRecord);
+  document.registerElement('game-tab-edit', editTab);
+  document.registerElement('game-tab-codex', codexTab);
+  document.registerElement('game-codex-panel', codexPanel);
   document.registerElement('game-codex-session-view', gameSessionView);
 
   const fetchCalls: FetchCall[] = [];
@@ -226,10 +242,16 @@ async function runGameViewScript(
       callback();
       return 1;
     },
+    addEventListener() {},
     location: {
       assign(url: string): void {
         assignCalls.push(url);
       }
+    },
+    matchMedia() {
+      return {
+        matches: mobileViewport
+      };
     },
     SpeechRecognition: withSpeechRecognition ? TestSpeechRecognition : undefined
   };
@@ -269,6 +291,9 @@ async function runGameViewScript(
   return {
     fetchCalls,
     assignCalls,
+    body: document.body,
+    editTab,
+    codexTab,
     promptForm,
     promptInput,
     promptPanel,
@@ -286,6 +311,7 @@ describe('game view prompt submit client', () => {
       }
     }));
 
+    harness.editTab.dispatchEvent('click', createEvent());
     harness.promptInput.value = 'darken the ball';
     harness.promptForm.dispatchEvent('submit', createEvent());
     await flushAsyncOperations();
@@ -304,6 +330,7 @@ describe('game view prompt submit client', () => {
     expect(harness.assignCalls).toEqual(['/game/pebble-iris-dawn']);
     expect(harness.promptInput.value).toBe('');
     expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
+    expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(true);
   });
 
   it('does not redirect when prompt submit response is missing fork id', async () => {
@@ -314,6 +341,7 @@ describe('game view prompt submit client', () => {
       }
     }));
 
+    harness.editTab.dispatchEvent('click', createEvent());
     harness.promptInput.value = 'add gravity';
     harness.promptForm.dispatchEvent('submit', createEvent());
     await flushAsyncOperations();
@@ -330,6 +358,7 @@ describe('game view prompt submit client', () => {
       }
     }));
 
+    harness.editTab.dispatchEvent('click', createEvent());
     harness.promptInput.value = 'make';
     harness.promptRecord.dispatchEvent('click', createEvent());
     expect(harness.speechRecognitions).toHaveLength(1);
@@ -361,5 +390,45 @@ describe('game view prompt submit client', () => {
     );
 
     expect(harness.promptRecord.disabled).toBe(true);
+  });
+
+  it('toggles the edit panel open and closed from the bottom Edit tab', async () => {
+    const harness = await runGameViewScript(async () => ({
+      ok: true,
+      async json() {
+        return { forkId: 'unused' };
+      }
+    }));
+
+    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('true');
+    expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(false);
+
+    harness.editTab.dispatchEvent('click', createEvent());
+    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
+    expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(true);
+
+    harness.editTab.dispatchEvent('click', createEvent());
+    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('true');
+    expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(false);
+  });
+
+  it('opens the mobile Codex panel from the Codex tab', async () => {
+    const harness = await runGameViewScript(
+      async () => ({
+        ok: true,
+        async json() {
+          return { forkId: 'unused' };
+        }
+      }),
+      { mobileViewport: true }
+    );
+
+    expect(harness.body.classList.contains('game-page--codex-open')).toBe(false);
+    expect(harness.codexTab.classList.contains('game-view-tab--active')).toBe(false);
+
+    harness.codexTab.dispatchEvent('click', createEvent());
+    expect(harness.body.classList.contains('game-page--codex-open')).toBe(true);
+    expect(harness.codexTab.classList.contains('game-view-tab--active')).toBe(true);
+    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('true');
   });
 });
