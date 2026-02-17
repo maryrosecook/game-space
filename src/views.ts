@@ -266,6 +266,32 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
 
     ${adminPanelsMarkup}
 
+    <script>
+      (() => {
+        let lastTouchEndAt = 0;
+
+        document.addEventListener(
+          'touchend',
+          (event) => {
+            const now = Date.now();
+            if (now - lastTouchEndAt <= 300) {
+              event.preventDefault();
+            }
+            lastTouchEndAt = now;
+          },
+          { passive: false }
+        );
+
+        document.addEventListener(
+          'dblclick',
+          (event) => {
+            event.preventDefault();
+          },
+          { passive: false }
+        );
+      })();
+    </script>
+
     <script type="module">
       import { startGame } from '/games/${encodedVersionId}/dist/game.js';
       const canvas = document.getElementById('game-canvas');
