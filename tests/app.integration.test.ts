@@ -579,6 +579,8 @@ describe('express app integration', () => {
     expect(publicView.text).not.toContain('id="game-codex-transcript"');
     expect(publicView.text).not.toContain('/public/game-view.js');
     expect(publicView.text).toContain('/public/game-live-reload.js');
+    expect(publicView.text).toContain("'touchend'");
+    expect(publicView.text).toContain("'dblclick'");
 
     const authSession = await loginAsAdmin(app);
     const adminView = await request(app)
