@@ -36,7 +36,8 @@ describe('createForkedGameVersion', () => {
       id: 'fork-game',
       parentId: 'source-game',
       createdTime: '2026-03-02T00:00:00.000Z',
-      codexSessionId: null
+      codexSessionId: null,
+      codexSessionStatus: 'none'
     });
 
     const forkMetadata = await readMetadataFile(path.join(gamesRootPath, 'fork-game', 'metadata.json'));
@@ -68,7 +69,8 @@ describe('createForkedGameVersion', () => {
       id: 'source-game',
       parentId: null,
       createdTime: '2026-02-01T00:00:00.000Z',
-      codexSessionId: null
+      codexSessionId: null,
+      codexSessionStatus: 'none'
     });
   });
 

@@ -378,6 +378,38 @@ body {
   transition: border-color 0.2s ease, color 0.2s ease;
 }
 
+.game-view-tab--edit {
+  gap: 16px;
+}
+
+.game-view-tab-label {
+  display: inline-block;
+}
+
+.game-view-tab-spinner {
+  display: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  border-top-color: #f7f9ff;
+}
+
+.game-view-tab--generating .game-view-tab-spinner {
+  display: inline-block;
+  animation: game-tab-spinner-rotate 0.8s linear infinite;
+}
+
+@keyframes game-tab-spinner-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .game-view-tab--active {
   --tab-fill: rgba(25, 63, 140, 0.96);
   color: #f5f8ff;
@@ -698,5 +730,11 @@ body {
   .codex-message--assistant {
     margin-left: 0;
     margin-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-view-tab--generating .game-view-tab-spinner {
+    animation: none;
   }
 }

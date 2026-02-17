@@ -15,6 +15,7 @@ import {
 import { readCodexTranscriptBySessionId } from './services/codexSessions';
 import { ensureCsrfToken, isCsrfRequestValid, issueCsrfToken, requireValidCsrfMiddleware } from './services/csrf';
 import { reloadTokenPath } from './services/devLiveReload';
+import { getCodexTurnInfo } from './services/codexTurnInfo';
 import { pathExists } from './services/fsUtils';
 import { buildAllGames } from './services/gameBuildPipeline';
 import { requireRuntimeGameAssetPathMiddleware } from './services/gameAssetAllowlist';
@@ -32,10 +33,12 @@ import {
   isSafeVersionId,
   listGameVersions,
   readMetadataFile,
+  resolveCodexSessionStatus,
   writeMetadataFile
 } from './services/gameVersions';
 import { renderAuthView, renderCodexView, renderGameView, renderHomepage } from './views';
 import { OpenAiAudioTranscriber, type OpenAiTranscriber } from './services/openaiTranscription';
+import type { CodexSessionStatus } from './types';
 
 type ErrorLogger = (message: string, error: unknown) => void;
 
@@ -285,11 +288,23 @@ export function createApp(options: AppOptions = {}): express.Express {
         return;
       }
 
+      const codexSessionStatus = resolveCodexSessionStatus(
+        metadata.codexSessionId ?? null,
+        metadata.codexSessionStatus
+      );
+      const turnInfo = await getCodexTurnInfo({
+        repoRootPath,
+        worktreePath: gameDirectoryPath(gamesRootPath, versionId),
+        sessionsRootPath: codexSessionsRootPath,
+        codexSessionStatus
+      });
       const codexSessionId = metadata.codexSessionId ?? null;
       if (!codexSessionId) {
         response.status(200).json({
           status: 'no-session',
-          versionId
+          versionId,
+          codexSessionStatus,
+          eyeState: turnInfo.eyeState
         });
         return;
       }
@@ -299,7 +314,9 @@ export function createApp(options: AppOptions = {}): express.Express {
         response.status(200).json({
           status: 'session-file-missing',
           versionId,
-          sessionId: codexSessionId
+          sessionId: codexSessionId,
+          codexSessionStatus,
+          eyeState: turnInfo.eyeState
         });
         return;
       }
@@ -308,7 +325,10 @@ export function createApp(options: AppOptions = {}): express.Express {
         status: 'ok',
         versionId,
         sessionId: codexSessionId,
-        messages
+        messages,
+        codexSessionStatus,
+        eyeState: turnInfo.eyeState,
+        latestAssistantMessage: turnInfo.latestAssistantMessage
       });
     } catch (error: unknown) {
       next(error);
@@ -372,6 +392,10 @@ export function createApp(options: AppOptions = {}): express.Express {
       const forkDirectoryPath = path.join(gamesRootPath, forkedMetadata.id);
       const forkMetadataPath = path.join(forkDirectoryPath, 'metadata.json');
       let lastPersistedSessionId: string | null = null;
+      let lastPersistedSessionStatus = resolveCodexSessionStatus(
+        forkedMetadata.codexSessionId ?? null,
+        forkedMetadata.codexSessionStatus
+      );
 
       async function persistSessionId(sessionId: string | null): Promise<void> {
         if (!sessionId || sessionId === lastPersistedSessionId) {
@@ -385,10 +409,29 @@ export function createApp(options: AppOptions = {}): express.Express {
 
         await writeMetadataFile(forkMetadataPath, {
           ...currentMetadata,
-          codexSessionId: sessionId
+          codexSessionId: sessionId,
+          codexSessionStatus: resolveCodexSessionStatus(sessionId, currentMetadata.codexSessionStatus)
         });
 
         lastPersistedSessionId = sessionId;
+      }
+
+      async function persistSessionStatus(codexSessionStatus: CodexSessionStatus): Promise<void> {
+        if (codexSessionStatus === lastPersistedSessionStatus) {
+          return;
+        }
+
+        const currentMetadata = await readMetadataFile(forkMetadataPath);
+        if (!currentMetadata) {
+          throw new Error(`Fork metadata missing while storing session status for ${forkedMetadata.id}`);
+        }
+
+        await writeMetadataFile(forkMetadataPath, {
+          ...currentMetadata,
+          codexSessionStatus
+        });
+
+        lastPersistedSessionStatus = codexSessionStatus;
       }
 
       function persistSessionIdInBackground(sessionId: string): void {
@@ -403,6 +446,8 @@ export function createApp(options: AppOptions = {}): express.Express {
         }
       };
 
+      await persistSessionStatus('created');
+
       void codexRunner
         .run(fullPrompt, forkDirectoryPath, runOptions)
         .then(async (runResult) => {
@@ -412,11 +457,29 @@ export function createApp(options: AppOptions = {}): express.Express {
             logError(`Failed to store codex session id for ${forkedMetadata.id}`, error);
           }
 
-          if (!runResult.success && runResult.failureMessage) {
-            logError(`codex exec failed for ${forkedMetadata.id}`, new Error(runResult.failureMessage));
+          if (!runResult.success) {
+            try {
+              await persistSessionStatus('error');
+            } catch (error: unknown) {
+              logError(`Failed to store codex session status for ${forkedMetadata.id}`, error);
+            }
+
+            if (runResult.failureMessage) {
+              logError(`codex exec failed for ${forkedMetadata.id}`, new Error(runResult.failureMessage));
+            }
+            return;
+          }
+
+          try {
+            await persistSessionStatus('stopped');
+          } catch (error: unknown) {
+            logError(`Failed to store codex session status for ${forkedMetadata.id}`, error);
           }
         })
         .catch((error) => {
+          void persistSessionStatus('error').catch((statusError: unknown) => {
+            logError(`Failed to store codex session status for ${forkedMetadata.id}`, statusError);
+          });
           logError(`codex exec failed for ${forkedMetadata.id}`, error);
         });
 

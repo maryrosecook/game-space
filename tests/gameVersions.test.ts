@@ -49,6 +49,7 @@ describe('game version discovery', () => {
     });
 
     expect(normalized?.codexSessionId).toBeNull();
+    expect(normalized?.codexSessionStatus).toBe('none');
     expect(normalized?.createdTime).toBe('2026-02-01T17:00:00.000Z');
     expect(
       parseGameMetadata({
@@ -71,7 +72,8 @@ describe('game version discovery', () => {
       id: 'v2',
       parentId: 'v1',
       createdTime: '2026-02-02T00:00:00.000Z',
-      codexSessionId: '019c48a7-3918-7123-bc60-0d7cddb4d5d4'
+      codexSessionId: '019c48a7-3918-7123-bc60-0d7cddb4d5d4',
+      codexSessionStatus: 'stopped'
     });
 
     expect(
@@ -82,6 +84,38 @@ describe('game version discovery', () => {
         codexSessionId: 42
       })
     ).toBeNull();
+  });
+
+  it('accepts explicit codex session lifecycle status values', () => {
+    expect(
+      parseGameMetadata({
+        id: 'v3',
+        parentId: 'v2',
+        createdTime: '2026-02-03T00:00:00.000Z',
+        codexSessionStatus: 'created'
+      })
+    ).toEqual({
+      id: 'v3',
+      parentId: 'v2',
+      createdTime: '2026-02-03T00:00:00.000Z',
+      codexSessionId: null,
+      codexSessionStatus: 'created'
+    });
+
+    expect(
+      parseGameMetadata({
+        id: 'v3',
+        parentId: null,
+        createdTime: '2026-02-03T00:00:00.000Z',
+        codexSessionStatus: 'invalid-status'
+      })
+    ).toEqual({
+      id: 'v3',
+      parentId: null,
+      createdTime: '2026-02-03T00:00:00.000Z',
+      codexSessionId: null,
+      codexSessionStatus: 'none'
+    });
   });
 
   it('accepts safe version ids and rejects dot-segment ids', () => {

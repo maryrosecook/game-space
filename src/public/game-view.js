@@ -26,6 +26,7 @@ const versionId = document.body.dataset.versionId;
 const csrfToken = document.body.dataset.csrfToken;
 const transcriptPresenter = createCodexTranscriptPresenter(gameSessionView);
 const transcriptPollIntervalMs = 2000;
+const generatingClassName = 'game-view-tab--generating';
 let transcriptStatusKey = '';
 let transcriptSignature = '';
 let transcriptRequestInFlight = false;
@@ -237,6 +238,25 @@ function showTranscriptState(statusKey, title, description) {
   transcriptSignature = '';
 }
 
+function parseEyeState(value) {
+  if (value === 'stopped' || value === 'idle' || value === 'generating' || value === 'error') {
+    return value;
+  }
+
+  return null;
+}
+
+function applyEyeState(eyeState) {
+  const isGenerating = eyeState === 'generating';
+  if (isGenerating) {
+    editTab.classList.add(generatingClassName);
+  } else {
+    editTab.classList.remove(generatingClassName);
+  }
+
+  editTab.setAttribute('aria-busy', isGenerating ? 'true' : 'false');
+}
+
 function buildTranscriptSignature(sessionId, messages) {
   const lastMessage = messages[messages.length - 1];
   const lastRole = typeof lastMessage?.role === 'string' ? lastMessage.role : '';
@@ -282,6 +302,11 @@ async function loadGameTranscript() {
     if (!payload || typeof payload !== 'object' || typeof payload.status !== 'string') {
       showTranscriptState('invalid-shape', 'Session unavailable', 'Unexpected response shape.');
       return;
+    }
+
+    const eyeState = parseEyeState(payload.eyeState);
+    if (eyeState) {
+      applyEyeState(eyeState);
     }
 
     if (payload.status === 'no-session') {
@@ -397,10 +422,11 @@ promptInput.addEventListener('keydown', (event) => {
   }
 });
 
+applyEyeState('stopped');
+
 updateRecordButtonVisualState();
 
 recordButton.addEventListener('click', () => {
   toggleRecording();
 });
-
 startTranscriptPolling();

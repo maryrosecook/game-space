@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   findCodexSessionFilePath,
+  parseCodexTaskLifecycleEvent,
   parseCodexTranscriptJsonl,
   readCodexTranscriptBySessionId
 } from '../src/services/codexSessions';
@@ -31,6 +32,37 @@ describe('codex session transcript services', () => {
         timestamp: '2026-02-10T10:00:01.000Z'
       }
     ]);
+  });
+
+  it('parses task lifecycle events from JSONL entries', () => {
+    expect(
+      parseCodexTaskLifecycleEvent({
+        timestamp: '2026-02-10T10:00:00.000Z',
+        type: 'event_msg',
+        payload: { type: 'task_started', turn_id: 'turn-1' }
+      })
+    ).toEqual({
+      state: 'started',
+      timestamp: '2026-02-10T10:00:00.000Z'
+    });
+
+    expect(
+      parseCodexTaskLifecycleEvent({
+        timestamp: '2026-02-10T10:00:01.000Z',
+        type: 'event_msg',
+        payload: { type: 'task_complete', turn_id: 'turn-1' }
+      })
+    ).toEqual({
+      state: 'terminal',
+      timestamp: '2026-02-10T10:00:01.000Z'
+    });
+
+    expect(
+      parseCodexTaskLifecycleEvent({
+        type: 'event_msg',
+        payload: { type: 'token_count' }
+      })
+    ).toBeNull();
   });
 
   it('finds and reads transcript by session id from the codex sessions tree', async () => {

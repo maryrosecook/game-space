@@ -2,9 +2,24 @@ import { type Dirent, promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { hasErrorCode, isObjectRecord } from './fsUtils';
-import type { GameMetadata, GameVersion } from '../types';
+import type { CodexSessionStatus, GameMetadata, GameVersion } from '../types';
 
 const safeVersionIdPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+
+function isCodexSessionStatus(value: unknown): value is CodexSessionStatus {
+  return value === 'none' || value === 'created' || value === 'stopped' || value === 'error';
+}
+
+export function resolveCodexSessionStatus(
+  codexSessionId: string | null,
+  codexSessionStatus: unknown
+): CodexSessionStatus {
+  if (isCodexSessionStatus(codexSessionStatus)) {
+    return codexSessionStatus;
+  }
+
+  return codexSessionId ? 'stopped' : 'none';
+}
 
 export function isSafeVersionId(versionId: string): boolean {
   return safeVersionIdPattern.test(versionId) && !versionId.includes('..');
@@ -15,7 +30,7 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     return null;
   }
 
-  const { id, parentId, createdTime, codexSessionId } = value;
+  const { id, parentId, createdTime, codexSessionId, codexSessionStatus } = value;
   if (typeof id !== 'string' || id.length === 0) {
     return null;
   }
@@ -38,12 +53,14 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
   }
 
   const normalizedSessionId = typeof codexSessionId === 'string' && codexSessionId.trim().length > 0 ? codexSessionId : null;
+  const normalizedSessionStatus = resolveCodexSessionStatus(normalizedSessionId, codexSessionStatus);
 
   return {
     id,
     parentId,
     createdTime: new Date(createdTimestamp).toISOString(),
-    codexSessionId: normalizedSessionId
+    codexSessionId: normalizedSessionId,
+    codexSessionStatus: normalizedSessionStatus
   };
 }
 
@@ -83,7 +100,8 @@ export async function readMetadataFile(metadataPath: string): Promise<GameMetada
 export async function writeMetadataFile(metadataPath: string, metadata: GameMetadata): Promise<void> {
   const normalizedMetadata: GameMetadata = {
     ...metadata,
-    codexSessionId: metadata.codexSessionId ?? null
+    codexSessionId: metadata.codexSessionId ?? null,
+    codexSessionStatus: resolveCodexSessionStatus(metadata.codexSessionId ?? null, metadata.codexSessionStatus)
   };
   await fs.writeFile(metadataPath, `${JSON.stringify(normalizedMetadata, null, 2)}\n`, 'utf8');
 }

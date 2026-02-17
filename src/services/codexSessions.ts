@@ -11,6 +11,21 @@ export type CodexTranscriptMessage = {
   timestamp: string | null;
 };
 
+export type CodexTaskLifecycleState = 'started' | 'terminal';
+
+export type CodexTaskLifecycleEvent = {
+  state: CodexTaskLifecycleState;
+  timestamp: string | null;
+};
+
+const TERMINAL_TASK_EVENT_TYPES = new Set<string>([
+  'task_complete',
+  'task_failed',
+  'task_error',
+  'task_cancelled',
+  'task_canceled'
+]);
+
 function isTranscriptRole(value: unknown): value is CodexTranscriptRole {
   return value === 'user' || value === 'assistant';
 }
@@ -44,7 +59,7 @@ function normalizeMessageText(content: unknown): string {
   return segments.join('\n\n').trim();
 }
 
-function parseTranscriptEvent(rawEvent: unknown): CodexTranscriptMessage | null {
+export function parseCodexResponseMessageEvent(rawEvent: unknown): CodexTranscriptMessage | null {
   if (!isObjectRecord(rawEvent) || rawEvent.type !== 'response_item' || !('payload' in rawEvent)) {
     return null;
   }
@@ -70,6 +85,33 @@ function parseTranscriptEvent(rawEvent: unknown): CodexTranscriptMessage | null 
   };
 }
 
+export function parseCodexTaskLifecycleEvent(rawEvent: unknown): CodexTaskLifecycleEvent | null {
+  if (!isObjectRecord(rawEvent) || rawEvent.type !== 'event_msg' || !('payload' in rawEvent)) {
+    return null;
+  }
+
+  const payload = rawEvent.payload;
+  if (!isObjectRecord(payload) || typeof payload.type !== 'string') {
+    return null;
+  }
+
+  if (payload.type === 'task_started') {
+    return {
+      state: 'started',
+      timestamp: typeof rawEvent.timestamp === 'string' ? rawEvent.timestamp : null
+    };
+  }
+
+  if (!TERMINAL_TASK_EVENT_TYPES.has(payload.type)) {
+    return null;
+  }
+
+  return {
+    state: 'terminal',
+    timestamp: typeof rawEvent.timestamp === 'string' ? rawEvent.timestamp : null
+  };
+}
+
 export function parseCodexTranscriptJsonl(jsonlText: string): CodexTranscriptMessage[] {
   const messages: CodexTranscriptMessage[] = [];
   const lines = jsonlText.split('\n');
@@ -87,7 +129,7 @@ export function parseCodexTranscriptJsonl(jsonlText: string): CodexTranscriptMes
       continue;
     }
 
-    const message = parseTranscriptEvent(parsedLine);
+    const message = parseCodexResponseMessageEvent(parsedLine);
     if (message) {
       messages.push(message);
     }

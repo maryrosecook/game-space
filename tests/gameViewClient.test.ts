@@ -149,10 +149,12 @@ type GameViewHarness = {
   promptForm: TestHTMLFormElement;
   promptInput: TestHTMLInputElement;
   promptPanel: TestHTMLElement;
+  intervalCallbacks: Array<() => void>;
 };
 
 type RunGameViewOptions = {
   csrfToken?: string | undefined;
+  startTranscriptPolling?: boolean;
 };
 
 function createEvent(overrides: Partial<TestEvent> = {}): TestEvent {
@@ -173,6 +175,7 @@ async function runGameViewScript(
   options: RunGameViewOptions = {}
 ): Promise<GameViewHarness> {
   const csrfToken = Object.hasOwn(options, 'csrfToken') ? options.csrfToken : 'csrf-token-123';
+  const startTranscriptPolling = options.startTranscriptPolling ?? false;
   const promptPanel = new TestHTMLElement();
   const promptForm = new TestHTMLFormElement();
   const promptInput = new TestHTMLInputElement();
@@ -194,17 +197,29 @@ async function runGameViewScript(
 
   const fetchCalls: FetchCall[] = [];
   const assignCalls: string[] = [];
+  const intervalCallbacks: Array<() => void> = [];
 
   const window = {
     requestAnimationFrame(callback: () => void): number {
       callback();
       return 1;
     },
-    addEventListener() {},
     location: {
       assign(url: string): void {
         assignCalls.push(url);
       }
+    },
+    setInterval(callback: () => void): number {
+      intervalCallbacks.push(callback);
+      callback();
+      return intervalCallbacks.length;
+    },
+    clearInterval(id: number): void {
+      void id;
+    },
+    addEventListener(event: string, listener: () => void): void {
+      void event;
+      void listener;
     }
   };
 
@@ -215,7 +230,7 @@ async function runGameViewScript(
       "import { createCodexTranscriptPresenter } from './codex-transcript-presenter.js';\n\n",
       ''
     )
-    .replace('\nstartTranscriptPolling();\n', '\n');
+    .replace('\nstartTranscriptPolling();\n', startTranscriptPolling ? '\nstartTranscriptPolling();\n' : '\n');
 
   const context = {
     document,
@@ -249,7 +264,8 @@ async function runGameViewScript(
     codexToggle,
     promptForm,
     promptInput,
-    promptPanel
+    promptPanel,
+    intervalCallbacks
   };
 }
 
@@ -328,10 +344,6 @@ describe('game view prompt submit client', () => {
     expect(harness.assignCalls).toHaveLength(0);
   });
 
-
-
-
-
   it('toggles the edit panel open and closed from the bottom Edit tab', async () => {
     const harness = await runGameViewScript(async () => ({
       ok: true,
@@ -357,14 +369,12 @@ describe('game view prompt submit client', () => {
   });
 
   it('toggles codex transcript expansion from the robot button', async () => {
-    const harness = await runGameViewScript(
-      async () => ({
-        ok: true,
-        async json() {
-          return { forkId: 'unused' };
-        }
-      })
-    );
+    const harness = await runGameViewScript(async () => ({
+      ok: true,
+      async json() {
+        return { forkId: 'unused' };
+      }
+    }));
 
     expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('true');
     expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(false);
@@ -378,5 +388,39 @@ describe('game view prompt submit client', () => {
     harness.codexToggle.dispatchEvent('click', createEvent());
     expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
     expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(false);
+  });
+
+  it('adds and removes the generating class using eyeState from polling responses', async () => {
+    let requestCount = 0;
+    const harness = await runGameViewScript(
+      async () => {
+        requestCount += 1;
+        if (requestCount === 1) {
+          return {
+            ok: true,
+            async json() {
+              return { status: 'no-session', eyeState: 'generating' };
+            }
+          };
+        }
+
+        return {
+          ok: true,
+          async json() {
+            return { status: 'no-session', eyeState: 'idle' };
+          }
+        };
+      },
+      { startTranscriptPolling: true }
+    );
+
+    await flushAsyncOperations();
+    expect(harness.editTab.classList.contains('game-view-tab--generating')).toBe(true);
+    expect(harness.editTab.getAttribute('aria-busy')).toBe('true');
+
+    harness.intervalCallbacks[0]?.();
+    await flushAsyncOperations();
+    expect(harness.editTab.classList.contains('game-view-tab--generating')).toBe(false);
+    expect(harness.editTab.getAttribute('aria-busy')).toBe('false');
   });
 });

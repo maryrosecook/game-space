@@ -248,7 +248,8 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         aria-controls="prompt-panel"
         aria-expanded="false"
       >
-        Edit
+        <span class="game-view-tab-label">Edit</span>
+        <span class="game-view-tab-spinner" aria-hidden="true"></span>
       </button>
     </nav>`
     : '';

@@ -103,6 +103,7 @@ type StoredMetadata = {
   parentId: string | null;
   createdTime: string;
   codexSessionId?: string | null;
+  codexSessionStatus?: 'none' | 'created' | 'stopped' | 'error';
 };
 
 type AuthSession = {
@@ -241,6 +242,22 @@ async function waitForSessionId(metadataPath: string, expectedSessionId: string)
   throw new Error(`Session id ${expectedSessionId} was not persisted in time`);
 }
 
+async function waitForSessionStatus(
+  metadataPath: string,
+  expectedSessionStatus: 'none' | 'created' | 'stopped' | 'error'
+): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const metadata = await readMetadata(metadataPath);
+    if (metadata.codexSessionStatus === expectedSessionStatus) {
+      return;
+    }
+
+    await delay(5);
+  }
+
+  throw new Error(`Session status ${expectedSessionStatus} was not persisted in time`);
+}
+
 async function waitForErrorLog(loggedErrors: readonly string[], expectedMessagePart: string): Promise<void> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     if (loggedErrors.some((message) => message.includes(expectedMessagePart))) {
@@ -324,7 +341,7 @@ describe('express app integration', () => {
     expect(adminHomepage.text).toContain('>Auth<');
 
     const css = await request(app).get('/public/styles.css').expect(200);
-    expect(css.text).toContain('grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));');
+    expect(css.text).toContain('grid-template-columns: repeat(auto-fit, minmax(min(100%, 90px), 1fr));');
     expect(css.text).toContain('--render-aspect-width: 9;');
     expect(css.text).toContain('--bottom-tab-height: 68px;');
     expect(css.text).toContain('--game-layout-height: calc(100dvh - var(--bottom-tab-height));');
@@ -340,6 +357,15 @@ describe('express app integration', () => {
       'flex: 0 0 min(calc(var(--game-layout-height) * var(--render-aspect-width) / var(--render-aspect-height)), 58vw);'
     );
     expect(css.text).toContain('.codex-session-view--game');
+    expect(css.text).toContain('.game-view-tab-spinner');
+    expect(css.text).toContain('display: none;');
+    expect(css.text).toContain('border: 2px solid transparent;');
+    expect(css.text).toContain('border-top-color: #f7f9ff;');
+    expect(css.text).toContain('.game-view-tab--edit');
+    expect(css.text).toContain('gap: 16px;');
+    expect(css.text).toContain('.game-view-tab--generating .game-view-tab-spinner');
+    expect(css.text).toContain('display: inline-block;');
+    expect(css.text).not.toContain('game-tab-spinner-flash');
   });
 
   it('renders auth page with login form while logged out', async () => {
@@ -599,9 +625,10 @@ describe('express app integration', () => {
     await fs.writeFile(
       path.join(sessionDirectoryPath, `rollout-2026-02-10T10-00-00-${sessionId}.jsonl`),
       [
+        `{"type":"session_meta","payload":{"cwd":"${path.join(gamesRootPath, 'v1').replaceAll('\\', '\\\\')}"}}`,
         '{"timestamp":"2026-02-10T10:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"add gravity"}]}}',
         '{"timestamp":"2026-02-10T10:00:01.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Adding gravity now."}]}}'
-      ].join('\n'),
+      ].join('\n') + '\n',
       'utf8'
     );
 
@@ -627,6 +654,8 @@ describe('express app integration', () => {
       .expect(200);
     expect(response.body.status).toBe('ok');
     expect(response.body.sessionId).toBe(sessionId);
+    expect(response.body.codexSessionStatus).toBe('stopped');
+    expect(response.body.eyeState).toBe('idle');
     expect(response.body.messages).toEqual([
       {
         role: 'user',
@@ -639,6 +668,115 @@ describe('express app integration', () => {
         timestamp: '2026-02-10T10:00:01.000Z'
       }
     ]);
+  });
+
+  it('returns no-session runtime state when metadata has no linked codex session', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-codex-no-session-state-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v1',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md')
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await request(app)
+      .get('/api/codex-sessions/v1')
+      .set('Host', TEST_HOST)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(200);
+
+    expect(response.body).toEqual({
+      status: 'no-session',
+      versionId: 'v1',
+      codexSessionStatus: 'none',
+      eyeState: 'stopped'
+    });
+  });
+
+  it('returns session-file-missing runtime state when linked session file is absent', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-codex-missing-file-state-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    const codexSessionsRootPath = path.join(tempDirectoryPath, 'codex-sessions');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+    await fs.mkdir(codexSessionsRootPath, { recursive: true });
+
+    const sessionId = '019c48a7-3918-7123-bc60-0d7cddb4d5d4';
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v1',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z',
+        codexSessionId: sessionId
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      codexSessionsRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md')
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await request(app)
+      .get('/api/codex-sessions/v1')
+      .set('Host', TEST_HOST)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(200);
+
+    expect(response.body).toEqual({
+      status: 'session-file-missing',
+      versionId: 'v1',
+      sessionId,
+      codexSessionStatus: 'stopped',
+      eyeState: 'stopped'
+    });
+  });
+
+  it('maps created lifecycle state to generating eyeState when no session file is present yet', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-codex-created-state-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v1',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z',
+        codexSessionStatus: 'created'
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md')
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await request(app)
+      .get('/api/codex-sessions/v1')
+      .set('Host', TEST_HOST)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(200);
+
+    expect(response.body).toEqual({
+      status: 'no-session',
+      versionId: 'v1',
+      codexSessionStatus: 'created',
+      eyeState: 'generating'
+    });
   });
 
   it('hides admin controls on game page when logged out and shows them when logged in', async () => {
@@ -684,6 +822,9 @@ describe('express app integration', () => {
     expect(adminView.text).toContain('id="prompt-record-button"');
     expect(adminView.text).toContain('id="game-codex-toggle"');
     expect(adminView.text).toContain('id="game-codex-transcript"');
+    expect(adminView.text).toContain('id="game-tab-edit"');
+    expect(adminView.text).toContain('class="game-view-tab-label">Edit</span>');
+    expect(adminView.text).toContain('class="game-view-tab-spinner"');
     expect(adminView.text).toContain('/public/game-view.js');
     expect(adminView.text).toContain('data-csrf-token="');
   });
@@ -855,6 +996,8 @@ describe('express app integration', () => {
     expect(forkMetadata.id).toBe(forkId);
     expect(forkMetadata.parentId).toBe('source');
     expect(forkMetadata.codexSessionId).toBe(persistedSessionId);
+    await waitForSessionStatus(forkMetadataPath, 'stopped');
+    expect((await readMetadata(forkMetadataPath)).codexSessionStatus).toBe('stopped');
   });
 
   it('stores session id and logs failure when codex run returns unsuccessful result', async () => {
@@ -894,9 +1037,11 @@ describe('express app integration', () => {
     const forkMetadataPath = path.join(gamesRootPath, forkId, 'metadata.json');
     await waitForSessionId(forkMetadataPath, persistedSessionId);
     await waitForErrorLog(loggedErrors, `codex exec failed for ${forkId}`);
+    await waitForSessionStatus(forkMetadataPath, 'error');
 
     const forkMetadata = await readMetadata(forkMetadataPath);
     expect(forkMetadata.codexSessionId).toBe(persistedSessionId);
+    expect(forkMetadata.codexSessionStatus).toBe('error');
   });
 
   it('stores session id immediately when runner emits it before completion', async () => {
@@ -934,5 +1079,6 @@ describe('express app integration', () => {
 
     const forkMetadata = await readMetadata(forkMetadataPath);
     expect(forkMetadata.codexSessionId).toBe(emittedSessionId);
+    expect(forkMetadata.codexSessionStatus).toBe('created');
   });
 });

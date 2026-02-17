@@ -152,7 +152,8 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
     id: forkVersionId,
     parentId: sourceVersionId,
     createdTime: now().toISOString(),
-    codexSessionId: null
+    codexSessionId: null,
+    codexSessionStatus: 'none'
   };
 
   const forkMetadataPath = path.join(forkDirectoryPath, 'metadata.json');
