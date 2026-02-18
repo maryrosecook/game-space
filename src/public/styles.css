@@ -467,6 +467,16 @@ body {
   border-color: rgba(132, 168, 245, 0.55);
 }
 
+.game-page--edit-open .game-view-tab--edit::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  height: 2px;
+  background: rgba(5, 10, 28, 0.95);
+}
+
 .game-page--codex-expanded .prompt-panel {
   height: calc(100dvh - var(--bottom-tab-height));
   padding-top: calc(var(--bottom-tab-height) + 10px);
