@@ -384,7 +384,8 @@ body {
   text-transform: uppercase;
   padding: 16px;
   cursor: pointer;
-  transition: border-color 0.2s ease, color 0.2s ease;
+  transform: translateY(0);
+  transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
 .game-view-tab--edit {
@@ -465,6 +466,7 @@ body {
 .game-page--edit-open .game-view-tab--edit {
   --tab-fill: rgba(6, 12, 31, 0.97);
   border-color: rgba(132, 168, 245, 0.55);
+  transform: translateY(6px);
 }
 
 .game-page--edit-open .game-view-tab--edit::after {
