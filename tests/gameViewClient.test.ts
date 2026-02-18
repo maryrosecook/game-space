@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 type TestEvent = {
   key?: string;
+  data?: unknown;
   preventDefault: () => void;
 };
 
@@ -13,7 +14,8 @@ type EventListener = (event: TestEvent) => void;
 
 type FetchResponse = {
   ok: boolean;
-  json: () => Promise<unknown>;
+  json?: () => Promise<unknown>;
+  text?: () => Promise<string>;
 };
 
 type FetchCall = {
@@ -112,6 +114,85 @@ class TestHTMLInputElement extends TestHTMLElement {
   public value = '';
 }
 
+class TestMediaStreamTrack {
+  public stopped = false;
+
+  stop(): void {
+    this.stopped = true;
+  }
+}
+
+class TestMediaStream {
+  private readonly tracks: TestMediaStreamTrack[];
+
+  constructor(tracks: TestMediaStreamTrack[]) {
+    this.tracks = tracks;
+  }
+
+  getTracks(): TestMediaStreamTrack[] {
+    return this.tracks;
+  }
+}
+
+type SessionDescription = {
+  type: string;
+  sdp: string;
+};
+
+class TestRTCDataChannel extends TestEventTarget {
+  public readyState = 'open';
+  public closed = false;
+  public readonly sentMessages: string[] = [];
+
+  send(message: string): void {
+    this.sentMessages.push(message);
+  }
+
+  close(): void {
+    this.readyState = 'closed';
+    this.closed = true;
+  }
+}
+
+class TestRTCPeerConnection {
+  public static latestInstance: TestRTCPeerConnection | null = null;
+  public readonly dataChannel = new TestRTCDataChannel();
+  public localDescription: SessionDescription | null = null;
+  public remoteDescription: SessionDescription | null = null;
+  public closed = false;
+
+  constructor() {
+    TestRTCPeerConnection.latestInstance = this;
+  }
+
+  createDataChannel(label: string): TestRTCDataChannel {
+    void label;
+    return this.dataChannel;
+  }
+
+  addTrack(track: TestMediaStreamTrack, stream: TestMediaStream): void {
+    void track;
+    void stream;
+    // Track registration is not asserted directly in these tests.
+  }
+
+  async createOffer(): Promise<SessionDescription> {
+    return { type: 'offer', sdp: 'fake-offer-sdp' };
+  }
+
+  async setLocalDescription(description: SessionDescription): Promise<void> {
+    this.localDescription = description;
+  }
+
+  async setRemoteDescription(description: SessionDescription): Promise<void> {
+    this.remoteDescription = description;
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+}
+
 class TestBodyElement extends TestHTMLElement {
   public readonly dataset: { versionId?: string; csrfToken?: string };
 
@@ -141,6 +222,7 @@ class TestDocument extends TestEventTarget {
 
 type GameViewHarness = {
   fetchCalls: FetchCall[];
+  consoleLogs: unknown[][];
   assignCalls: string[];
   body: TestBodyElement;
   editTab: TestHTMLButtonElement;
@@ -150,6 +232,9 @@ type GameViewHarness = {
   promptInput: TestHTMLInputElement;
   promptPanel: TestHTMLElement;
   intervalCallbacks: Array<() => void>;
+  getPeerConnection: () => TestRTCPeerConnection | null;
+  mediaTrack: TestMediaStreamTrack;
+  getUserMediaCalls: () => number;
 };
 
 type RunGameViewOptions = {
@@ -160,14 +245,19 @@ type RunGameViewOptions = {
 function createEvent(overrides: Partial<TestEvent> = {}): TestEvent {
   return {
     key: overrides.key,
+    data: overrides.data,
     preventDefault: overrides.preventDefault ?? (() => {})
   };
 }
 
 async function flushAsyncOperations(): Promise<void> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
     await Promise.resolve();
   }
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 async function runGameViewScript(
@@ -196,8 +286,22 @@ async function runGameViewScript(
   document.registerElement('game-codex-session-view', gameSessionView);
 
   const fetchCalls: FetchCall[] = [];
+  const consoleLogs: unknown[][] = [];
   const assignCalls: string[] = [];
   const intervalCallbacks: Array<() => void> = [];
+  const mediaTrack = new TestMediaStreamTrack();
+  const mediaStream = new TestMediaStream([mediaTrack]);
+  let getUserMediaCalls = 0;
+  TestRTCPeerConnection.latestInstance = null;
+
+  const navigator = {
+    mediaDevices: {
+      async getUserMedia(): Promise<TestMediaStream> {
+        getUserMediaCalls += 1;
+        return mediaStream;
+      }
+    }
+  };
 
   const window = {
     requestAnimationFrame(callback: () => void): number {
@@ -217,6 +321,13 @@ async function runGameViewScript(
     clearInterval(id: number): void {
       void id;
     },
+    setTimeout(callback: () => void): number {
+      callback();
+      return 1;
+    },
+    clearTimeout(id: number): void {
+      void id;
+    },
     addEventListener(event: string, listener: () => void): void {
       void event;
       void listener;
@@ -230,7 +341,7 @@ async function runGameViewScript(
       "import { createCodexTranscriptPresenter } from './codex-transcript-presenter.js';\n\n",
       ''
     )
-    .replace('\nstartTranscriptPolling();\n', startTranscriptPolling ? '\nstartTranscriptPolling();\n' : '\n');
+    .replace(/\nstartTranscriptPolling\(\);\s*$/, startTranscriptPolling ? '\nstartTranscriptPolling();\n' : '\n');
 
   const context = {
     document,
@@ -239,10 +350,17 @@ async function runGameViewScript(
       fetchCalls.push({ url, init });
       return fetchImplementation(url, init);
     },
+    console: {
+      log(...args: unknown[]): void {
+        consoleLogs.push(args);
+      }
+    },
     HTMLButtonElement: TestHTMLButtonElement,
     HTMLElement: TestHTMLElement,
     HTMLFormElement: TestHTMLFormElement,
     HTMLInputElement: TestHTMLInputElement,
+    navigator,
+    RTCPeerConnection: TestRTCPeerConnection,
     createCodexTranscriptPresenter() {
       return {
         showEmptyState() {},
@@ -257,6 +375,7 @@ async function runGameViewScript(
 
   return {
     fetchCalls,
+    consoleLogs,
     assignCalls,
     body: document.body,
     editTab,
@@ -265,7 +384,10 @@ async function runGameViewScript(
     promptForm,
     promptInput,
     promptPanel,
-    intervalCallbacks
+    intervalCallbacks,
+    getPeerConnection: () => TestRTCPeerConnection.latestInstance,
+    mediaTrack,
+    getUserMediaCalls: () => getUserMediaCalls
   };
 }
 
@@ -388,6 +510,124 @@ describe('game view prompt submit client', () => {
     harness.codexToggle.dispatchEvent('click', createEvent());
     expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
     expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(false);
+  });
+
+  it('starts realtime transcription by creating a session and exchanging SDP', async () => {
+    const harness = await runGameViewScript(async (url) => {
+      if (url === '/api/transcribe') {
+        return {
+          ok: true,
+          async json() {
+            return { clientSecret: 'ephemeral-secret' };
+          }
+        };
+      }
+
+      if (url === 'https://api.openai.com/v1/realtime?intent=transcription') {
+        return {
+          ok: true,
+          async text() {
+            return 'fake-answer-sdp';
+          }
+        };
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    expect(harness.getUserMediaCalls()).toBe(1);
+    expect(harness.fetchCalls).toHaveLength(2);
+    expect(harness.fetchCalls[0]).toEqual({
+      url: '/api/transcribe',
+      init: {
+        method: 'POST',
+        headers: {
+          'X-CSRF-Token': 'csrf-token-123'
+        }
+      }
+    });
+    expect(harness.fetchCalls[1]).toEqual({
+      url: 'https://api.openai.com/v1/realtime?intent=transcription',
+      init: {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ephemeral-secret',
+          'Content-Type': 'application/sdp'
+        },
+        body: 'fake-offer-sdp'
+      }
+    });
+    expect(harness.recordButton.getAttribute('aria-label')).toBe('Stop voice recording');
+    expect(harness.recordButton.classList.contains('prompt-record-button--recording')).toBe(true);
+
+    const peerConnection = harness.getPeerConnection();
+    expect(peerConnection?.localDescription).toEqual({ type: 'offer', sdp: 'fake-offer-sdp' });
+    expect(peerConnection?.remoteDescription).toEqual({ type: 'answer', sdp: 'fake-answer-sdp' });
+  });
+
+  it('fills the prompt input with realtime transcript when recording stops', async () => {
+    const harness = await runGameViewScript(async (url) => {
+      if (url === '/api/transcribe') {
+        return {
+          ok: true,
+          async json() {
+            return { clientSecret: 'ephemeral-secret' };
+          }
+        };
+      }
+
+      if (url === 'https://api.openai.com/v1/realtime?intent=transcription') {
+        return {
+          ok: true,
+          async text() {
+            return 'fake-answer-sdp';
+          }
+        };
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    const peerConnection = harness.getPeerConnection();
+    expect(peerConnection).not.toBeNull();
+    peerConnection?.dataChannel.dispatchEvent(
+      'message',
+      createEvent({
+        data: JSON.stringify({
+          type: 'conversation.item.input_audio_transcription.completed',
+          transcript: 'make the paddle bigger'
+        })
+      })
+    );
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    expect(harness.promptInput.value).toBe('make the paddle bigger');
+    expect(peerConnection?.dataChannel.sentMessages).toContain(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+    expect(harness.mediaTrack.stopped).toBe(true);
+    expect(peerConnection?.closed).toBe(true);
+    expect(harness.recordButton.getAttribute('aria-label')).toBe('Start voice recording');
+    expect(harness.recordButton.classList.contains('prompt-record-button--recording')).toBe(false);
+    expect(harness.consoleLogs).toContainEqual(['[realtime-transcription] started']);
+    expect(harness.consoleLogs).toContainEqual([
+      '[realtime-transcription] data received',
+      JSON.stringify({
+        type: 'conversation.item.input_audio_transcription.completed',
+        transcript: 'make the paddle bigger'
+      })
+    ]);
+    expect(harness.consoleLogs).toContainEqual(['[realtime-transcription] stopped']);
+    expect(harness.consoleLogs).toContainEqual([
+      '[realtime-transcription] final transcribed text',
+      'make the paddle bigger'
+    ]);
   });
 
   it('adds and removes the generating class using eyeState from polling responses', async () => {

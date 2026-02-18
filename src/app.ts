@@ -37,7 +37,10 @@ import {
   writeMetadataFile
 } from './services/gameVersions';
 import { renderAuthView, renderCodexView, renderGameView, renderHomepage } from './views';
-import { OpenAiAudioTranscriber, type OpenAiTranscriber } from './services/openaiTranscription';
+import {
+  OpenAiRealtimeTranscriptionSessionFactory,
+  type OpenAiRealtimeTranscriptionSessionCreator
+} from './services/openaiTranscription';
 import type { CodexSessionStatus } from './types';
 
 type ErrorLogger = (message: string, error: unknown) => void;
@@ -51,8 +54,10 @@ type AppOptions = {
   logError?: ErrorLogger;
   shouldBuildGamesOnStartup?: boolean;
   enableGameLiveReload?: boolean;
-  openAiTranscriber?: OpenAiTranscriber;
+  openAiRealtimeTranscriptionSessionCreator?: OpenAiRealtimeTranscriptionSessionCreator;
 };
+
+const TRANSCRIPTION_MODEL_UNAVAILABLE_PATTERN = /model_not_found|does not have access to model/i;
 
 function defaultLogger(message: string, error: unknown): void {
   console.error(message, error);
@@ -93,7 +98,9 @@ export function createApp(options: AppOptions = {}): express.Express {
   const shouldBuildGamesOnStartup = options.shouldBuildGamesOnStartup ?? false;
   const enableGameLiveReload =
     options.enableGameLiveReload ?? process.env.GAME_SPACE_DEV_LIVE_RELOAD === '1';
-  const openAiTranscriber = options.openAiTranscriber ?? (process.env.OPENAI_API_KEY ? new OpenAiAudioTranscriber() : null);
+  const openAiRealtimeTranscriptionSessionCreator =
+    options.openAiRealtimeTranscriptionSessionCreator ??
+    (process.env.OPENAI_API_KEY ? new OpenAiRealtimeTranscriptionSessionFactory() : null);
 
   const authConfig = readAdminAuthConfigFromEnv();
   const requireAdmin = requireAdminOr404(authConfig);
@@ -336,28 +343,33 @@ export function createApp(options: AppOptions = {}): express.Express {
   });
 
 
-  app.post('/api/transcribe', requireAdmin, requireValidCsrf, async (request, response, next) => {
+  app.post('/api/transcribe', requireAdmin, requireValidCsrf, async (_request, response, next) => {
     try {
-      const audioBase64 = request.body?.audioBase64;
-      const mimeType = request.body?.mimeType;
-
-      if (typeof audioBase64 !== 'string' || audioBase64.trim().length === 0) {
-        response.status(400).json({ error: 'audioBase64 is required' });
+      if (!openAiRealtimeTranscriptionSessionCreator) {
+        response.status(503).json({ error: 'OpenAI realtime transcription is not configured' });
         return;
       }
 
-      if (typeof mimeType !== 'string' || mimeType.trim().length === 0) {
-        response.status(400).json({ error: 'mimeType is required' });
+      try {
+        const session = await openAiRealtimeTranscriptionSessionCreator.createSession();
+        response.status(200).json({
+          clientSecret: session.clientSecret,
+          expiresAt: session.expiresAt,
+          model: session.model
+        });
+        return;
+      } catch (error: unknown) {
+        logError('OpenAI realtime transcription session request failed', error);
+        if (error instanceof Error && TRANSCRIPTION_MODEL_UNAVAILABLE_PATTERN.test(error.message)) {
+          response.status(503).json({
+            error: 'Configured OpenAI transcription model is unavailable; set OPENAI_TRANSCRIBE_MODEL=whisper-1'
+          });
+          return;
+        }
+
+        response.status(502).json({ error: 'OpenAI realtime transcription session request failed' });
         return;
       }
-
-      if (!openAiTranscriber) {
-        response.status(503).json({ error: 'OpenAI transcription is not configured' });
-        return;
-      }
-
-      const transcriptionText = await openAiTranscriber.transcribeAudio(audioBase64, mimeType);
-      response.status(200).json({ text: transcriptionText });
     } catch (error: unknown) {
       next(error);
     }

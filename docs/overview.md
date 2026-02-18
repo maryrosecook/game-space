@@ -5,7 +5,7 @@ Local-first game version browser and editor where every version is playable, for
 Top three features:
 - Filesystem-backed version catalog rendered as reverse-chronological responsive homepage tiles (`Infinity`), with hyphen-normalized labels and month/year timestamps; each tile opens into a playable centered portrait (`9:16`) WebGL runtime.
 - Cookie-authenticated admin workflow (`/auth`) that unlocks prompt execution and Codex transcript access while keeping public gameplay (`/` and `/game/:versionId`) available without login.
-- Runtime Codex state tracking for each game worktree (`stopped | idle | generating | error`) derived from Codex JSONL task lifecycle events, surfaced to the game page by showing a right-side classic spinner with a white rotating segment on `Edit` only while generation is in progress, with a `16px` label-to-spinner gap.
+- Admin voice prompting through the mic button on `/game/:versionId`, implemented with OpenAI Realtime transcription sessions (ephemeral client secret + browser WebRTC stream) to fill prompt text without uploading recorded blobs.
 
 # Repo structure
 
@@ -16,7 +16,7 @@ Top three features:
   - `types.ts` - Shared metadata/version TypeScript types.
   - `public/` - Static browser assets.
     - `styles.css` - Homepage/game/auth styling, admin/public game states, transcript layouts, and Edit-tab generating spinner animation.
-    - `game-view.js` - Admin game-page prompt submit/CSRF header, bottom-tab behavior, transcript polling, and generating-state class toggling from server `eyeState`.
+    - `game-view.js` - Admin game-page prompt submit, realtime voice transcription (session mint + WebRTC stream + transcript events), bottom-tab behavior, transcript polling, and generating-state class toggling from server `eyeState`.
     - `game-live-reload.js` - Dev-only game-page polling via `/api/dev/reload-token/:versionId`.
     - `codex-view.js` - `/codex` selector wiring and transcript loading.
     - `codex-transcript-presenter.js` - Shared transcript presenter used by `/codex` and game pages.
@@ -30,6 +30,7 @@ Top three features:
     - `promptExecution.ts` - Build-prompt loading, prompt composition, and `codex exec --json` runner.
     - `codexSessions.ts` - Codex session-file lookup plus JSONL parsing for user/assistant transcript turns and task lifecycle events.
     - `codexTurnInfo.ts` - Per-worktree runtime-state tracker that scans latest matching session JSONL by `session_meta.payload.cwd`, reads append-only bytes, and derives `eyeState` from task lifecycle events (with message-balance fallback for logs without task markers).
+    - `openaiTranscription.ts` - OpenAI Realtime transcription session factory (`/v1/realtime/transcription_sessions`) that returns ephemeral client secrets for browser WebRTC transcription.
     - `gameBuildPipeline.ts` - Per-game dependency install/build and source-path-to-version mapping.
     - `devLiveReload.ts` - Per-version reload-token pathing/writes used by the dev watch loop.
 - `scripts/` - Local automation entrypoints.
@@ -58,6 +59,7 @@ Top three features:
 - Homepage flow: `GET /` calls `listGameVersions()` and renders `renderHomepage()` with auth-aware top-right CTA (`Login` or `Auth`), hyphen-to-space display labels, and month/year timestamps.
 - Game page flow: `GET /game/:versionId` validates availability, renders `renderGameView()` in admin/public mode, and only injects prompt/transcript UI plus CSRF data token for authenticated admins.
 - Prompt fork flow: `POST /api/games/:versionId/prompts` requires admin + CSRF, forks via `createForkedGameVersion()`, sets lifecycle state to `created`, composes full prompt, launches Codex runner, persists `codexSessionId` as soon as observed, and transitions lifecycle to `stopped` or `error` when the run settles.
+- Realtime voice transcription flow: `POST /api/transcribe` (admin + CSRF) mints an OpenAI Realtime transcription session and returns a short-lived `clientSecret`; `src/public/game-view.js` then exchanges SDP with `https://api.openai.com/v1/realtime?intent=transcription`, streams mic audio over WebRTC, and applies `conversation.item.input_audio_transcription.completed` text to the prompt input.
 - Codex transcript/runtime flow: `/codex` and `/api/codex-sessions/:versionId` require admin; transcript API resolves metadata, derives runtime `eyeState` via `getCodexTurnInfo()` (JSONL task lifecycle detection), and returns user/assistant turns plus lifecycle/runtime state fields.
 - Static/runtime serving flow: `/games/*` first passes `requireRuntimeGameAssetPathMiddleware()` so only runtime-safe `dist` assets are public; sensitive or dev files (including `dist/reload-token.txt`) return `404`.
 - Dev reload flow: when `GAME_SPACE_DEV_LIVE_RELOAD=1`, `scripts/dev.ts` rewrites per-version `dist/reload-token.txt`; browser polling uses `/api/dev/reload-token/:versionId` instead of direct `/games` file access.
@@ -76,12 +78,15 @@ Top three features:
 - `.env` (local, gitignored) - Admin auth secrets.
   - `GAME_SPACE_ADMIN_PASSWORD_HASH` - `scrypt$<saltBase64>$<hashBase64>`.
   - `GAME_SPACE_ADMIN_SESSION_SECRET` - Session sealing secret used by iron-session for admin session cookies.
+  - `OPENAI_API_KEY` - Server-side key used only to mint ephemeral Realtime transcription sessions.
+  - `OPENAI_TRANSCRIBE_MODEL` - Optional transcription model override (defaults to `whisper-1`).
 
 # Architecture notes
 
 - Execution isolation: each version owns its own source, dependencies, and built bundle under `games/<version-id>/`.
 - Admin auth model: iron-session sealed, `HttpOnly`, `Secure`, `SameSite=Strict` session cookie with fixed 3-day TTL; unauthorized protected-route requests return `404`.
 - CSRF model: same-origin enforcement plus double-submit token (cookie + hidden form field or `X-CSRF-Token` header).
+- Realtime voice transcription model: browser never receives `OPENAI_API_KEY`; server mints short-lived client secrets via OpenAI Realtime transcription sessions, and the client streams mic audio directly to OpenAI over WebRTC.
 - Prompt safety model: user prompt text is never shell-interpolated; `SpawnCodexRunner` passes full prompt bytes through stdin to `codex exec --json --dangerously-bypass-approvals-and-sandbox -`.
 - Runtime-state derivation model: `codexTurnInfo.ts` keeps an in-memory tracker per worktree (`sessionPath`, append offset, partial-line buffer, task lifecycle counters, user/assistant counters, latest assistant metadata), scans for the newest matching JSONL by `session_meta.payload.cwd`, and sets `eyeState` to `generating` while `task_started` count exceeds terminal task events (`task_complete` and related terminal markers); otherwise `idle`. For legacy logs without task markers, it falls back to user/assistant message balance. When no tracker is active, lifecycle state maps fallback runtime state.
 - Static serving model: Express serves shared `src/public/*`; `/games/*` is runtime-allowlisted and blocks metadata/source/config/dev artifacts.
@@ -100,6 +105,7 @@ Top three features:
   - Runtime-state derivation from Codex JSONL task lifecycle events and lifecycle-status fallback mapping.
   - `/games` runtime allowlist allow/deny behavior and dev reload-token API route.
   - Prompt fork/session lifecycle persistence flow and transcript parsing behavior.
+  - Realtime transcription session creation route behavior (`200`, `502`, `503`) and game-page client WebRTC transcription wiring.
   - Game page client behavior for CSRF header inclusion, admin/public UI states, and Edit-tab generating spinner class toggling.
 - End-to-end automation flow:
   - Baseline E2E run (no recording): `npm run test:e2e`.

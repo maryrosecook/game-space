@@ -32,10 +32,25 @@ let transcriptSignature = '';
 let transcriptRequestInFlight = false;
 let editPanelOpen = false;
 let codexPanelExpanded = false;
-let mediaRecorder = null;
-let recordingChunks = [];
 let recordingInProgress = false;
 let transcriptionInFlight = false;
+let realtimePeerConnection = null;
+let realtimeDataChannel = null;
+let realtimeAudioStream = null;
+let completedTranscriptionSegments = [];
+
+function logRealtimeTranscription(message, details = undefined) {
+  if (typeof console === 'undefined' || typeof console.log !== 'function') {
+    return;
+  }
+
+  if (details === undefined) {
+    console.log(`[realtime-transcription] ${message}`);
+    return;
+  }
+
+  console.log(`[realtime-transcription] ${message}`, details);
+}
 
 function updateRecordButtonVisualState() {
   recordButton.classList.toggle('prompt-record-button--recording', recordingInProgress);
@@ -50,121 +65,207 @@ function updateRecordButtonVisualState() {
   recordButton.setAttribute('aria-label', 'Start voice recording');
 }
 
-async function transcribeRecording(audioBlob) {
-  const arrayBuffer = await audioBlob.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuffer);
-  let binary = '';
+function stopAudioStream(stream) {
+  for (const track of stream.getTracks()) {
+    track.stop();
+  }
+}
 
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
+function closeRealtimeConnection() {
+  if (realtimeDataChannel && typeof realtimeDataChannel.close === 'function') {
+    realtimeDataChannel.close();
   }
 
-  const audioBase64 = window.btoa(binary);
+  if (realtimePeerConnection && typeof realtimePeerConnection.close === 'function') {
+    realtimePeerConnection.close();
+  }
 
-  const headers = {
-    'Content-Type': 'application/json'
-  };
+  if (realtimeAudioStream) {
+    stopAudioStream(realtimeAudioStream);
+  }
+
+  realtimePeerConnection = null;
+  realtimeDataChannel = null;
+  realtimeAudioStream = null;
+}
+
+function appendCompletedTranscriptSegment(transcriptSegment) {
+  const normalizedSegment = transcriptSegment.trim();
+  if (normalizedSegment.length === 0) {
+    return;
+  }
+
+  completedTranscriptionSegments.push(normalizedSegment);
+  promptInput.value = completedTranscriptionSegments.join(' ').trim();
+  focusPromptInput();
+}
+
+function handleRealtimeDataChannelMessage(event) {
+  if (!event || typeof event.data !== 'string') {
+    return;
+  }
+
+  logRealtimeTranscription('data received', event.data);
+
+  let payload;
+  try {
+    payload = JSON.parse(event.data);
+  } catch {
+    return;
+  }
+
+  if (!payload || typeof payload !== 'object' || typeof payload.type !== 'string') {
+    return;
+  }
+
+  if (payload.type !== 'conversation.item.input_audio_transcription.completed') {
+    return;
+  }
+
+  if (typeof payload.transcript === 'string') {
+    appendCompletedTranscriptSegment(payload.transcript);
+  }
+}
+
+function transcriptionRequestHeaders() {
+  const headers = {};
 
   if (typeof csrfToken === 'string' && csrfToken.length > 0) {
     headers['X-CSRF-Token'] = csrfToken;
   }
 
+  return headers;
+}
+
+async function requestRealtimeClientSecret() {
   const response = await fetch('/api/transcribe', {
     method: 'POST',
-    headers,
-    body: JSON.stringify({
-      audioBase64,
-      mimeType: audioBlob.type || 'audio/webm'
-    })
+    headers: transcriptionRequestHeaders()
   });
 
   if (!response.ok) {
-    return;
+    return null;
   }
 
   const payload = await response.json();
-  if (!payload || typeof payload !== 'object' || typeof payload.text !== 'string') {
-    return;
+  if (!payload || typeof payload !== 'object' || typeof payload.clientSecret !== 'string') {
+    return null;
   }
 
-  const transcribedText = payload.text.trim();
-  if (transcribedText.length === 0) {
-    return;
+  if (payload.clientSecret.trim().length === 0) {
+    return null;
   }
 
-  promptInput.value = transcribedText;
-  focusPromptInput();
+  return payload.clientSecret;
 }
 
-async function stopRecordingAndTranscribe() {
-  if (!mediaRecorder || mediaRecorder.state !== 'recording') {
+async function startRealtimeRecording() {
+  if (!navigator?.mediaDevices?.getUserMedia) {
+    return;
+  }
+
+  if (typeof RTCPeerConnection !== 'function') {
     return;
   }
 
   transcriptionInFlight = true;
   updateRecordButtonVisualState();
+  completedTranscriptionSegments = [];
 
-  const stoppedBlob = await new Promise((resolve) => {
-    const recorder = mediaRecorder;
-    recorder.addEventListener(
-      'stop',
-      () => {
-        const blob = new Blob(recordingChunks, {
-          type: recorder.mimeType || 'audio/webm'
-        });
-        resolve(blob);
-      },
-      { once: true }
-    );
-
-    recorder.stop();
-  });
-
-  recordingInProgress = false;
-  recordingChunks = [];
+  let peerConnection = null;
+  let dataChannel = null;
+  let stream = null;
 
   try {
-    await transcribeRecording(stoppedBlob);
+    const clientSecret = await requestRealtimeClientSecret();
+    if (!clientSecret) {
+      return;
+    }
+
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    peerConnection = new RTCPeerConnection();
+    dataChannel = peerConnection.createDataChannel('oai-events');
+    dataChannel.addEventListener('message', handleRealtimeDataChannelMessage);
+
+    for (const track of stream.getTracks()) {
+      peerConnection.addTrack(track, stream);
+    }
+
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+
+    const response = await fetch('https://api.openai.com/v1/realtime?intent=transcription', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${clientSecret}`,
+        'Content-Type': 'application/sdp'
+      },
+      body: typeof offer.sdp === 'string' ? offer.sdp : ''
+    });
+
+    if (!response.ok) {
+      throw new Error('Realtime transcription SDP exchange failed');
+    }
+
+    const answerSdp = await response.text();
+    await peerConnection.setRemoteDescription({
+      type: 'answer',
+      sdp: answerSdp
+    });
+
+    realtimePeerConnection = peerConnection;
+    realtimeDataChannel = dataChannel;
+    realtimeAudioStream = stream;
+    recordingInProgress = true;
+    logRealtimeTranscription('started');
+  } catch {
+    if (dataChannel && typeof dataChannel.close === 'function') {
+      dataChannel.close();
+    }
+
+    if (peerConnection && typeof peerConnection.close === 'function') {
+      peerConnection.close();
+    }
+
+    if (stream) {
+      stopAudioStream(stream);
+    }
+
+    return;
   } finally {
     transcriptionInFlight = false;
     updateRecordButtonVisualState();
   }
 }
 
-async function startRecording() {
-  if (!navigator?.mediaDevices?.getUserMedia) {
+async function stopRealtimeRecording() {
+  if (!recordingInProgress) {
     return;
   }
 
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch {
-    return;
-  }
-
-  mediaRecorder = new MediaRecorder(stream);
-  recordingChunks = [];
-
-  mediaRecorder.addEventListener('dataavailable', (event) => {
-    if (event.data && event.data.size > 0) {
-      recordingChunks.push(event.data);
-    }
-  });
-
-  mediaRecorder.addEventListener(
-    'stop',
-    () => {
-      for (const track of stream.getTracks()) {
-        track.stop();
-      }
-    },
-    { once: true }
-  );
-
-  mediaRecorder.start();
-  recordingInProgress = true;
+  transcriptionInFlight = true;
   updateRecordButtonVisualState();
+
+  try {
+    if (realtimeDataChannel && realtimeDataChannel.readyState === 'open') {
+      realtimeDataChannel.send(
+        JSON.stringify({
+          type: 'input_audio_buffer.commit'
+        })
+      );
+    }
+
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 200);
+    });
+  } finally {
+    logRealtimeTranscription('stopped');
+    logRealtimeTranscription('final transcribed text', promptInput.value);
+    recordingInProgress = false;
+    closeRealtimeConnection();
+    transcriptionInFlight = false;
+    updateRecordButtonVisualState();
+  }
 }
 
 function toggleRecording() {
@@ -173,11 +274,11 @@ function toggleRecording() {
   }
 
   if (recordingInProgress) {
-    void stopRecordingAndTranscribe();
+    void stopRealtimeRecording();
     return;
   }
 
-  void startRecording();
+  void startRealtimeRecording();
 }
 
 function applyBottomPanelState() {
@@ -421,6 +522,14 @@ promptInput.addEventListener('keydown', (event) => {
     promptForm.requestSubmit();
   }
 });
+
+window.addEventListener(
+  'beforeunload',
+  () => {
+    closeRealtimeConnection();
+  },
+  { once: true }
+);
 
 applyEyeState('stopped');
 

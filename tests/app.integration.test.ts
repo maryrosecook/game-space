@@ -11,7 +11,10 @@ import { ADMIN_SESSION_COOKIE_NAME, ADMIN_SESSION_TTL_SECONDS } from '../src/ser
 import { CSRF_COOKIE_NAME } from '../src/services/csrf';
 import { reloadTokenPath } from '../src/services/devLiveReload';
 import type { CodexRunOptions, CodexRunResult, CodexRunner } from '../src/services/promptExecution';
-import type { OpenAiTranscriber } from '../src/services/openaiTranscription';
+import type {
+  OpenAiRealtimeTranscriptionSessionCreator,
+  RealtimeTranscriptionSession
+} from '../src/services/openaiTranscription';
 import { createGameFixture, createTempDirectory } from './testHelpers';
 
 const TEST_HOST = 'game-space.local';
@@ -23,6 +26,8 @@ const TEST_ADMIN_SESSION_SECRET = 'session-secret-for-tests-must-be-long';
 
 const originalPasswordHash = process.env.GAME_SPACE_ADMIN_PASSWORD_HASH;
 const originalSessionSecret = process.env.GAME_SPACE_ADMIN_SESSION_SECRET;
+const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+const originalOpenAiTranscribeModel = process.env.OPENAI_TRANSCRIBE_MODEL;
 
 type CapturedRun = {
   prompt: string;
@@ -69,14 +74,29 @@ class FailingRunner implements CodexRunner {
 
 
 
-class CapturingTranscriber implements OpenAiTranscriber {
-  public readonly calls: Array<{ base64Audio: string; mimeType: string }> = [];
+class CapturingRealtimeTranscriptionSessionCreator implements OpenAiRealtimeTranscriptionSessionCreator {
+  public calls = 0;
+  private readonly session: RealtimeTranscriptionSession;
 
-  constructor(private readonly text: string = 'transcribed text') {}
+  constructor(
+    session: RealtimeTranscriptionSession = {
+      clientSecret: 'ephemeral-token',
+      expiresAt: 1_737_000_000,
+      model: 'whisper-1'
+    }
+  ) {
+    this.session = session;
+  }
 
-  async transcribeAudio(base64Audio: string, mimeType: string): Promise<string> {
-    this.calls.push({ base64Audio, mimeType });
-    return this.text;
+  async createSession(): Promise<RealtimeTranscriptionSession> {
+    this.calls += 1;
+    return this.session;
+  }
+}
+
+class FailingRealtimeTranscriptionSessionCreator implements OpenAiRealtimeTranscriptionSessionCreator {
+  async createSession(): Promise<RealtimeTranscriptionSession> {
+    throw new Error('OpenAI rejected session creation');
   }
 }
 
@@ -274,6 +294,8 @@ async function waitForErrorLog(loggedErrors: readonly string[], expectedMessageP
 beforeEach(() => {
   process.env.GAME_SPACE_ADMIN_PASSWORD_HASH = TEST_ADMIN_PASSWORD_HASH;
   process.env.GAME_SPACE_ADMIN_SESSION_SECRET = TEST_ADMIN_SESSION_SECRET;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_TRANSCRIBE_MODEL;
 });
 
 afterAll(() => {
@@ -287,6 +309,18 @@ afterAll(() => {
     process.env.GAME_SPACE_ADMIN_SESSION_SECRET = originalSessionSecret;
   } else {
     delete process.env.GAME_SPACE_ADMIN_SESSION_SECRET;
+  }
+
+  if (typeof originalOpenAiApiKey === 'string') {
+    process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+  } else {
+    delete process.env.OPENAI_API_KEY;
+  }
+
+  if (typeof originalOpenAiTranscribeModel === 'string') {
+    process.env.OPENAI_TRANSCRIBE_MODEL = originalOpenAiTranscribeModel;
+  } else {
+    delete process.env.OPENAI_TRANSCRIBE_MODEL;
   }
 });
 
@@ -497,7 +531,7 @@ describe('express app integration', () => {
       .expect(404);
   });
 
-  it('transcribes recorded audio for admin users', async () => {
+  it('creates realtime transcription sessions for admin users', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-app-transcribe-');
     await createGameFixture({
       gamesRootPath: path.join(tempDirectoryPath, 'games'),
@@ -507,14 +541,18 @@ describe('express app integration', () => {
         createdTime: new Date().toISOString()
       }
     });
-    const transcriber = new CapturingTranscriber('make the paddle bigger');
+    const sessionCreator = new CapturingRealtimeTranscriptionSessionCreator({
+      clientSecret: 'realtime-token',
+      expiresAt: 1_737_000_321,
+      model: 'whisper-1'
+    });
 
     const app = createApp({
       repoRootPath: tempDirectoryPath,
       gamesRootPath: path.join(tempDirectoryPath, 'games'),
       buildPromptPath: path.join(tempDirectoryPath, 'game-build-prompt.md'),
       codexRunner: new CapturingRunner(),
-      openAiTranscriber: transcriber
+      openAiRealtimeTranscriptionSessionCreator: sessionCreator
     });
 
     const authSession = await loginAsAdmin(app);
@@ -525,19 +563,17 @@ describe('express app integration', () => {
       .set('Origin', TEST_ORIGIN)
       .set('Cookie', authSession.cookieHeader)
       .set('X-CSRF-Token', authSession.csrfToken)
-      .set('Content-Type', 'application/json')
-      .send({
-        audioBase64: Buffer.from('voice').toString('base64'),
-        mimeType: 'audio/webm'
-      })
       .expect(200);
 
-    expect(response.body).toEqual({ text: 'make the paddle bigger' });
-    expect(transcriber.calls).toHaveLength(1);
-    expect(transcriber.calls[0]?.mimeType).toBe('audio/webm');
+    expect(response.body).toEqual({
+      clientSecret: 'realtime-token',
+      expiresAt: 1_737_000_321,
+      model: 'whisper-1'
+    });
+    expect(sessionCreator.calls).toBe(1);
   });
 
-  it('returns 503 when transcription api is not configured', async () => {
+  it('returns 503 when realtime transcription is not configured', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-app-transcribe-missing-');
     await createGameFixture({
       gamesRootPath: path.join(tempDirectoryPath, 'games'),
@@ -563,14 +599,42 @@ describe('express app integration', () => {
       .set('Origin', TEST_ORIGIN)
       .set('Cookie', authSession.cookieHeader)
       .set('X-CSRF-Token', authSession.csrfToken)
-      .set('Content-Type', 'application/json')
-      .send({
-        audioBase64: Buffer.from('voice').toString('base64'),
-        mimeType: 'audio/webm'
-      })
       .expect(503);
 
-    expect(response.body).toEqual({ error: 'OpenAI transcription is not configured' });
+    expect(response.body).toEqual({ error: 'OpenAI realtime transcription is not configured' });
+  });
+
+  it('returns 502 when realtime transcription session creation fails', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-transcribe-failure-');
+    await createGameFixture({
+      gamesRootPath: path.join(tempDirectoryPath, 'games'),
+      metadata: {
+        id: 'source',
+        parentId: null,
+        createdTime: new Date().toISOString()
+      }
+    });
+
+    const app = createApp({
+      repoRootPath: tempDirectoryPath,
+      gamesRootPath: path.join(tempDirectoryPath, 'games'),
+      buildPromptPath: path.join(tempDirectoryPath, 'game-build-prompt.md'),
+      codexRunner: new CapturingRunner(),
+      openAiRealtimeTranscriptionSessionCreator: new FailingRealtimeTranscriptionSessionCreator(),
+      logError: () => {}
+    });
+
+    const authSession = await loginAsAdmin(app);
+
+    const response = await request(app)
+      .post('/api/transcribe')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .expect(502);
+
+    expect(response.body).toEqual({ error: 'OpenAI realtime transcription session request failed' });
   });
 
   it('returns 404 for protected routes when unauthenticated', async () => {

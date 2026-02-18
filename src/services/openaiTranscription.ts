@@ -1,44 +1,55 @@
-const OPENAI_TRANSCRIPTIONS_URL = 'https://api.openai.com/v1/audio/transcriptions';
-const DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
+const OPENAI_REALTIME_TRANSCRIPTION_SESSIONS_URL = 'https://api.openai.com/v1/realtime/transcription_sessions';
+const DEFAULT_TRANSCRIPTION_MODEL = 'whisper-1';
 
-export type OpenAiTranscriber = {
-  transcribeAudio(base64Audio: string, mimeType: string): Promise<string>;
+type JsonObject = Record<string, unknown>;
+
+export type RealtimeTranscriptionSession = {
+  clientSecret: string;
+  expiresAt: number;
+  model: string;
 };
 
-function normalizeMimeType(value: string): string {
-  const trimmed = value.trim().toLowerCase();
-  if (trimmed.length === 0) {
-    return 'audio/webm';
-  }
+export type OpenAiRealtimeTranscriptionSessionCreator = {
+  createSession(): Promise<RealtimeTranscriptionSession>;
+};
 
-  return trimmed;
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null;
 }
 
-function fileExtensionForMimeType(mimeType: string): string {
-  if (mimeType.includes('webm')) {
-    return 'webm';
-  }
-
-  if (mimeType.includes('wav')) {
-    return 'wav';
-  }
-
-  if (mimeType.includes('mpeg') || mimeType.includes('mp3')) {
-    return 'mp3';
-  }
-
-  if (mimeType.includes('ogg')) {
-    return 'ogg';
-  }
-
-  if (mimeType.includes('mp4') || mimeType.includes('m4a')) {
-    return 'm4a';
-  }
-
-  return 'webm';
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-export class OpenAiAudioTranscriber implements OpenAiTranscriber {
+function readFiniteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readClientSecret(payload: JsonObject): { value: string; expiresAt: number } | null {
+  const clientSecretValue = payload.client_secret;
+  if (!isJsonObject(clientSecretValue)) {
+    return null;
+  }
+
+  const value = readString(clientSecretValue.value);
+  const expiresAt = readFiniteNumber(clientSecretValue.expires_at);
+  if (!value || expiresAt === null) {
+    return null;
+  }
+
+  return { value, expiresAt };
+}
+
+function readSessionModel(payload: JsonObject): string | null {
+  const transcriptionValue = payload.input_audio_transcription;
+  if (!isJsonObject(transcriptionValue)) {
+    return null;
+  }
+
+  return readString(transcriptionValue.model);
+}
+
+export class OpenAiRealtimeTranscriptionSessionFactory implements OpenAiRealtimeTranscriptionSessionCreator {
   private readonly apiKey: string;
   private readonly model: string;
 
@@ -46,7 +57,7 @@ export class OpenAiAudioTranscriber implements OpenAiTranscriber {
     const envApiKey = process.env.OPENAI_API_KEY;
     const apiKey = options.apiKey ?? envApiKey;
     if (typeof apiKey !== 'string' || apiKey.trim().length === 0) {
-      throw new Error('OPENAI_API_KEY is required for audio transcription');
+      throw new Error('OPENAI_API_KEY is required for realtime transcription');
     }
 
     const configuredModel = options.model ?? process.env.OPENAI_TRANSCRIBE_MODEL;
@@ -57,34 +68,22 @@ export class OpenAiAudioTranscriber implements OpenAiTranscriber {
     this.apiKey = apiKey.trim();
   }
 
-  async transcribeAudio(base64Audio: string, mimeType: string): Promise<string> {
-    const trimmedBase64 = base64Audio.trim();
-    if (trimmedBase64.length === 0) {
-      throw new Error('Audio payload was empty');
-    }
-
-    const normalizedMimeType = normalizeMimeType(mimeType);
-    const audioBuffer = Buffer.from(trimmedBase64, 'base64');
-    if (audioBuffer.length === 0) {
-      throw new Error('Audio payload could not be decoded');
-    }
-
-    const formData = new FormData();
-    const extension = fileExtensionForMimeType(normalizedMimeType);
-    const blob = new Blob([audioBuffer], { type: normalizedMimeType });
-    formData.append('file', blob, `recording.${extension}`);
-    formData.append('model', this.model);
-
-    const response = await fetch(OPENAI_TRANSCRIPTIONS_URL, {
+  async createSession(): Promise<RealtimeTranscriptionSession> {
+    const response = await fetch(OPENAI_REALTIME_TRANSCRIPTION_SESSIONS_URL, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${this.apiKey}`
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json'
       },
-      body: formData
+      body: JSON.stringify({
+        input_audio_transcription: {
+          model: this.model
+        }
+      })
     });
 
     if (!response.ok) {
-      let errorMessage = `OpenAI transcription failed with status ${response.status}`;
+      let errorMessage = `OpenAI realtime transcription session failed with status ${response.status}`;
       try {
         const responseText = await response.text();
         if (responseText.length > 0) {
@@ -97,12 +96,21 @@ export class OpenAiAudioTranscriber implements OpenAiTranscriber {
       throw new Error(errorMessage);
     }
 
-    const payload = (await response.json()) as { text?: unknown };
-    if (!payload || typeof payload.text !== 'string') {
-      throw new Error('OpenAI transcription payload did not include text');
+    const payload = (await response.json()) as unknown;
+    if (!isJsonObject(payload)) {
+      throw new Error('OpenAI realtime transcription payload was invalid');
     }
 
-    return payload.text.trim();
+    const clientSecret = readClientSecret(payload);
+    if (!clientSecret) {
+      throw new Error('OpenAI realtime transcription payload missing client secret');
+    }
+
+    const model = readSessionModel(payload) ?? this.model;
+    return {
+      clientSecret: clientSecret.value,
+      expiresAt: clientSecret.expiresAt,
+      model
+    };
   }
 }
-
