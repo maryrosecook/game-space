@@ -35,6 +35,7 @@ import {
   writeMetadataFile
 } from './services/gameVersions';
 import { renderAuthView, renderCodexView, renderGameView, renderHomepage } from './views';
+import { OpenAiAudioTranscriber, type OpenAiTranscriber } from './services/openaiTranscription';
 
 type ErrorLogger = (message: string, error: unknown) => void;
 
@@ -47,6 +48,7 @@ type AppOptions = {
   logError?: ErrorLogger;
   shouldBuildGamesOnStartup?: boolean;
   enableGameLiveReload?: boolean;
+  openAiTranscriber?: OpenAiTranscriber;
 };
 
 function defaultLogger(message: string, error: unknown): void {
@@ -88,6 +90,7 @@ export function createApp(options: AppOptions = {}): express.Express {
   const shouldBuildGamesOnStartup = options.shouldBuildGamesOnStartup ?? false;
   const enableGameLiveReload =
     options.enableGameLiveReload ?? process.env.GAME_SPACE_DEV_LIVE_RELOAD === '1';
+  const openAiTranscriber = options.openAiTranscriber ?? (process.env.OPENAI_API_KEY ? new OpenAiAudioTranscriber() : null);
 
   const authConfig = readAdminAuthConfigFromEnv();
   const requireAdmin = requireAdminOr404(authConfig);
@@ -307,6 +310,34 @@ export function createApp(options: AppOptions = {}): express.Express {
         sessionId: codexSessionId,
         messages
       });
+    } catch (error: unknown) {
+      next(error);
+    }
+  });
+
+
+  app.post('/api/transcribe', requireAdmin, requireValidCsrf, async (request, response, next) => {
+    try {
+      const audioBase64 = request.body?.audioBase64;
+      const mimeType = request.body?.mimeType;
+
+      if (typeof audioBase64 !== 'string' || audioBase64.trim().length === 0) {
+        response.status(400).json({ error: 'audioBase64 is required' });
+        return;
+      }
+
+      if (typeof mimeType !== 'string' || mimeType.trim().length === 0) {
+        response.status(400).json({ error: 'mimeType is required' });
+        return;
+      }
+
+      if (!openAiTranscriber) {
+        response.status(503).json({ error: 'OpenAI transcription is not configured' });
+        return;
+      }
+
+      const transcriptionText = await openAiTranscriber.transcribeAudio(audioBase64, mimeType);
+      response.status(200).json({ text: transcriptionText });
     } catch (error: unknown) {
       next(error);
     }

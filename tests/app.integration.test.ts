@@ -11,6 +11,7 @@ import { ADMIN_SESSION_COOKIE_NAME, ADMIN_SESSION_TTL_SECONDS } from '../src/ser
 import { CSRF_COOKIE_NAME } from '../src/services/csrf';
 import { reloadTokenPath } from '../src/services/devLiveReload';
 import type { CodexRunOptions, CodexRunResult, CodexRunner } from '../src/services/promptExecution';
+import type { OpenAiTranscriber } from '../src/services/openaiTranscription';
 import { createGameFixture, createTempDirectory } from './testHelpers';
 
 const TEST_HOST = 'game-space.local';
@@ -63,6 +64,19 @@ class FailingRunner implements CodexRunner {
       success: false,
       failureMessage: 'codex exec failed with exit code 1: approval denied'
     };
+  }
+}
+
+
+
+class CapturingTranscriber implements OpenAiTranscriber {
+  public readonly calls: Array<{ base64Audio: string; mimeType: string }> = [];
+
+  constructor(private readonly text: string = 'transcribed text') {}
+
+  async transcribeAudio(base64Audio: string, mimeType: string): Promise<string> {
+    this.calls.push({ base64Audio, mimeType });
+    return this.text;
   }
 }
 
@@ -457,6 +471,82 @@ describe('express app integration', () => {
       .expect(404);
   });
 
+  it('transcribes recorded audio for admin users', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-transcribe-');
+    await createGameFixture({
+      gamesRootPath: path.join(tempDirectoryPath, 'games'),
+      metadata: {
+        id: 'source',
+        parentId: null,
+        createdTime: new Date().toISOString()
+      }
+    });
+    const transcriber = new CapturingTranscriber('make the paddle bigger');
+
+    const app = createApp({
+      repoRootPath: tempDirectoryPath,
+      gamesRootPath: path.join(tempDirectoryPath, 'games'),
+      buildPromptPath: path.join(tempDirectoryPath, 'game-build-prompt.md'),
+      codexRunner: new CapturingRunner(),
+      openAiTranscriber: transcriber
+    });
+
+    const authSession = await loginAsAdmin(app);
+
+    const response = await request(app)
+      .post('/api/transcribe')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .set('Content-Type', 'application/json')
+      .send({
+        audioBase64: Buffer.from('voice').toString('base64'),
+        mimeType: 'audio/webm'
+      })
+      .expect(200);
+
+    expect(response.body).toEqual({ text: 'make the paddle bigger' });
+    expect(transcriber.calls).toHaveLength(1);
+    expect(transcriber.calls[0]?.mimeType).toBe('audio/webm');
+  });
+
+  it('returns 503 when transcription api is not configured', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-transcribe-missing-');
+    await createGameFixture({
+      gamesRootPath: path.join(tempDirectoryPath, 'games'),
+      metadata: {
+        id: 'source',
+        parentId: null,
+        createdTime: new Date().toISOString()
+      }
+    });
+
+    const app = createApp({
+      repoRootPath: tempDirectoryPath,
+      gamesRootPath: path.join(tempDirectoryPath, 'games'),
+      buildPromptPath: path.join(tempDirectoryPath, 'game-build-prompt.md'),
+      codexRunner: new CapturingRunner()
+    });
+
+    const authSession = await loginAsAdmin(app);
+
+    const response = await request(app)
+      .post('/api/transcribe')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .set('Content-Type', 'application/json')
+      .send({
+        audioBase64: Buffer.from('voice').toString('base64'),
+        mimeType: 'audio/webm'
+      })
+      .expect(503);
+
+    expect(response.body).toEqual({ error: 'OpenAI transcription is not configured' });
+  });
+
   it('returns 404 for protected routes when unauthenticated', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-app-auth-gating-');
     const gamesRootPath = path.join(tempDirectoryPath, 'games');
@@ -575,6 +665,7 @@ describe('express app integration', () => {
     expect(publicView.text).not.toContain('Prompt editing and Codex transcripts require admin login.');
     expect(publicView.text).not.toContain('game-admin-notice');
     expect(publicView.text).not.toContain('id="prompt-panel"');
+    expect(publicView.text).not.toContain('id="prompt-record-button"');
     expect(publicView.text).not.toContain('id="game-codex-toggle"');
     expect(publicView.text).not.toContain('id="game-codex-transcript"');
     expect(publicView.text).not.toContain('/public/game-view.js');
@@ -590,6 +681,7 @@ describe('express app integration', () => {
       .expect(200);
 
     expect(adminView.text).toContain('id="prompt-panel"');
+    expect(adminView.text).toContain('id="prompt-record-button"');
     expect(adminView.text).toContain('id="game-codex-toggle"');
     expect(adminView.text).toContain('id="game-codex-transcript"');
     expect(adminView.text).toContain('/public/game-view.js');
