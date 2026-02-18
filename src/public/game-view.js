@@ -4,6 +4,7 @@ const promptPanel = document.getElementById('prompt-panel');
 const promptForm = document.getElementById('prompt-form');
 const promptInput = document.getElementById('prompt-input');
 const editTab = document.getElementById('game-tab-edit');
+const favoriteButton = document.getElementById('game-tab-favorite');
 const recordButton = document.getElementById('prompt-record-button');
 const codexToggle = document.getElementById('game-codex-toggle');
 const codexTranscript = document.getElementById('game-codex-transcript');
@@ -14,6 +15,7 @@ if (
   !(promptForm instanceof HTMLFormElement) ||
   !(promptInput instanceof HTMLInputElement) ||
   !(editTab instanceof HTMLButtonElement) ||
+  !(favoriteButton instanceof HTMLButtonElement) ||
   !(recordButton instanceof HTMLButtonElement) ||
   !(codexToggle instanceof HTMLButtonElement) ||
   !(codexTranscript instanceof HTMLElement) ||
@@ -24,20 +26,29 @@ if (
 
 const versionId = document.body.dataset.versionId;
 const csrfToken = document.body.dataset.csrfToken;
+const initialFavorite = document.body.dataset.gameFavorited === 'true';
 const transcriptPresenter = createCodexTranscriptPresenter(gameSessionView);
 const transcriptPollIntervalMs = 2000;
 const generatingClassName = 'game-view-tab--generating';
 let transcriptStatusKey = '';
 let transcriptSignature = '';
 let transcriptRequestInFlight = false;
+let favoriteRequestInFlight = false;
 let editPanelOpen = false;
 let codexPanelExpanded = false;
+let gameFavorited = initialFavorite;
 let recordingInProgress = false;
 let transcriptionInFlight = false;
 let realtimePeerConnection = null;
 let realtimeDataChannel = null;
 let realtimeAudioStream = null;
 let completedTranscriptionSegments = [];
+
+function applyFavoriteState() {
+  favoriteButton.classList.toggle('game-view-icon-tab--active', gameFavorited);
+  favoriteButton.setAttribute('aria-pressed', gameFavorited ? 'true' : 'false');
+  favoriteButton.setAttribute('aria-label', gameFavorited ? 'Unfavorite game' : 'Favorite game');
+}
 
 function logRealtimeTranscription(message, details = undefined) {
   if (typeof console === 'undefined' || typeof console.log !== 'function') {
@@ -127,7 +138,7 @@ function handleRealtimeDataChannelMessage(event) {
   }
 }
 
-function transcriptionRequestHeaders() {
+function csrfRequestHeaders() {
   const headers = {};
 
   if (typeof csrfToken === 'string' && csrfToken.length > 0) {
@@ -140,7 +151,7 @@ function transcriptionRequestHeaders() {
 async function requestRealtimeClientSecret() {
   const response = await fetch('/api/transcribe', {
     method: 'POST',
-    headers: transcriptionRequestHeaders()
+    headers: csrfRequestHeaders()
   });
 
   if (!response.ok) {
@@ -168,6 +179,37 @@ async function requestRealtimeClientSecret() {
   }
 
   return payload.clientSecret;
+}
+
+async function toggleFavorite() {
+  if (!versionId || favoriteRequestInFlight) {
+    return;
+  }
+
+  favoriteRequestInFlight = true;
+  favoriteButton.disabled = true;
+
+  try {
+    const response = await fetch(`/api/games/${encodeURIComponent(versionId)}/favorite`, {
+      method: 'POST',
+      headers: csrfRequestHeaders()
+    });
+    if (!response.ok) {
+      return;
+    }
+
+    const payload = await response.json();
+    if (!payload || typeof payload !== 'object' || typeof payload.favorite !== 'boolean') {
+      return;
+    }
+
+    gameFavorited = payload.favorite;
+    document.body.dataset.gameFavorited = gameFavorited ? 'true' : 'false';
+    applyFavoriteState();
+  } finally {
+    favoriteRequestInFlight = false;
+    favoriteButton.disabled = false;
+  }
 }
 
 async function startRealtimeRecording() {
@@ -545,8 +587,13 @@ window.addEventListener(
 applyEyeState('stopped');
 
 updateRecordButtonVisualState();
+applyFavoriteState();
 
 recordButton.addEventListener('click', () => {
   toggleRecording();
+});
+
+favoriteButton.addEventListener('click', () => {
+  void toggleFavorite();
 });
 startTranscriptPolling();

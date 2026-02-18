@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { isObjectRecord, pathExists } from './fsUtils';
 import { gameDirectoryPath, isSafeVersionId, readMetadataFile, writeMetadataFile } from './gameVersions';
+import { createReadableRandomHexColor } from './tileColor';
 import type { GameMetadata } from '../types';
 
 const excludedDirectoryNames = new Set(['node_modules']);
@@ -44,10 +45,6 @@ type CreateForkedGameVersionOptions = {
   idFactory?: () => string;
   now?: () => Date;
 };
-
-function randomIndex(maxExclusive: number): number {
-  return Math.floor(Math.random() * maxExclusive);
-}
 
 function sanitizePromptWords(prompt: string): string[] {
   return prompt
@@ -91,44 +88,6 @@ function createWordTripletIdFromPrompt(prompt: string): string {
 
 function createWordTripletId(): string {
   return `${fallbackIdWords[0]}-${fallbackIdWords[1]}-${fallbackIdWords[2]}`;
-}
-
-function relativeLuminanceChannel(value: number): number {
-  const normalized = value / 255;
-  if (normalized <= 0.03928) {
-    return normalized / 12.92;
-  }
-
-  return ((normalized + 0.055) / 1.055) ** 2.4;
-}
-
-function contrastRatioWithWhite(red: number, green: number, blue: number): number {
-  const luminance =
-    0.2126 * relativeLuminanceChannel(red) +
-    0.7152 * relativeLuminanceChannel(green) +
-    0.0722 * relativeLuminanceChannel(blue);
-  return (1 + 0.05) / (luminance + 0.05);
-}
-
-function toHexColor(red: number, green: number, blue: number): string {
-  const toHex = (value: number): string => value.toString(16).padStart(2, '0').toUpperCase();
-  return `#${toHex(red)}${toHex(green)}${toHex(blue)}`;
-}
-
-function createReadableRandomHexColor(): string {
-  const minimumContrast = 4.5;
-  const maxAttempts = 64;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const red = randomIndex(256);
-    const green = randomIndex(256);
-    const blue = randomIndex(256);
-    if (contrastRatioWithWhite(red, green, blue) >= minimumContrast) {
-      return toHexColor(red, green, blue);
-    }
-  }
-
-  return '#1D3557';
 }
 
 async function createUniqueForkVersionId(gamesRootPath: string, idFactory: () => string): Promise<string> {
@@ -225,6 +184,7 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
     parentId: sourceVersionId,
     createdTime: now().toISOString(),
     tileColor: createReadableRandomHexColor(),
+    favorite: false,
     codexSessionId: null,
     codexSessionStatus: 'none'
   };

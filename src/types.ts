@@ -7,6 +7,7 @@ export type GameMetadata = {
   parentId: string | null;
   createdTime: string;
   tileColor?: string;
+  favorite?: boolean;
   codexSessionId?: string | null;
   codexSessionStatus?: CodexSessionStatus;
 };

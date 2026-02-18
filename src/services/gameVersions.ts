@@ -30,7 +30,7 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     return null;
   }
 
-  const { id, parentId, createdTime, tileColor, codexSessionId, codexSessionStatus } = value;
+  const { id, parentId, createdTime, tileColor, favorite, codexSessionId, codexSessionStatus } = value;
   if (typeof id !== 'string' || id.length === 0) {
     return null;
   }
@@ -57,6 +57,10 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
       ? tileColor.trim().toUpperCase()
       : undefined;
 
+  if (!(favorite === undefined || typeof favorite === 'boolean')) {
+    return null;
+  }
+
   if (!(codexSessionId === undefined || codexSessionId === null || typeof codexSessionId === 'string')) {
     return null;
   }
@@ -69,6 +73,7 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     parentId,
     createdTime: new Date(createdTimestamp).toISOString(),
     tileColor: normalizedTileColor,
+    favorite: favorite === true,
     codexSessionId: normalizedSessionId,
     codexSessionStatus: normalizedSessionStatus
   };
@@ -116,6 +121,7 @@ export async function writeMetadataFile(metadataPath: string, metadata: GameMeta
   const normalizedMetadata: GameMetadata = {
     ...metadata,
     tileColor: normalizedTileColor,
+    favorite: metadata.favorite === true,
     codexSessionId: metadata.codexSessionId ?? null,
     codexSessionStatus: resolveCodexSessionStatus(metadata.codexSessionId ?? null, metadata.codexSessionStatus)
   };

@@ -31,8 +31,9 @@ export function renderHomepage(versions: readonly GameVersion[], options: Homepa
       const displayId = escapeHtml(formatHomepageVersionName(version.id));
       const tileColor = typeof version.tileColor === 'string' ? version.tileColor : '#1D3557';
       const tileColorEscaped = escapeHtml(tileColor);
+      const favoriteClassName = version.favorite === true ? ' game-tile--favorite' : '';
       return `
-        <a class="game-tile" href="/game/${encodeURIComponent(version.id)}" data-version-id="${id}" data-tile-color="${tileColorEscaped}" style="--tile-color: ${tileColorEscaped};">
+        <a class="game-tile${favoriteClassName}" href="/game/${encodeURIComponent(version.id)}" data-version-id="${id}" data-tile-color="${tileColorEscaped}" style="--tile-color: ${tileColorEscaped};">
           <span class="tile-id">${displayId}</span>
         </a>
       `;
@@ -49,13 +50,13 @@ export function renderHomepage(versions: readonly GameVersion[], options: Homepa
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Infinity</title>
+    <title>Fountain</title>
     <link rel="stylesheet" href="/public/styles.css" />
   </head>
   <body class="homepage">
     <main class="homepage-shell">
       <header class="page-header page-header--with-auth">
-        <h1>Infinity</h1>
+        <h1>Fountain</h1>
         <a class="auth-link" href="/auth">${authLabel}</a>
       </header>
       ${content}
@@ -165,20 +166,22 @@ type GameViewRenderOptions = {
   enableLiveReload?: boolean;
   isAdmin?: boolean;
   csrfToken?: string;
+  isFavorite?: boolean;
 };
 
 export function renderGameView(versionId: string, options: GameViewRenderOptions = {}): string {
   const encodedVersionId = encodeURIComponent(versionId);
   const enableLiveReload = options.enableLiveReload ?? false;
   const isAdmin = options.isAdmin ?? false;
+  const isFavorite = options.isFavorite === true;
   const csrfToken = isAdmin && typeof options.csrfToken === 'string' ? escapeHtml(options.csrfToken) : null;
   const liveReloadScript = enableLiveReload
     ? '\n    <script type="module" src="/public/game-live-reload.js"></script>'
     : '';
   const bodyClass = isAdmin ? 'game-page game-page--admin' : 'game-page game-page--public';
-  const bodyDataAttributes = csrfToken
+  const bodyDataAttributes = `${csrfToken
     ? `data-version-id="${escapeHtml(versionId)}" data-csrf-token="${csrfToken}"`
-    : `data-version-id="${escapeHtml(versionId)}"`;
+    : `data-version-id="${escapeHtml(versionId)}"`} data-game-favorited="${isFavorite ? 'true' : 'false'}"`;
 
   const adminPanelsMarkup = isAdmin
     ? `<section id="prompt-panel" class="prompt-panel" aria-hidden="true" aria-label="Create next version prompt">
@@ -230,16 +233,41 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
       >
         <span aria-hidden="true">‹</span>
       </a>
-      <button
-        id="game-tab-edit"
-        class="game-view-tab game-view-tab--edit"
-        type="button"
-        aria-controls="prompt-panel"
-        aria-expanded="false"
-      >
-        <span class="game-view-tab-label">Edit</span>
-        <span class="game-view-tab-spinner" aria-hidden="true"></span>
-      </button>
+      <div class="game-tool-tabs">
+        <button
+          id="game-tab-edit"
+          class="game-view-tab game-view-tab--edit"
+          type="button"
+          aria-controls="prompt-panel"
+          aria-expanded="false"
+        >
+          <span class="game-view-tab-label">Edit</span>
+          <span class="game-view-tab-spinner" aria-hidden="true"></span>
+        </button>
+        <button
+          id="game-tab-favorite"
+          class="game-view-icon-tab game-view-icon-tab--favorite${isFavorite ? ' game-view-icon-tab--active' : ''}"
+          type="button"
+          aria-label="${isFavorite ? 'Unfavorite game' : 'Favorite game'}"
+          aria-pressed="${isFavorite ? 'true' : 'false'}"
+        >
+          <svg
+            class="game-view-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+          </svg>
+        </button>
+      </div>
     </nav>`
     : '';
 

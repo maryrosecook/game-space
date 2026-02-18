@@ -1,5 +1,6 @@
 {
   "id": "d0cf7658-3371-4f01-99e2-ca90fc1899cf",
   "parentId": "v1-bounce",
-  "createdTime": "2026-02-09T14:30:09.733Z"
+  "createdTime": "2026-02-09T14:30:09.733Z",
+  "tileColor": "#3B21E9"
 }

@@ -52,6 +52,7 @@ describe('game version discovery', () => {
     expect(normalized?.codexSessionStatus).toBe('none');
     expect(normalized?.createdTime).toBe('2026-02-01T17:00:00.000Z');
     expect(normalized?.tileColor).toBeUndefined();
+    expect(normalized?.favorite).toBe(false);
     expect(
       parseGameMetadata({
         id: 'bad',
@@ -73,6 +74,7 @@ describe('game version discovery', () => {
       id: 'v2',
       parentId: 'v1',
       createdTime: '2026-02-02T00:00:00.000Z',
+      favorite: false,
       codexSessionId: '019c48a7-3918-7123-bc60-0d7cddb4d5d4',
       codexSessionStatus: 'stopped'
     });
@@ -99,6 +101,7 @@ describe('game version discovery', () => {
       id: 'v3',
       parentId: 'v2',
       createdTime: '2026-02-03T00:00:00.000Z',
+      favorite: false,
       codexSessionId: null,
       codexSessionStatus: 'created'
     });
@@ -114,6 +117,7 @@ describe('game version discovery', () => {
       id: 'v3',
       parentId: null,
       createdTime: '2026-02-03T00:00:00.000Z',
+      favorite: false,
       codexSessionId: null,
       codexSessionStatus: 'none'
     });
@@ -132,6 +136,7 @@ describe('game version discovery', () => {
       parentId: 'v3',
       createdTime: '2026-02-04T00:00:00.000Z',
       tileColor: '#1A2B3C',
+      favorite: false,
       codexSessionId: null,
       codexSessionStatus: 'none'
     });
@@ -148,6 +153,7 @@ describe('game version discovery', () => {
       parentId: null,
       createdTime: '2026-02-04T00:00:00.000Z',
       tileColor: undefined,
+      favorite: false,
       codexSessionId: null,
       codexSessionStatus: 'none'
     });
@@ -158,6 +164,33 @@ describe('game version discovery', () => {
         parentId: null,
         createdTime: '2026-02-04T00:00:00.000Z',
         tileColor: 12
+      })
+    ).toBeNull();
+  });
+
+  it('parses favorite booleans and rejects invalid favorite values', () => {
+    expect(
+      parseGameMetadata({
+        id: 'v5',
+        parentId: null,
+        createdTime: '2026-02-05T00:00:00.000Z',
+        favorite: true
+      })
+    ).toEqual({
+      id: 'v5',
+      parentId: null,
+      createdTime: '2026-02-05T00:00:00.000Z',
+      favorite: true,
+      codexSessionId: null,
+      codexSessionStatus: 'none'
+    });
+
+    expect(
+      parseGameMetadata({
+        id: 'v5',
+        parentId: null,
+        createdTime: '2026-02-05T00:00:00.000Z',
+        favorite: 'yes'
       })
     ).toBeNull();
   });

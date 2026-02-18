@@ -93,6 +93,11 @@ body {
   box-shadow: 0 12px 20px rgba(9, 16, 39, 0.52);
 }
 
+.game-tile--favorite {
+  border-color: #facc15;
+  box-shadow: 0 8px 22px rgba(250, 204, 21, 0.32);
+}
+
 .tile-id {
   font-size: 1.05rem;
   font-weight: 700;
@@ -345,17 +350,25 @@ body {
 }
 
 .game-home-link:focus-visible,
-.game-view-tab:focus-visible {
+.game-view-tab:focus-visible,
+.game-view-icon-tab:focus-visible {
   outline: 2px solid rgba(103, 163, 255, 0.95);
   outline-offset: 1px;
+}
+
+.game-tool-tabs {
+  justify-self: start;
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 10px;
 }
 
 .game-view-tab {
   --tab-fill: rgba(7, 22, 54, 0.98);
   position: relative;
-  height: calc(var(--bottom-tab-height) - 10px);
+  height: calc((var(--bottom-tab-height) - 10px) / 2);
   width: auto;
-  justify-self: start;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -368,7 +381,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  padding: 8px 20px 10px;
+  padding: 4px 16px 6px;
   cursor: pointer;
   transition: border-color 0.2s ease, color 0.2s ease;
 }
@@ -410,6 +423,40 @@ body {
   color: #f5f8ff;
   border-color: rgba(186, 214, 255, 0.95);
   background: linear-gradient(170deg, rgba(37, 82, 172, 0.95), var(--tab-fill));
+}
+
+.game-view-icon-tab {
+  align-self: flex-end;
+  height: calc((var(--bottom-tab-height) - 10px) / 2);
+  width: 44px;
+  border: 1px solid rgba(161, 191, 255, 0.45);
+  border-radius: 10px 10px 0 0;
+  border-bottom: 0;
+  background: linear-gradient(165deg, rgba(13, 30, 72, 0.98), rgba(7, 22, 54, 0.98));
+  color: #d8e6ff;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.game-view-icon {
+  display: block;
+}
+
+.game-view-icon-tab--favorite .game-view-icon polygon {
+  fill: transparent;
+}
+
+.game-view-icon-tab--favorite.game-view-icon-tab--active {
+  color: #facc15;
+  border-color: rgba(250, 204, 21, 0.9);
+}
+
+.game-view-icon-tab--favorite.game-view-icon-tab--active .game-view-icon polygon {
+  fill: #facc15;
 }
 
 .game-page--edit-open .game-bottom-tabs {

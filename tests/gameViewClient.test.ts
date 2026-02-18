@@ -195,11 +195,11 @@ class TestRTCPeerConnection {
 }
 
 class TestBodyElement extends TestHTMLElement {
-  public readonly dataset: { versionId?: string; csrfToken?: string };
+  public readonly dataset: { versionId?: string; csrfToken?: string; gameFavorited?: string };
 
-  constructor(versionId: string, csrfToken: string | undefined) {
+  constructor(versionId: string, csrfToken: string | undefined, gameFavorited: boolean) {
     super();
-    this.dataset = { versionId, csrfToken };
+    this.dataset = { versionId, csrfToken, gameFavorited: gameFavorited ? 'true' : 'false' };
   }
 }
 
@@ -207,9 +207,9 @@ class TestDocument extends TestEventTarget {
   public readonly body: TestBodyElement;
   private readonly elements = new Map<string, unknown>();
 
-  constructor(versionId: string, csrfToken: string | undefined) {
+  constructor(versionId: string, csrfToken: string | undefined, gameFavorited: boolean) {
     super();
-    this.body = new TestBodyElement(versionId, csrfToken);
+    this.body = new TestBodyElement(versionId, csrfToken, gameFavorited);
   }
 
   registerElement(id: string, element: unknown): void {
@@ -227,6 +227,7 @@ type GameViewHarness = {
   assignCalls: string[];
   body: TestBodyElement;
   editTab: TestHTMLButtonElement;
+  favoriteButton: TestHTMLButtonElement;
   recordButton: TestHTMLButtonElement;
   codexToggle: TestHTMLButtonElement;
   promptForm: TestHTMLFormElement;
@@ -241,6 +242,7 @@ type GameViewHarness = {
 type RunGameViewOptions = {
   csrfToken?: string | undefined;
   startTranscriptPolling?: boolean;
+  gameFavorited?: boolean;
 };
 
 function createEvent(overrides: Partial<TestEvent> = {}): TestEvent {
@@ -267,20 +269,23 @@ async function runGameViewScript(
 ): Promise<GameViewHarness> {
   const csrfToken = Object.hasOwn(options, 'csrfToken') ? options.csrfToken : 'csrf-token-123';
   const startTranscriptPolling = options.startTranscriptPolling ?? false;
+  const gameFavorited = options.gameFavorited ?? false;
   const promptPanel = new TestHTMLElement();
   const promptForm = new TestHTMLFormElement();
   const promptInput = new TestHTMLInputElement();
   const editTab = new TestHTMLButtonElement();
+  const favoriteButton = new TestHTMLButtonElement();
   const recordButton = new TestHTMLButtonElement();
   const codexToggle = new TestHTMLButtonElement();
   const codexTranscript = new TestHTMLElement();
   const gameSessionView = new TestHTMLElement();
 
-  const document = new TestDocument('source-version', csrfToken);
+  const document = new TestDocument('source-version', csrfToken, gameFavorited);
   document.registerElement('prompt-panel', promptPanel);
   document.registerElement('prompt-form', promptForm);
   document.registerElement('prompt-input', promptInput);
   document.registerElement('game-tab-edit', editTab);
+  document.registerElement('game-tab-favorite', favoriteButton);
   document.registerElement('prompt-record-button', recordButton);
   document.registerElement('game-codex-toggle', codexToggle);
   document.registerElement('game-codex-transcript', codexTranscript);
@@ -380,6 +385,7 @@ async function runGameViewScript(
     assignCalls,
     body: document.body,
     editTab,
+    favoriteButton,
     recordButton,
     codexToggle,
     promptForm,
@@ -489,6 +495,60 @@ describe('game view prompt submit client', () => {
     expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('true');
     expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(false);
     expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(false);
+  });
+
+  it('reflects the initial favorite state from page dataset', async () => {
+    const harness = await runGameViewScript(
+      async () => ({
+        ok: true,
+        async json() {
+          return { status: 'ok' };
+        }
+      }),
+      { gameFavorited: true }
+    );
+
+    expect(harness.favoriteButton.classList.contains('game-view-icon-tab--active')).toBe(true);
+    expect(harness.favoriteButton.getAttribute('aria-pressed')).toBe('true');
+    expect(harness.favoriteButton.getAttribute('aria-label')).toBe('Unfavorite game');
+  });
+
+  it('toggles the favorite button state by calling the favorite endpoint', async () => {
+    let toggleCount = 0;
+    const harness = await runGameViewScript(async (url) => {
+      if (url !== '/api/games/source-version/favorite') {
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      }
+
+      toggleCount += 1;
+      return {
+        ok: true,
+        async json() {
+          return { favorite: toggleCount === 1 };
+        }
+      };
+    });
+
+    harness.favoriteButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+    expect(harness.fetchCalls[0]).toEqual({
+      url: '/api/games/source-version/favorite',
+      init: {
+        method: 'POST',
+        headers: {
+          'X-CSRF-Token': 'csrf-token-123'
+        }
+      }
+    });
+    expect(harness.favoriteButton.classList.contains('game-view-icon-tab--active')).toBe(true);
+    expect(harness.favoriteButton.getAttribute('aria-pressed')).toBe('true');
+    expect(harness.favoriteButton.getAttribute('aria-label')).toBe('Unfavorite game');
+
+    harness.favoriteButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+    expect(harness.favoriteButton.classList.contains('game-view-icon-tab--active')).toBe(false);
+    expect(harness.favoriteButton.getAttribute('aria-pressed')).toBe('false');
+    expect(harness.favoriteButton.getAttribute('aria-label')).toBe('Favorite game');
   });
 
   it('toggles codex transcript expansion from the robot button', async () => {

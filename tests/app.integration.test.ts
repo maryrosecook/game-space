@@ -126,6 +126,7 @@ type StoredMetadata = {
   parentId: string | null;
   createdTime: string;
   tileColor?: string;
+  favorite?: boolean;
   codexSessionId?: string | null;
   codexSessionStatus?: 'none' | 'created' | 'stopped' | 'error';
 };
@@ -331,7 +332,8 @@ describe('express app integration', () => {
       metadata: {
         id: 'older-build',
         parentId: null,
-        createdTime: '2026-01-01T00:00:00.000Z'
+        createdTime: '2026-01-01T00:00:00.000Z',
+        favorite: true
       }
     });
 
@@ -350,17 +352,19 @@ describe('express app integration', () => {
     });
 
     const homepage = await request(app).get('/').set('Host', TEST_HOST).expect(200);
-    expect(homepage.text).toContain('<title>Infinity</title>');
-    expect(homepage.text).toContain('<h1>Infinity</h1>');
+    expect(homepage.text).toContain('<title>Fountain</title>');
+    expect(homepage.text).toContain('<h1>Fountain</h1>');
     expect(homepage.text).toContain('>Login<');
-    expect(homepage.text).toContain('>newer game<');
+    expect(homepage.text).toContain('>older build<');
+    expect(homepage.text).toContain('class="game-tile game-tile--favorite"');
+    expect(homepage.text).not.toContain('>newer game<');
     expect(homepage.text).not.toContain('>newer-game<');
     expect(homepage.text).not.toContain('tile-created');
     expect(homepage.text).toContain('style="--tile-color: #1D3557;"');
-    const newerIndex = homepage.text.indexOf('data-version-id="newer-game"');
     const olderIndex = homepage.text.indexOf('data-version-id="older-build"');
-    expect(newerIndex).toBeGreaterThan(-1);
-    expect(olderIndex).toBeGreaterThan(newerIndex);
+    expect(olderIndex).toBeGreaterThan(-1);
+    const hiddenGameView = await request(app).get('/game/newer-game').set('Host', TEST_HOST).expect(200);
+    expect(hiddenGameView.text).toContain('id="game-canvas"');
 
     const authSession = await loginAsAdmin(app);
     const adminHomepage = await request(app)
@@ -369,6 +373,11 @@ describe('express app integration', () => {
       .set('Cookie', authSession.cookieHeader)
       .expect(200);
     expect(adminHomepage.text).toContain('>Auth<');
+    expect(adminHomepage.text).toContain('>newer game<');
+    const adminNewerIndex = adminHomepage.text.indexOf('data-version-id="newer-game"');
+    const adminOlderIndex = adminHomepage.text.indexOf('data-version-id="older-build"');
+    expect(adminNewerIndex).toBeGreaterThan(-1);
+    expect(adminOlderIndex).toBeGreaterThan(adminNewerIndex);
 
     const css = await request(app).get('/public/styles.css').expect(200);
     expect(css.text).toContain('grid-template-columns: repeat(auto-fit, minmax(min(100%, 90px), 1fr));');
@@ -393,6 +402,10 @@ describe('express app integration', () => {
     expect(css.text).toContain('border-top-color: #f7f9ff;');
     expect(css.text).toContain('.game-view-tab--edit');
     expect(css.text).toContain('gap: 16px;');
+    expect(css.text).toContain('.game-tile--favorite');
+    expect(css.text).toContain('border-color: #facc15;');
+    expect(css.text).toContain('.game-view-icon-tab');
+    expect(css.text).toContain('height: calc((var(--bottom-tab-height) - 10px) / 2);');
     expect(css.text).toContain('.game-view-tab--generating .game-view-tab-spinner');
     expect(css.text).toContain('display: inline-block;');
     expect(css.text).not.toContain('game-tab-spinner-flash');
@@ -688,6 +701,11 @@ describe('express app integration', () => {
     await request(app).get('/codex').set('Host', TEST_HOST).expect(404);
     await request(app).get('/api/codex-sessions/v1').set('Host', TEST_HOST).expect(404);
     await request(app)
+      .post('/api/games/v1/favorite')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .expect(404);
+    await request(app)
       .post('/api/games/v1/prompts')
       .set('Host', TEST_HOST)
       .set('Origin', TEST_ORIGIN)
@@ -899,6 +917,7 @@ describe('express app integration', () => {
     expect(publicView.text).not.toContain('id="prompt-record-button"');
     expect(publicView.text).not.toContain('id="game-codex-toggle"');
     expect(publicView.text).not.toContain('id="game-codex-transcript"');
+    expect(publicView.text).not.toContain('id="game-tab-favorite"');
     expect(publicView.text).not.toContain('/public/game-view.js');
     expect(publicView.text).toContain('/public/game-live-reload.js');
     expect(publicView.text).toContain("'touchend'");
@@ -916,10 +935,64 @@ describe('express app integration', () => {
     expect(adminView.text).toContain('id="game-codex-toggle"');
     expect(adminView.text).toContain('id="game-codex-transcript"');
     expect(adminView.text).toContain('id="game-tab-edit"');
+    expect(adminView.text).toContain('id="game-tab-favorite"');
     expect(adminView.text).toContain('class="game-view-tab-label">Edit</span>');
     expect(adminView.text).toContain('class="game-view-tab-spinner"');
+    expect(adminView.text).toContain('aria-label="Favorite game"');
+    expect(adminView.text).toContain('aria-pressed="false"');
     expect(adminView.text).toContain('/public/game-view.js');
     expect(adminView.text).toContain('data-csrf-token="');
+    expect(adminView.text).toContain('data-game-favorited="false"');
+  });
+
+  it('toggles game favorite metadata when called by an authenticated admin', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-favorite-toggle-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v1',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md')
+    });
+
+    const authSession = await loginAsAdmin(app);
+
+    const firstToggle = await request(app)
+      .post('/api/games/v1/favorite')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .expect(200);
+    expect(firstToggle.body).toEqual({
+      status: 'ok',
+      versionId: 'v1',
+      favorite: true
+    });
+    expect((await readMetadata(path.join(gamesRootPath, 'v1', 'metadata.json'))).favorite).toBe(true);
+
+    const secondToggle = await request(app)
+      .post('/api/games/v1/favorite')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .expect(200);
+    expect(secondToggle.body).toEqual({
+      status: 'ok',
+      versionId: 'v1',
+      favorite: false
+    });
+    expect((await readMetadata(path.join(gamesRootPath, 'v1', 'metadata.json'))).favorite).toBe(false);
   });
 
   it('serves dev reload tokens from /api/dev/reload-token when live reload is enabled', async () => {
@@ -954,7 +1027,7 @@ describe('express app integration', () => {
     expect(response.text).toBe('token-123');
   });
 
-  it('enforces CSRF on prompt POST and accepts valid CSRF token', async () => {
+  it('enforces CSRF on admin POST routes and accepts valid CSRF tokens', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-app-prompt-csrf-');
     const gamesRootPath = path.join(tempDirectoryPath, 'games');
     await fs.mkdir(gamesRootPath, { recursive: true });
@@ -999,10 +1072,34 @@ describe('express app integration', () => {
       .send({ prompt: 'add gravity' })
       .expect(403);
 
+    await request(app)
+      .post('/api/games/source/favorite')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(403);
+
+    await request(app)
+      .post('/api/games/source/favorite')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', 'wrong-token')
+      .expect(403);
+
     const accepted = await postPromptAsAdmin(app, authSession, 'source', 'line 1\nline 2');
     expect(accepted.status).toBe(202);
     expect(typeof accepted.body.forkId).toBe('string');
     expect(codexRunner.calls).toHaveLength(1);
+
+    const favoriteAccepted = await request(app)
+      .post('/api/games/source/favorite')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .expect(200);
+    expect(favoriteAccepted.body.favorite).toBe(true);
   });
 
   it('serves only runtime-safe /games assets and denies sensitive files', async () => {
