@@ -4,6 +4,7 @@ const promptPanel = document.getElementById('prompt-panel');
 const promptForm = document.getElementById('prompt-form');
 const promptInput = document.getElementById('prompt-input');
 const editTab = document.getElementById('game-tab-edit');
+const recordButton = document.getElementById('prompt-record-button');
 const codexToggle = document.getElementById('game-codex-toggle');
 const codexTranscript = document.getElementById('game-codex-transcript');
 const gameSessionView = document.getElementById('game-codex-session-view');
@@ -13,6 +14,7 @@ if (
   !(promptForm instanceof HTMLFormElement) ||
   !(promptInput instanceof HTMLInputElement) ||
   !(editTab instanceof HTMLButtonElement) ||
+  !(recordButton instanceof HTMLButtonElement) ||
   !(codexToggle instanceof HTMLButtonElement) ||
   !(codexTranscript instanceof HTMLElement) ||
   !(gameSessionView instanceof HTMLElement)
@@ -29,6 +31,153 @@ let transcriptSignature = '';
 let transcriptRequestInFlight = false;
 let editPanelOpen = false;
 let codexPanelExpanded = false;
+let mediaRecorder = null;
+let recordingChunks = [];
+let recordingInProgress = false;
+let transcriptionInFlight = false;
+
+function updateRecordButtonVisualState() {
+  recordButton.classList.toggle('prompt-record-button--recording', recordingInProgress);
+  recordButton.classList.toggle('prompt-record-button--busy', transcriptionInFlight);
+  recordButton.disabled = transcriptionInFlight;
+
+  if (recordingInProgress) {
+    recordButton.setAttribute('aria-label', 'Stop voice recording');
+    return;
+  }
+
+  recordButton.setAttribute('aria-label', 'Start voice recording');
+}
+
+async function transcribeRecording(audioBlob) {
+  const arrayBuffer = await audioBlob.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = '';
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  const audioBase64 = window.btoa(binary);
+
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+
+  if (typeof csrfToken === 'string' && csrfToken.length > 0) {
+    headers['X-CSRF-Token'] = csrfToken;
+  }
+
+  const response = await fetch('/api/transcribe', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      audioBase64,
+      mimeType: audioBlob.type || 'audio/webm'
+    })
+  });
+
+  if (!response.ok) {
+    return;
+  }
+
+  const payload = await response.json();
+  if (!payload || typeof payload !== 'object' || typeof payload.text !== 'string') {
+    return;
+  }
+
+  const transcribedText = payload.text.trim();
+  if (transcribedText.length === 0) {
+    return;
+  }
+
+  promptInput.value = transcribedText;
+  focusPromptInput();
+}
+
+async function stopRecordingAndTranscribe() {
+  if (!mediaRecorder || mediaRecorder.state !== 'recording') {
+    return;
+  }
+
+  transcriptionInFlight = true;
+  updateRecordButtonVisualState();
+
+  const stoppedBlob = await new Promise((resolve) => {
+    const recorder = mediaRecorder;
+    recorder.addEventListener(
+      'stop',
+      () => {
+        const blob = new Blob(recordingChunks, {
+          type: recorder.mimeType || 'audio/webm'
+        });
+        resolve(blob);
+      },
+      { once: true }
+    );
+
+    recorder.stop();
+  });
+
+  recordingInProgress = false;
+  recordingChunks = [];
+
+  try {
+    await transcribeRecording(stoppedBlob);
+  } finally {
+    transcriptionInFlight = false;
+    updateRecordButtonVisualState();
+  }
+}
+
+async function startRecording() {
+  if (!navigator?.mediaDevices?.getUserMedia) {
+    return;
+  }
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    return;
+  }
+
+  mediaRecorder = new MediaRecorder(stream);
+  recordingChunks = [];
+
+  mediaRecorder.addEventListener('dataavailable', (event) => {
+    if (event.data && event.data.size > 0) {
+      recordingChunks.push(event.data);
+    }
+  });
+
+  mediaRecorder.addEventListener(
+    'stop',
+    () => {
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+    },
+    { once: true }
+  );
+
+  mediaRecorder.start();
+  recordingInProgress = true;
+  updateRecordButtonVisualState();
+}
+
+function toggleRecording() {
+  if (transcriptionInFlight) {
+    return;
+  }
+
+  if (recordingInProgress) {
+    void stopRecordingAndTranscribe();
+    return;
+  }
+
+  void startRecording();
+}
 
 function applyBottomPanelState() {
   promptPanel.classList.toggle('prompt-panel--open', editPanelOpen);
@@ -246,6 +395,12 @@ promptInput.addEventListener('keydown', (event) => {
     event.preventDefault();
     promptForm.requestSubmit();
   }
+});
+
+updateRecordButtonVisualState();
+
+recordButton.addEventListener('click', () => {
+  toggleRecording();
 });
 
 startTranscriptPolling();

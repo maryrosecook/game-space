@@ -262,6 +262,39 @@ body {
   outline-offset: 1px;
 }
 
+
+.prompt-record-button {
+  flex: 0 0 auto;
+  width: 52px;
+  border: 1px solid rgba(185, 207, 255, 0.7);
+  border-radius: 10px;
+  background: rgba(28, 45, 87, 0.88);
+  color: #f7f9ff;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.prompt-record-button span {
+  display: block;
+  transform: translateY(1px);
+}
+
+.prompt-record-button--recording {
+  background: rgba(132, 28, 42, 0.9);
+  border-color: rgba(255, 163, 176, 0.9);
+}
+
+.prompt-record-button--busy {
+  opacity: 0.7;
+}
+
+.prompt-record-button:focus-visible {
+  outline: 2px solid rgba(88, 148, 255, 0.9);
+  outline-offset: 1px;
+}
+
 .prompt-codex-toggle {
   flex: 0 0 auto;
   width: 52px;

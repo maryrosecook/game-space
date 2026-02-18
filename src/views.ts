@@ -204,6 +204,14 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           required
         />
         <button
+          id="prompt-record-button"
+          class="prompt-record-button"
+          type="button"
+          aria-label="Start voice recording"
+        >
+          <span aria-hidden="true">🎙️</span>
+        </button>
+        <button
           id="game-codex-toggle"
           class="prompt-codex-toggle"
           type="button"

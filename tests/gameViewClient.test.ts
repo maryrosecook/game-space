@@ -144,6 +144,7 @@ type GameViewHarness = {
   assignCalls: string[];
   body: TestBodyElement;
   editTab: TestHTMLButtonElement;
+  recordButton: TestHTMLButtonElement;
   codexToggle: TestHTMLButtonElement;
   promptForm: TestHTMLFormElement;
   promptInput: TestHTMLInputElement;
@@ -162,7 +163,7 @@ function createEvent(overrides: Partial<TestEvent> = {}): TestEvent {
 }
 
 async function flushAsyncOperations(): Promise<void> {
-  for (let attempt = 0; attempt < 6; attempt += 1) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
     await Promise.resolve();
   }
 }
@@ -176,6 +177,7 @@ async function runGameViewScript(
   const promptForm = new TestHTMLFormElement();
   const promptInput = new TestHTMLInputElement();
   const editTab = new TestHTMLButtonElement();
+  const recordButton = new TestHTMLButtonElement();
   const codexToggle = new TestHTMLButtonElement();
   const codexTranscript = new TestHTMLElement();
   const gameSessionView = new TestHTMLElement();
@@ -185,6 +187,7 @@ async function runGameViewScript(
   document.registerElement('prompt-form', promptForm);
   document.registerElement('prompt-input', promptInput);
   document.registerElement('game-tab-edit', editTab);
+  document.registerElement('prompt-record-button', recordButton);
   document.registerElement('game-codex-toggle', codexToggle);
   document.registerElement('game-codex-transcript', codexTranscript);
   document.registerElement('game-codex-session-view', gameSessionView);
@@ -242,6 +245,7 @@ async function runGameViewScript(
     assignCalls,
     body: document.body,
     editTab,
+    recordButton,
     codexToggle,
     promptForm,
     promptInput,
@@ -323,6 +327,8 @@ describe('game view prompt submit client', () => {
     expect(harness.fetchCalls).toHaveLength(1);
     expect(harness.assignCalls).toHaveLength(0);
   });
+
+
 
 
 
