@@ -348,6 +348,8 @@ body {
   height: auto;
   padding: 16px;
   background: transparent;
+  transform: translateY(0);
+  transition: transform 0.2s ease;
 }
 
 .game-home-link:focus-visible,
@@ -440,7 +442,8 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: color 0.2s ease;
+  transform: translateY(0);
+  transition: color 0.2s ease, transform 0.2s ease;
 }
 
 .game-view-icon {
@@ -466,6 +469,12 @@ body {
 .game-page--edit-open .game-view-tab--edit {
   --tab-fill: rgba(6, 12, 31, 0.97);
   border-color: rgba(132, 168, 245, 0.55);
+
+.game-page--edit-open .game-home-link,
+.game-page--edit-open .game-view-icon-tab {
+  transform: translateY(9px);
+}
+
   transform: translateY(6px);
 }
 
