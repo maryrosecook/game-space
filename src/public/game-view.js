@@ -144,6 +144,17 @@ async function requestRealtimeClientSecret() {
   });
 
   if (!response.ok) {
+    let errorDetails = `status ${response.status}`;
+    try {
+      const payload = await response.json();
+      if (payload && typeof payload === 'object' && typeof payload.error === 'string' && payload.error.trim().length > 0) {
+        errorDetails = `${errorDetails}: ${payload.error}`;
+      }
+    } catch {
+      // Keep status-only detail when the response payload cannot be parsed.
+    }
+
+    logRealtimeTranscription('session request failed', errorDetails);
     return null;
   }
 

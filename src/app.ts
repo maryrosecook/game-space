@@ -38,6 +38,7 @@ import {
 } from './services/gameVersions';
 import { renderAuthView, renderCodexView, renderGameView, renderHomepage } from './views';
 import {
+  DEFAULT_TRANSCRIPTION_MODEL,
   OpenAiRealtimeTranscriptionSessionFactory,
   type OpenAiRealtimeTranscriptionSessionCreator
 } from './services/openaiTranscription';
@@ -342,7 +343,6 @@ export function createApp(options: AppOptions = {}): express.Express {
     }
   });
 
-
   app.post('/api/transcribe', requireAdmin, requireValidCsrf, async (_request, response, next) => {
     try {
       if (!openAiRealtimeTranscriptionSessionCreator) {
@@ -362,7 +362,7 @@ export function createApp(options: AppOptions = {}): express.Express {
         logError('OpenAI realtime transcription session request failed', error);
         if (error instanceof Error && TRANSCRIPTION_MODEL_UNAVAILABLE_PATTERN.test(error.message)) {
           response.status(503).json({
-            error: 'Configured OpenAI transcription model is unavailable; set OPENAI_TRANSCRIBE_MODEL=whisper-1'
+            error: `OpenAI transcription model ${DEFAULT_TRANSCRIPTION_MODEL} is unavailable for this API key`
           });
           return;
         }

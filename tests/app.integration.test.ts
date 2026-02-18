@@ -27,7 +27,6 @@ const TEST_ADMIN_SESSION_SECRET = 'session-secret-for-tests-must-be-long';
 const originalPasswordHash = process.env.GAME_SPACE_ADMIN_PASSWORD_HASH;
 const originalSessionSecret = process.env.GAME_SPACE_ADMIN_SESSION_SECRET;
 const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
-const originalOpenAiTranscribeModel = process.env.OPENAI_TRANSCRIBE_MODEL;
 
 type CapturedRun = {
   prompt: string;
@@ -72,8 +71,6 @@ class FailingRunner implements CodexRunner {
   }
 }
 
-
-
 class CapturingRealtimeTranscriptionSessionCreator implements OpenAiRealtimeTranscriptionSessionCreator {
   public calls = 0;
   private readonly session: RealtimeTranscriptionSession;
@@ -82,7 +79,7 @@ class CapturingRealtimeTranscriptionSessionCreator implements OpenAiRealtimeTran
     session: RealtimeTranscriptionSession = {
       clientSecret: 'ephemeral-token',
       expiresAt: 1_737_000_000,
-      model: 'whisper-1'
+      model: 'gpt-4o-transcribe'
     }
   ) {
     this.session = session;
@@ -97,6 +94,12 @@ class CapturingRealtimeTranscriptionSessionCreator implements OpenAiRealtimeTran
 class FailingRealtimeTranscriptionSessionCreator implements OpenAiRealtimeTranscriptionSessionCreator {
   async createSession(): Promise<RealtimeTranscriptionSession> {
     throw new Error('OpenAI rejected session creation');
+  }
+}
+
+class ModelUnavailableRealtimeTranscriptionSessionCreator implements OpenAiRealtimeTranscriptionSessionCreator {
+  async createSession(): Promise<RealtimeTranscriptionSession> {
+    throw new Error('model_not_found: requested model was not found');
   }
 }
 
@@ -295,7 +298,6 @@ beforeEach(() => {
   process.env.GAME_SPACE_ADMIN_PASSWORD_HASH = TEST_ADMIN_PASSWORD_HASH;
   process.env.GAME_SPACE_ADMIN_SESSION_SECRET = TEST_ADMIN_SESSION_SECRET;
   delete process.env.OPENAI_API_KEY;
-  delete process.env.OPENAI_TRANSCRIBE_MODEL;
 });
 
 afterAll(() => {
@@ -315,12 +317,6 @@ afterAll(() => {
     process.env.OPENAI_API_KEY = originalOpenAiApiKey;
   } else {
     delete process.env.OPENAI_API_KEY;
-  }
-
-  if (typeof originalOpenAiTranscribeModel === 'string') {
-    process.env.OPENAI_TRANSCRIBE_MODEL = originalOpenAiTranscribeModel;
-  } else {
-    delete process.env.OPENAI_TRANSCRIBE_MODEL;
   }
 });
 
@@ -544,7 +540,7 @@ describe('express app integration', () => {
     const sessionCreator = new CapturingRealtimeTranscriptionSessionCreator({
       clientSecret: 'realtime-token',
       expiresAt: 1_737_000_321,
-      model: 'whisper-1'
+      model: 'gpt-4o-transcribe'
     });
 
     const app = createApp({
@@ -568,7 +564,7 @@ describe('express app integration', () => {
     expect(response.body).toEqual({
       clientSecret: 'realtime-token',
       expiresAt: 1_737_000_321,
-      model: 'whisper-1'
+      model: 'gpt-4o-transcribe'
     });
     expect(sessionCreator.calls).toBe(1);
   });
@@ -635,6 +631,39 @@ describe('express app integration', () => {
       .expect(502);
 
     expect(response.body).toEqual({ error: 'OpenAI realtime transcription session request failed' });
+  });
+
+  it('returns 503 when gpt-4o-transcribe is unavailable for the API key', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-transcribe-model-unavailable-');
+    await createGameFixture({
+      gamesRootPath: path.join(tempDirectoryPath, 'games'),
+      metadata: {
+        id: 'source',
+        parentId: null,
+        createdTime: new Date().toISOString()
+      }
+    });
+
+    const app = createApp({
+      repoRootPath: tempDirectoryPath,
+      gamesRootPath: path.join(tempDirectoryPath, 'games'),
+      buildPromptPath: path.join(tempDirectoryPath, 'game-build-prompt.md'),
+      codexRunner: new CapturingRunner(),
+      openAiRealtimeTranscriptionSessionCreator: new ModelUnavailableRealtimeTranscriptionSessionCreator(),
+      logError: () => {}
+    });
+
+    const authSession = await loginAsAdmin(app);
+
+    const response = await request(app)
+      .post('/api/transcribe')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .expect(503);
+
+    expect(response.body).toEqual({ error: 'OpenAI transcription model gpt-4o-transcribe is unavailable for this API key' });
   });
 
   it('returns 404 for protected routes when unauthenticated', async () => {

@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { OpenAiRealtimeTranscriptionSessionFactory } from '../src/services/openaiTranscription';
+import {
+  DEFAULT_TRANSCRIPTION_MODEL,
+  OpenAiRealtimeTranscriptionSessionFactory
+} from '../src/services/openaiTranscription';
 
 describe('OpenAiRealtimeTranscriptionSessionFactory', () => {
   const originalApiKey = process.env.OPENAI_API_KEY;
@@ -48,7 +51,7 @@ describe('OpenAiRealtimeTranscriptionSessionFactory', () => {
     expect(session).toEqual({
       clientSecret: 'ephemeral-secret',
       expiresAt: 1_737_000_000,
-      model: 'whisper-1'
+      model: DEFAULT_TRANSCRIPTION_MODEL
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] ?? [];
@@ -60,10 +63,10 @@ describe('OpenAiRealtimeTranscriptionSessionFactory', () => {
         'Content-Type': 'application/json'
       }
     });
-    expect(requestInit?.body).toBe(JSON.stringify({ input_audio_transcription: { model: 'whisper-1' } }));
+    expect(requestInit?.body).toBe(JSON.stringify({ input_audio_transcription: { model: DEFAULT_TRANSCRIPTION_MODEL } }));
   });
 
-  it('uses OPENAI_TRANSCRIBE_MODEL when configured', async () => {
+  it('ignores OPENAI_TRANSCRIBE_MODEL and always uses gpt-4o-transcribe', async () => {
     process.env.OPENAI_TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe';
     const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<{ ok: boolean; json: () => Promise<unknown> }>>(
       async () => ({
@@ -87,7 +90,7 @@ describe('OpenAiRealtimeTranscriptionSessionFactory', () => {
     await sessionFactory.createSession();
 
     const requestInit = fetchMock.mock.calls[0]?.[1];
-    expect(requestInit?.body).toBe(JSON.stringify({ input_audio_transcription: { model: 'gpt-4o-mini-transcribe' } }));
+    expect(requestInit?.body).toBe(JSON.stringify({ input_audio_transcription: { model: DEFAULT_TRANSCRIPTION_MODEL } }));
   });
 
   it('throws when API key is missing', () => {

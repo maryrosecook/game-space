@@ -14,6 +14,7 @@ type EventListener = (event: TestEvent) => void;
 
 type FetchResponse = {
   ok: boolean;
+  status?: number;
   json?: () => Promise<unknown>;
   text?: () => Promise<string>;
 };
@@ -566,6 +567,33 @@ describe('game view prompt submit client', () => {
     const peerConnection = harness.getPeerConnection();
     expect(peerConnection?.localDescription).toEqual({ type: 'offer', sdp: 'fake-offer-sdp' });
     expect(peerConnection?.remoteDescription).toEqual({ type: 'answer', sdp: 'fake-answer-sdp' });
+  });
+
+  it('logs transcribe endpoint errors and does not start recording', async () => {
+    const harness = await runGameViewScript(async (url) => {
+      if (url === '/api/transcribe') {
+        return {
+          ok: false,
+          status: 503,
+          async json() {
+            return { error: 'OpenAI transcription model gpt-4o-transcribe is unavailable for this API key' };
+          }
+        };
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    expect(harness.fetchCalls).toHaveLength(1);
+    expect(harness.getUserMediaCalls()).toBe(0);
+    expect(harness.recordButton.classList.contains('prompt-record-button--recording')).toBe(false);
+    expect(harness.consoleLogs).toContainEqual([
+      '[realtime-transcription] session request failed',
+      'status 503: OpenAI transcription model gpt-4o-transcribe is unavailable for this API key'
+    ]);
   });
 
   it('fills the prompt input with realtime transcript when recording stops', async () => {
