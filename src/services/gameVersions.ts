@@ -30,7 +30,7 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     return null;
   }
 
-  const { id, parentId, createdTime, codexSessionId, codexSessionStatus } = value;
+  const { id, parentId, createdTime, tileColor, codexSessionId, codexSessionStatus } = value;
   if (typeof id !== 'string' || id.length === 0) {
     return null;
   }
@@ -48,6 +48,15 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     return null;
   }
 
+  if (!(tileColor === undefined || typeof tileColor === 'string')) {
+    return null;
+  }
+
+  const normalizedTileColor =
+    typeof tileColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(tileColor.trim())
+      ? tileColor.trim().toUpperCase()
+      : undefined;
+
   if (!(codexSessionId === undefined || codexSessionId === null || typeof codexSessionId === 'string')) {
     return null;
   }
@@ -59,6 +68,7 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     id,
     parentId,
     createdTime: new Date(createdTimestamp).toISOString(),
+    tileColor: normalizedTileColor,
     codexSessionId: normalizedSessionId,
     codexSessionStatus: normalizedSessionStatus
   };
@@ -98,8 +108,14 @@ export async function readMetadataFile(metadataPath: string): Promise<GameMetada
 }
 
 export async function writeMetadataFile(metadataPath: string, metadata: GameMetadata): Promise<void> {
+  const normalizedTileColor =
+    typeof metadata.tileColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(metadata.tileColor.trim())
+      ? metadata.tileColor.trim().toUpperCase()
+      : undefined;
+
   const normalizedMetadata: GameMetadata = {
     ...metadata,
+    tileColor: normalizedTileColor,
     codexSessionId: metadata.codexSessionId ?? null,
     codexSessionStatus: resolveCodexSessionStatus(metadata.codexSessionId ?? null, metadata.codexSessionStatus)
   };

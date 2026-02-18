@@ -102,6 +102,7 @@ type StoredMetadata = {
   id: string;
   parentId: string | null;
   createdTime: string;
+  tileColor?: string;
   codexSessionId?: string | null;
   codexSessionStatus?: 'none' | 'created' | 'stopped' | 'error';
 };
@@ -324,9 +325,8 @@ describe('express app integration', () => {
     expect(homepage.text).toContain('>Login<');
     expect(homepage.text).toContain('>newer game<');
     expect(homepage.text).not.toContain('>newer-game<');
-    expect(homepage.text).toContain('>February, 2026<');
-    expect(homepage.text).toContain('>January, 2026<');
-    expect(homepage.text).not.toMatch(/<span class="tile-created">[^<]*\d{1,2}:\d{2}/);
+    expect(homepage.text).not.toContain('tile-created');
+    expect(homepage.text).toContain('style="--tile-color: #1D3557;"');
     const newerIndex = homepage.text.indexOf('data-version-id="newer-game"');
     const olderIndex = homepage.text.indexOf('data-version-id="older-build"');
     expect(newerIndex).toBeGreaterThan(-1);
@@ -983,7 +983,7 @@ describe('express app integration', () => {
     expect(typeof response.body.forkId).toBe('string');
 
     const forkId = response.body.forkId as string;
-    expect(forkId).toMatch(/^[a-z]+-[a-z]+-[a-z]+$/);
+    expect(forkId).toBe('line-quoted-game');
 
     expect(codexRunner.calls).toHaveLength(1);
     expect(codexRunner.calls[0]?.cwd).toBe(path.join(gamesRootPath, forkId));
@@ -995,6 +995,7 @@ describe('express app integration', () => {
     const forkMetadata = await readMetadata(forkMetadataPath);
     expect(forkMetadata.id).toBe(forkId);
     expect(forkMetadata.parentId).toBe('source');
+    expect(forkMetadata.tileColor).toMatch(/^#[0-9A-F]{6}$/);
     expect(forkMetadata.codexSessionId).toBe(persistedSessionId);
     await waitForSessionStatus(forkMetadataPath, 'stopped');
     expect((await readMetadata(forkMetadataPath)).codexSessionStatus).toBe('stopped');

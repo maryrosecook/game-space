@@ -7,44 +7,40 @@ import type { GameMetadata } from '../types';
 
 const excludedDirectoryNames = new Set(['node_modules']);
 const maxForkIdAttempts = 32;
-const forkIdWords = [
-  'acorn',
-  'amber',
-  'brook',
-  'calm',
-  'cedar',
-  'cloud',
-  'coast',
-  'copper',
-  'dawn',
-  'drift',
-  'elm',
-  'field',
-  'flint',
-  'glade',
-  'harbor',
-  'heather',
-  'hollow',
-  'iris',
-  'ivy',
-  'linen',
-  'meadow',
-  'mist',
-  'oak',
-  'opal',
-  'palm',
-  'pebble',
-  'pine',
-  'river',
-  'sage',
-  'spruce',
-  'stone',
-  'willow'
-] as const;
+const maxIdWordLength = 14;
+const fallbackIdWords = ['new', 'arcade', 'game'] as const;
+const stopWords = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'for',
+  'from',
+  'game',
+  'how',
+  'in',
+  'is',
+  'it',
+  'its',
+  'of',
+  'on',
+  'or',
+  'that',
+  'the',
+  'this',
+  'to',
+  'with',
+  'you',
+  'your'
+]);
 
 type CreateForkedGameVersionOptions = {
   gamesRootPath: string;
   sourceVersionId: string;
+  sourcePrompt?: string;
   idFactory?: () => string;
   now?: () => Date;
 };
@@ -53,11 +49,86 @@ function randomIndex(maxExclusive: number): number {
   return Math.floor(Math.random() * maxExclusive);
 }
 
-function createWordTripletId(): string {
-  const first = forkIdWords[randomIndex(forkIdWords.length)] ?? forkIdWords[0];
-  const second = forkIdWords[randomIndex(forkIdWords.length)] ?? forkIdWords[0];
-  const third = forkIdWords[randomIndex(forkIdWords.length)] ?? forkIdWords[0];
+function sanitizePromptWords(prompt: string): string[] {
+  return prompt
+    .toLowerCase()
+    .split(/[^a-z0-9]+/u)
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 3 && word.length <= maxIdWordLength)
+    .filter((word) => !/^\d+$/.test(word))
+    .filter((word) => !stopWords.has(word));
+}
+
+function uniqueWords(words: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const word of words) {
+    if (seen.has(word)) {
+      continue;
+    }
+
+    seen.add(word);
+    deduped.push(word);
+  }
+
+  return deduped;
+}
+
+function buildIdWordsFromPrompt(prompt: string): [string, string, string] {
+  const dedupedWords = uniqueWords(sanitizePromptWords(prompt));
+  const selected = dedupedWords.slice(0, 3);
+  while (selected.length < 3) {
+    selected.push(fallbackIdWords[selected.length] ?? 'game');
+  }
+
+  return [selected[0] ?? fallbackIdWords[0], selected[1] ?? fallbackIdWords[1], selected[2] ?? fallbackIdWords[2]];
+}
+
+function createWordTripletIdFromPrompt(prompt: string): string {
+  const [first, second, third] = buildIdWordsFromPrompt(prompt);
   return `${first}-${second}-${third}`;
+}
+
+function createWordTripletId(): string {
+  return `${fallbackIdWords[0]}-${fallbackIdWords[1]}-${fallbackIdWords[2]}`;
+}
+
+function relativeLuminanceChannel(value: number): number {
+  const normalized = value / 255;
+  if (normalized <= 0.03928) {
+    return normalized / 12.92;
+  }
+
+  return ((normalized + 0.055) / 1.055) ** 2.4;
+}
+
+function contrastRatioWithWhite(red: number, green: number, blue: number): number {
+  const luminance =
+    0.2126 * relativeLuminanceChannel(red) +
+    0.7152 * relativeLuminanceChannel(green) +
+    0.0722 * relativeLuminanceChannel(blue);
+  return (1 + 0.05) / (luminance + 0.05);
+}
+
+function toHexColor(red: number, green: number, blue: number): string {
+  const toHex = (value: number): string => value.toString(16).padStart(2, '0').toUpperCase();
+  return `#${toHex(red)}${toHex(green)}${toHex(blue)}`;
+}
+
+function createReadableRandomHexColor(): string {
+  const minimumContrast = 4.5;
+  const maxAttempts = 64;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const red = randomIndex(256);
+    const green = randomIndex(256);
+    const blue = randomIndex(256);
+    if (contrastRatioWithWhite(red, green, blue) >= minimumContrast) {
+      return toHexColor(red, green, blue);
+    }
+  }
+
+  return '#1D3557';
 }
 
 async function createUniqueForkVersionId(gamesRootPath: string, idFactory: () => string): Promise<string> {
@@ -120,7 +191,8 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
   const {
     gamesRootPath,
     sourceVersionId,
-    idFactory = createWordTripletId,
+    sourcePrompt,
+    idFactory = sourcePrompt ? () => createWordTripletIdFromPrompt(sourcePrompt) : createWordTripletId,
     now = () => new Date()
   } = options;
 
@@ -152,6 +224,7 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
     id: forkVersionId,
     parentId: sourceVersionId,
     createdTime: now().toISOString(),
+    tileColor: createReadableRandomHexColor(),
     codexSessionId: null,
     codexSessionStatus: 'none'
   };

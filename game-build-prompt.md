@@ -36,4 +36,10 @@ The host page will load and run your game with this fixed contract:
 - Preserve compatibility with older game versions by changing only this selected version directory.
 - Update this version's `metadata.json` only when lineage/version semantics require it.
 
+## Metadata requirements
+
+- `metadata.json` includes an `id` field (the game version id) and may include `tileColor`.
+- If you need to set or adjust the game id, it must be exactly **three short hyphen-separated words** that clearly and lucidly summarize the user's prompt (descriptive, not random).
+- Keep `tileColor` as a valid six-digit hex color (example: `#1F4A7C`).
+
 ## Do not bother writing tests
