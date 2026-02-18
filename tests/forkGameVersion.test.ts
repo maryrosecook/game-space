@@ -32,13 +32,14 @@ describe('createForkedGameVersion', () => {
       now: () => new Date('2026-03-02T00:00:00.000Z')
     });
 
-    expect(created).toEqual({
+    expect(created).toMatchObject({
       id: 'fork-game',
       parentId: 'source-game',
       createdTime: '2026-03-02T00:00:00.000Z',
       codexSessionId: null,
       codexSessionStatus: 'none'
     });
+    expect(created.tileColor).toMatch(/^#[0-9A-F]{6}$/);
 
     const forkMetadata = await readMetadataFile(path.join(gamesRootPath, 'fork-game', 'metadata.json'));
     expect(forkMetadata).toEqual(created);
@@ -109,6 +110,30 @@ describe('createForkedGameVersion', () => {
 
     const forkMetadata = await readMetadataFile(path.join(gamesRootPath, 'linen-drift-sage', 'metadata.json'));
     expect(forkMetadata?.parentId).toBe('source-game');
+  });
+
+  it('derives a descriptive three-word id from the source prompt', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-fork-prompt-id-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'source-game',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const created = await createForkedGameVersion({
+      gamesRootPath,
+      sourceVersionId: 'source-game',
+      sourcePrompt: 'Build a neon racing game with drifting cars and boost pads',
+      now: () => new Date('2026-03-02T00:00:00.000Z')
+    });
+
+    expect(created.id).toBe('build-neon-racing');
   });
 
   it('throws when idFactory generates an invalid fork id', async () => {

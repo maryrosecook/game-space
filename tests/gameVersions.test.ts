@@ -51,6 +51,7 @@ describe('game version discovery', () => {
     expect(normalized?.codexSessionId).toBeNull();
     expect(normalized?.codexSessionStatus).toBe('none');
     expect(normalized?.createdTime).toBe('2026-02-01T17:00:00.000Z');
+    expect(normalized?.tileColor).toBeUndefined();
     expect(
       parseGameMetadata({
         id: 'bad',
@@ -116,6 +117,49 @@ describe('game version discovery', () => {
       codexSessionId: null,
       codexSessionStatus: 'none'
     });
+  });
+
+  it('normalizes valid tile colors and rejects invalid tileColor values', () => {
+    expect(
+      parseGameMetadata({
+        id: 'v4',
+        parentId: 'v3',
+        createdTime: '2026-02-04T00:00:00.000Z',
+        tileColor: '#1a2b3c'
+      })
+    ).toEqual({
+      id: 'v4',
+      parentId: 'v3',
+      createdTime: '2026-02-04T00:00:00.000Z',
+      tileColor: '#1A2B3C',
+      codexSessionId: null,
+      codexSessionStatus: 'none'
+    });
+
+    expect(
+      parseGameMetadata({
+        id: 'v4',
+        parentId: null,
+        createdTime: '2026-02-04T00:00:00.000Z',
+        tileColor: 'blue'
+      })
+    ).toEqual({
+      id: 'v4',
+      parentId: null,
+      createdTime: '2026-02-04T00:00:00.000Z',
+      tileColor: undefined,
+      codexSessionId: null,
+      codexSessionStatus: 'none'
+    });
+
+    expect(
+      parseGameMetadata({
+        id: 'v4',
+        parentId: null,
+        createdTime: '2026-02-04T00:00:00.000Z',
+        tileColor: 12
+      })
+    ).toBeNull();
   });
 
   it('accepts safe version ids and rejects dot-segment ids', () => {

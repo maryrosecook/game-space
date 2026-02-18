@@ -14,17 +14,6 @@ function formatDateTime(value: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-function formatMonthYear(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  const month = date.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
-  const year = date.toLocaleString('en-US', { year: 'numeric', timeZone: 'UTC' });
-  return `${month}, ${year}`;
-}
-
 function formatHomepageVersionName(versionId: string): string {
   return versionId.replaceAll('-', ' ');
 }
@@ -40,11 +29,11 @@ export function renderHomepage(versions: readonly GameVersion[], options: Homepa
     .map((version) => {
       const id = escapeHtml(version.id);
       const displayId = escapeHtml(formatHomepageVersionName(version.id));
-      const createdTime = escapeHtml(version.createdTime);
+      const tileColor = typeof version.tileColor === 'string' ? version.tileColor : '#1D3557';
+      const tileColorEscaped = escapeHtml(tileColor);
       return `
-        <a class="game-tile" href="/game/${encodeURIComponent(version.id)}" data-version-id="${id}" data-created-time="${createdTime}">
+        <a class="game-tile" href="/game/${encodeURIComponent(version.id)}" data-version-id="${id}" data-tile-color="${tileColorEscaped}" style="--tile-color: ${tileColorEscaped};">
           <span class="tile-id">${displayId}</span>
-          <span class="tile-created">${escapeHtml(formatMonthYear(version.createdTime))}</span>
         </a>
       `;
     })

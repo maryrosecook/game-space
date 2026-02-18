@@ -384,7 +384,8 @@ export function createApp(options: AppOptions = {}): express.Express {
 
       const forkedMetadata = await createForkedGameVersion({
         gamesRootPath,
-        sourceVersionId: versionId
+        sourceVersionId: versionId,
+        sourcePrompt: promptInput
       });
 
       const buildPrompt = await readBuildPromptFile(buildPromptPath);
