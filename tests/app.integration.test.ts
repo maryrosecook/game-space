@@ -403,7 +403,7 @@ describe('express app integration', () => {
     expect(css.text).toContain('.game-view-tab--edit');
     expect(css.text).toContain('gap: 16px;');
     expect(css.text).toContain('.game-home-link');
-    expect(css.text).toContain('align-self: flex-end;');
+    expect(css.text).toContain('align-self: center;');
     expect(css.text).toContain('padding: 16px;');
     expect(css.text).toContain('.game-tile--favorite');
     expect(css.text).toContain('border-color: #facc15;');

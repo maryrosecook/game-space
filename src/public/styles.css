@@ -327,7 +327,7 @@ body {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
-  align-items: flex-end;
+  align-items: center;
   background: linear-gradient(180deg, rgba(3, 7, 20, 0.02) 0%, rgba(3, 7, 20, 0.96) 44%, rgba(3, 7, 20, 0.98) 100%);
   box-shadow: 0 -10px 24px rgba(3, 8, 24, 0.55);
   transform: translateY(0);
@@ -335,7 +335,7 @@ body {
 }
 
 .game-home-link {
-  align-self: flex-end;
+  align-self: center;
   color: #d8e6ff;
   display: inline-flex;
   align-items: center;
@@ -359,9 +359,9 @@ body {
 
 .game-tool-tabs {
   justify-self: start;
-  align-self: flex-end;
+  align-self: center;
   display: inline-flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 10px;
 }
 
@@ -427,7 +427,7 @@ body {
 }
 
 .game-view-icon-tab {
-  align-self: flex-end;
+  align-self: center;
   height: auto;
   width: auto;
   border: 0;
