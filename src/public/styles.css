@@ -335,7 +335,7 @@ body {
 }
 
 .game-home-link {
-  align-self: center;
+  align-self: flex-end;
   color: #d8e6ff;
   display: inline-flex;
   align-items: center;
@@ -344,8 +344,9 @@ body {
   font-size: 2.15rem;
   font-weight: 700;
   line-height: 1;
-  width: 40px;
-  height: calc(var(--bottom-tab-height) - 16px);
+  width: auto;
+  height: auto;
+  padding: 16px;
   background: transparent;
 }
 
@@ -367,7 +368,7 @@ body {
 .game-view-tab {
   --tab-fill: rgba(7, 22, 54, 0.98);
   position: relative;
-  height: calc((var(--bottom-tab-height) - 10px) / 2);
+  height: auto;
   width: auto;
   display: inline-flex;
   align-items: center;
@@ -381,7 +382,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  padding: 4px 16px 6px;
+  padding: 16px;
   cursor: pointer;
   transition: border-color 0.2s ease, color 0.2s ease;
 }
@@ -427,19 +428,18 @@ body {
 
 .game-view-icon-tab {
   align-self: flex-end;
-  height: calc((var(--bottom-tab-height) - 10px) / 2);
-  width: 44px;
-  border: 1px solid rgba(161, 191, 255, 0.45);
-  border-radius: 10px 10px 0 0;
-  border-bottom: 0;
-  background: linear-gradient(165deg, rgba(13, 30, 72, 0.98), rgba(7, 22, 54, 0.98));
+  height: auto;
+  width: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: #d8e6ff;
-  padding: 0;
+  padding: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: border-color 0.2s ease, color 0.2s ease;
+  transition: color 0.2s ease;
 }
 
 .game-view-icon {
@@ -452,7 +452,6 @@ body {
 
 .game-view-icon-tab--favorite.game-view-icon-tab--active {
   color: #facc15;
-  border-color: rgba(250, 204, 21, 0.9);
 }
 
 .game-view-icon-tab--favorite.game-view-icon-tab--active .game-view-icon polygon {

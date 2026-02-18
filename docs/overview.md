@@ -5,7 +5,7 @@ Local-first game version browser and editor where every version is playable, for
 Top three features:
 - Filesystem-backed version catalog rendered as responsive homepage tiles (`Fountain`), with hyphen-normalized labels and favorite highlighting; logged-out users see only favorites while direct non-favorite game URLs still load.
 - Cookie-authenticated admin workflow (`/auth`) that unlocks prompt execution and Codex transcript access while keeping public gameplay (`/` and `/game/:versionId`) available without login.
-- Admin game controls on `/game/:versionId` include prompt editing, transcript toggle, and a star toggle that persists favorite state to each game's `metadata.json`.
+- Admin game controls on `/game/:versionId` include prompt editing, transcript toggle, and an icon-only star toggle (no tab chrome) that persists favorite state to each game's `metadata.json`; the back link and controls share bottom alignment.
 
 # Repo structure
 

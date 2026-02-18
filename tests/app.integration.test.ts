@@ -402,10 +402,14 @@ describe('express app integration', () => {
     expect(css.text).toContain('border-top-color: #f7f9ff;');
     expect(css.text).toContain('.game-view-tab--edit');
     expect(css.text).toContain('gap: 16px;');
+    expect(css.text).toContain('.game-home-link');
+    expect(css.text).toContain('align-self: flex-end;');
+    expect(css.text).toContain('padding: 16px;');
     expect(css.text).toContain('.game-tile--favorite');
     expect(css.text).toContain('border-color: #facc15;');
     expect(css.text).toContain('.game-view-icon-tab');
-    expect(css.text).toContain('height: calc((var(--bottom-tab-height) - 10px) / 2);');
+    expect(css.text).toContain('border: 0;');
+    expect(css.text).toContain('background: transparent;');
     expect(css.text).toContain('.game-view-tab--generating .game-view-tab-spinner');
     expect(css.text).toContain('display: inline-block;');
     expect(css.text).not.toContain('game-tab-spinner-flash');
