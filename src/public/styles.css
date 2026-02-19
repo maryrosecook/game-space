@@ -233,6 +233,7 @@ body {
 
 .prompt-form {
   display: flex;
+  flex-direction: column;
   gap: 10px;
   width: 100%;
   min-width: 0;
@@ -272,7 +273,7 @@ body {
   user-select: text;
 }
 
-.prompt-form input {
+.prompt-form textarea {
   flex: 1 1 auto;
   min-width: 0;
   border: 1px solid rgba(185, 207, 255, 0.6);
@@ -281,36 +282,43 @@ body {
   color: #f7f9ff;
   padding: 12px;
   font-size: 1rem;
+  line-height: 1.35;
+  resize: none;
+  overflow-y: hidden;
+  min-height: 48px;
+  max-height: 190px;
 }
 
-.prompt-form input:focus {
+.prompt-form textarea:focus {
   outline: 2px solid rgba(88, 148, 255, 0.9);
   outline-offset: 1px;
 }
 
+.prompt-action-row {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+}
 
-
-.prompt-codex-toggle {
-  flex: 0 0 auto;
-  width: 52px;
+.prompt-action-button {
+  flex: 1 1 50%;
   border: 1px solid rgba(185, 207, 255, 0.7);
   border-radius: 10px;
   background: rgba(28, 45, 87, 0.88);
   color: #f7f9ff;
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   line-height: 1;
-  padding: 0;
+  padding: 11px 10px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
-.prompt-codex-toggle:focus-visible {
+.prompt-action-button:focus-visible {
   outline: 2px solid rgba(88, 148, 255, 0.9);
   outline-offset: 1px;
-}
-
-.prompt-codex-toggle span {
-  display: block;
-  transform: translateY(1px);
 }
 
 .game-bottom-tabs {
@@ -349,7 +357,8 @@ body {
 
 .game-home-link:focus-visible,
 .game-view-tab:focus-visible,
-.game-view-icon-tab:focus-visible {
+.game-view-icon-tab:focus-visible,
+.prompt-action-button:focus-visible {
   outline: 2px solid rgba(103, 163, 255, 0.95);
   outline-offset: 1px;
 }
@@ -388,11 +397,8 @@ body {
 }
 
 .game-view-tab--edit {
-  gap: 16px;
-}
-
-.game-view-tab-label {
-  display: inline-block;
+  min-width: 54px;
+  padding: 14px 16px;
 }
 
 .game-view-tab-spinner {
