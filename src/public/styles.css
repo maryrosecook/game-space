@@ -367,6 +367,8 @@ body {
 
 .game-view-tab {
   --tab-fill: rgba(7, 22, 54, 0.98);
+  appearance: none;
+  -webkit-appearance: none;
   position: relative;
   height: auto;
   width: auto;
@@ -428,6 +430,8 @@ body {
 }
 
 .game-view-icon-tab {
+  appearance: none;
+  -webkit-appearance: none;
   align-self: center;
   height: auto;
   width: auto;
@@ -453,11 +457,23 @@ body {
 }
 
 .game-view-icon-tab--record.game-view-icon-tab--recording {
-  color: #fca5a5;
+  color: #ef4444;
+  animation: game-recording-throb 1.15s ease-in-out infinite;
 }
 
 .game-view-icon-tab--record.game-view-icon-tab--busy {
   opacity: 0.7;
+}
+
+@keyframes game-recording-throb {
+  0%,
+  100% {
+    color: #b91c1c;
+  }
+
+  50% {
+    color: #f87171;
+  }
 }
 
 
@@ -806,7 +822,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .game-view-tab--generating .game-view-tab-spinner {
+  .game-view-tab--generating .game-view-tab-spinner,
+  .game-view-icon-tab--record.game-view-icon-tab--recording {
     animation: none;
   }
 }
