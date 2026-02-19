@@ -292,7 +292,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           </button>
           <button
             id="game-tab-favorite"
-            class="prompt-action-button game-view-icon-tab--favorite${isFavorite ? ' game-view-icon-tab--active' : ''}"
+            class="prompt-action-button prompt-action-button--icon game-view-icon-tab--favorite${isFavorite ? ' game-view-icon-tab--active' : ''}"
             type="button"
             aria-label="${isFavorite ? 'Unfavorite game' : 'Favorite game'}"
             aria-pressed="${isFavorite ? 'true' : 'false'}"
@@ -312,7 +312,6 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
             >
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
             </svg>
-            <span>Favorite</span>
           </button>
         <button
           id="game-codex-toggle"
@@ -345,7 +344,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         </button>
         <button
           id="game-tab-delete"
-          class="prompt-action-button"
+          class="prompt-action-button prompt-action-button--icon"
           type="button"
           aria-label="Delete game"
         >
@@ -368,7 +367,6 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
             <path d="M10 11v6"></path>
             <path d="M14 11v6"></path>
           </svg>
-          <span>Delete</span>
         </button>
         </div>
       </form>
