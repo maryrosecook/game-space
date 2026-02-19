@@ -255,6 +255,8 @@ export function createApp(options: AppOptions = {}): express.Express {
   const requireAdmin = requireAdminOr404(authConfig);
   const requireValidCsrf = requireValidCsrfMiddleware();
   const loginAttemptLimiter = new LoginAttemptLimiter();
+  let activeIdeaGeneration: { requestId: number; abortController: AbortController } | null = null;
+  let nextIdeaGenerationRequestId = 1;
 
   if (shouldBuildGamesOnStartup) {
     void buildAllGames(gamesRootPath).catch((error) => {
@@ -414,11 +416,25 @@ export function createApp(options: AppOptions = {}): express.Express {
     requireAdmin,
     requireValidCsrf,
     async (_request, response, next) => {
+      const requestId = nextIdeaGenerationRequestId;
+      nextIdeaGenerationRequestId += 1;
+
+      if (activeIdeaGeneration) {
+        activeIdeaGeneration.abortController.abort();
+      }
+
+      const abortController = new AbortController();
+      activeIdeaGeneration = {
+        requestId,
+        abortController,
+      };
+
       try {
         const prompt = await generateIdeaPrompt(
           buildPromptPath,
           ideationPromptPath,
           repoRootPath,
+          abortController.signal,
         );
 
         const ideas = await readIdeasFile(ideasPath);
@@ -427,7 +443,16 @@ export function createApp(options: AppOptions = {}): express.Express {
 
         response.status(201).json({ prompt, ideas: nextIdeas });
       } catch (error: unknown) {
+        if (error instanceof Error && error.message === "codex ideation command aborted") {
+          response.status(409).json({ error: "Idea generation replaced by newer request" });
+          return;
+        }
+
         next(error);
+      } finally {
+        if (activeIdeaGeneration?.requestId === requestId) {
+          activeIdeaGeneration = null;
+        }
       }
     },
   );

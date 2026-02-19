@@ -13,7 +13,8 @@ function normalizeIdeaOutput(rawOutput: string): string | null {
 export async function generateIdeaPrompt(
   gameBuildPromptPath: string,
   ideationPromptPath: string,
-  cwd: string
+  cwd: string,
+  signal?: AbortSignal
 ): Promise<string> {
   const [gameBuildPrompt, ideationPrompt] = await Promise.all([
     fs.readFile(gameBuildPromptPath, 'utf8'),
@@ -27,6 +28,42 @@ export async function generateIdeaPrompt(
       cwd,
       stdio: ['pipe', 'pipe', 'pipe']
     });
+    let settled = false;
+
+    function rejectIfPending(error: Error): void {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      reject(error);
+    }
+
+    function resolveIfPending(prompt: string): void {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      resolve(prompt);
+    }
+
+    function abortGeneration(): void {
+      childProcess.kill('SIGTERM');
+      rejectIfPending(new Error('codex ideation command aborted'));
+    }
+
+    if (signal) {
+      if (signal.aborted) {
+        abortGeneration();
+        return;
+      }
+
+      signal.addEventListener('abort', abortGeneration, { once: true });
+      childProcess.on('close', () => {
+        signal.removeEventListener('abort', abortGeneration);
+      });
+    }
 
     let stdoutText = '';
     let stderrText = '';
@@ -42,23 +79,23 @@ export async function generateIdeaPrompt(
     });
 
     childProcess.on('error', (error) => {
-      reject(error);
+      rejectIfPending(error);
     });
 
     childProcess.on('close', (exitCode) => {
       if (exitCode !== 0) {
         const details = stderrText.trim().length > 0 ? `: ${stderrText.trim()}` : '';
-        reject(new Error(`codex ideation command failed with exit code ${exitCode ?? 'unknown'}${details}`));
+        rejectIfPending(new Error(`codex ideation command failed with exit code ${exitCode ?? 'unknown'}${details}`));
         return;
       }
 
       const normalized = normalizeIdeaOutput(stdoutText);
       if (!normalized) {
-        reject(new Error('codex ideation command returned an empty idea')); 
+        rejectIfPending(new Error('codex ideation command returned an empty idea'));
         return;
       }
 
-      resolve(normalized);
+      resolveIfPending(normalized);
     });
 
     childProcess.stdin.end(fullPrompt);
