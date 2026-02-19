@@ -331,6 +331,13 @@ async function stopRealtimeRecording() {
     await new Promise((resolve) => {
       window.setTimeout(resolve, 200);
     });
+
+    const transcribedPrompt = completedTranscriptionSegments.join(' ').trim();
+    if (!editPanelOpen && versionId && transcribedPrompt.length > 0) {
+      await submitPrompt(transcribedPrompt);
+      completedTranscriptionSegments = [];
+      updatePromptOverlay();
+    }
   } finally {
     logRealtimeTranscription('stopped');
     logRealtimeTranscription('final transcribed text', promptInput.value);

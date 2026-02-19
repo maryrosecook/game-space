@@ -680,6 +680,15 @@ describe('game view prompt submit client', () => {
         };
       }
 
+      if (url === '/api/games/source-version/prompts') {
+        return {
+          ok: true,
+          async json() {
+            return { forkId: 'voice-fork' };
+          }
+        };
+      }
+
       throw new Error(`Unexpected fetch URL: ${url}`);
     });
 
@@ -702,11 +711,23 @@ describe('game view prompt submit client', () => {
     await flushAsyncOperations();
 
     expect(harness.promptInput.value).toBe('');
-    expect(harness.promptOverlay.textContent).toBe('make the paddle bigger');
+    expect(harness.promptOverlay.textContent).toBe('');
     expect(peerConnection?.dataChannel.sentMessages).toContain(JSON.stringify({ type: 'input_audio_buffer.commit' }));
     expect(harness.mediaTrack.stopped).toBe(true);
     expect(peerConnection?.closed).toBe(true);
     expect(harness.recordButton.getAttribute('aria-label')).toBe('Start voice recording');
+    expect(harness.fetchCalls[2]).toEqual({
+      url: '/api/games/source-version/prompts',
+      init: {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': 'csrf-token-123'
+        },
+        body: JSON.stringify({ prompt: 'make the paddle bigger' })
+      }
+    });
+    expect(harness.assignCalls).toEqual(['/game/voice-fork']);
     expect(harness.recordButton.classList.contains('game-view-icon-tab--recording')).toBe(false);
     expect(harness.consoleLogs).toContainEqual(['[realtime-transcription] started']);
     expect(harness.consoleLogs).toContainEqual([
