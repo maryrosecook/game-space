@@ -169,10 +169,36 @@ body {
 }
 
 .game-render-area {
+  position: relative;
   width: min(100%, calc(var(--game-layout-height) * var(--render-aspect-width) / var(--render-aspect-height)));
   height: min(var(--game-layout-height), calc(100% * var(--render-aspect-height) / var(--render-aspect-width)));
   background: #02060f;
 }
+
+.prompt-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 20px;
+  overflow: hidden;
+  color: #ffffff;
+  text-align: center;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: clamp(1.7rem, 5vw, 3.6rem);
+  font-weight: 800;
+  line-height: 1.15;
+  text-shadow: 0 3px 12px rgba(0, 0, 0, 0.75);
+}
+
+.prompt-overlay--visible {
+  display: flex;
+}
+
 
 #game-canvas {
   display: block;
@@ -183,7 +209,10 @@ body {
 
 .prompt-panel {
   position: fixed;
-  inset: auto 0 0 0;
+  left: 0;
+  right: auto;
+  bottom: var(--bottom-tab-height);
+  width: min(calc(var(--game-layout-height) * var(--render-aspect-width) / var(--render-aspect-height)), 58vw);
   z-index: 24;
   height: var(--edit-drawer-height);
   padding: 12px 14px;
@@ -263,37 +292,6 @@ body {
 }
 
 
-.prompt-record-button {
-  flex: 0 0 auto;
-  width: 52px;
-  border: 1px solid rgba(185, 207, 255, 0.7);
-  border-radius: 10px;
-  background: rgba(28, 45, 87, 0.88);
-  color: #f7f9ff;
-  font-size: 1.1rem;
-  line-height: 1;
-  padding: 0;
-  cursor: pointer;
-}
-
-.prompt-record-button span {
-  display: block;
-  transform: translateY(1px);
-}
-
-.prompt-record-button--recording {
-  background: rgba(132, 28, 42, 0.9);
-  border-color: rgba(255, 163, 176, 0.9);
-}
-
-.prompt-record-button--busy {
-  opacity: 0.7;
-}
-
-.prompt-record-button:focus-visible {
-  outline: 2px solid rgba(88, 148, 255, 0.9);
-  outline-offset: 1px;
-}
 
 .prompt-codex-toggle {
   flex: 0 0 auto;
@@ -450,6 +448,19 @@ body {
   display: block;
 }
 
+.game-view-icon-tab--record {
+  color: rgba(216, 230, 255, 0.9);
+}
+
+.game-view-icon-tab--record.game-view-icon-tab--recording {
+  color: #fca5a5;
+}
+
+.game-view-icon-tab--record.game-view-icon-tab--busy {
+  opacity: 0.7;
+}
+
+
 .game-view-icon-tab--favorite .game-view-icon polygon {
   fill: transparent;
 }
@@ -469,13 +480,12 @@ body {
 .game-page--edit-open .game-view-tab--edit {
   --tab-fill: rgba(6, 12, 31, 0.97);
   border-color: rgba(132, 168, 245, 0.55);
+  transform: translateY(6px);
+}
 
 .game-page--edit-open .game-home-link,
 .game-page--edit-open .game-view-icon-tab {
   transform: translateY(9px);
-}
-
-  transform: translateY(6px);
 }
 
 .game-page--edit-open .game-view-tab--edit::after {

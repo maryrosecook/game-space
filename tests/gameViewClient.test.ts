@@ -233,6 +233,7 @@ type GameViewHarness = {
   promptForm: TestHTMLFormElement;
   promptInput: TestHTMLInputElement;
   promptPanel: TestHTMLElement;
+  promptOverlay: TestHTMLElement;
   intervalCallbacks: Array<() => void>;
   getPeerConnection: () => TestRTCPeerConnection | null;
   mediaTrack: TestMediaStreamTrack;
@@ -278,6 +279,7 @@ async function runGameViewScript(
   const recordButton = new TestHTMLButtonElement();
   const codexToggle = new TestHTMLButtonElement();
   const codexTranscript = new TestHTMLElement();
+  const promptOverlay = new TestHTMLElement();
   const gameSessionView = new TestHTMLElement();
 
   const document = new TestDocument('source-version', csrfToken, gameFavorited);
@@ -289,6 +291,7 @@ async function runGameViewScript(
   document.registerElement('prompt-record-button', recordButton);
   document.registerElement('game-codex-toggle', codexToggle);
   document.registerElement('game-codex-transcript', codexTranscript);
+  document.registerElement('prompt-overlay', promptOverlay);
   document.registerElement('game-codex-session-view', gameSessionView);
 
   const fetchCalls: FetchCall[] = [];
@@ -391,6 +394,7 @@ async function runGameViewScript(
     promptForm,
     promptInput,
     promptPanel,
+    promptOverlay,
     intervalCallbacks,
     getPeerConnection: () => TestRTCPeerConnection.latestInstance,
     mediaTrack,
@@ -622,7 +626,7 @@ describe('game view prompt submit client', () => {
       }
     });
     expect(harness.recordButton.getAttribute('aria-label')).toBe('Stop voice recording');
-    expect(harness.recordButton.classList.contains('prompt-record-button--recording')).toBe(true);
+    expect(harness.recordButton.classList.contains('game-view-icon-tab--recording')).toBe(true);
 
     const peerConnection = harness.getPeerConnection();
     expect(peerConnection?.localDescription).toEqual({ type: 'offer', sdp: 'fake-offer-sdp' });
@@ -649,14 +653,14 @@ describe('game view prompt submit client', () => {
 
     expect(harness.fetchCalls).toHaveLength(1);
     expect(harness.getUserMediaCalls()).toBe(0);
-    expect(harness.recordButton.classList.contains('prompt-record-button--recording')).toBe(false);
+    expect(harness.recordButton.classList.contains('game-view-icon-tab--recording')).toBe(false);
     expect(harness.consoleLogs).toContainEqual([
       '[realtime-transcription] session request failed',
       'status 503: OpenAI transcription model gpt-4o-transcribe is unavailable for this API key'
     ]);
   });
 
-  it('fills the prompt input with realtime transcript when recording stops', async () => {
+  it('buffers realtime transcript into overlay when edit tab is closed', async () => {
     const harness = await runGameViewScript(async (url) => {
       if (url === '/api/transcribe') {
         return {
@@ -697,12 +701,13 @@ describe('game view prompt submit client', () => {
     harness.recordButton.dispatchEvent('click', createEvent());
     await flushAsyncOperations();
 
-    expect(harness.promptInput.value).toBe('make the paddle bigger');
+    expect(harness.promptInput.value).toBe('');
+    expect(harness.promptOverlay.textContent).toBe('make the paddle bigger');
     expect(peerConnection?.dataChannel.sentMessages).toContain(JSON.stringify({ type: 'input_audio_buffer.commit' }));
     expect(harness.mediaTrack.stopped).toBe(true);
     expect(peerConnection?.closed).toBe(true);
     expect(harness.recordButton.getAttribute('aria-label')).toBe('Start voice recording');
-    expect(harness.recordButton.classList.contains('prompt-record-button--recording')).toBe(false);
+    expect(harness.recordButton.classList.contains('game-view-icon-tab--recording')).toBe(false);
     expect(harness.consoleLogs).toContainEqual(['[realtime-transcription] started']);
     expect(harness.consoleLogs).toContainEqual([
       '[realtime-transcription] data received',
@@ -714,7 +719,7 @@ describe('game view prompt submit client', () => {
     expect(harness.consoleLogs).toContainEqual(['[realtime-transcription] stopped']);
     expect(harness.consoleLogs).toContainEqual([
       '[realtime-transcription] final transcribed text',
-      'make the paddle bigger'
+      ''
     ]);
   });
 

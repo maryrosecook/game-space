@@ -7,6 +7,7 @@ const editTab = document.getElementById('game-tab-edit');
 const favoriteButton = document.getElementById('game-tab-favorite');
 const recordButton = document.getElementById('prompt-record-button');
 const codexToggle = document.getElementById('game-codex-toggle');
+const promptOverlay = document.getElementById('prompt-overlay');
 const codexTranscript = document.getElementById('game-codex-transcript');
 const gameSessionView = document.getElementById('game-codex-session-view');
 
@@ -64,8 +65,8 @@ function logRealtimeTranscription(message, details = undefined) {
 }
 
 function updateRecordButtonVisualState() {
-  recordButton.classList.toggle('prompt-record-button--recording', recordingInProgress);
-  recordButton.classList.toggle('prompt-record-button--busy', transcriptionInFlight);
+  recordButton.classList.toggle('game-view-icon-tab--recording', recordingInProgress);
+  recordButton.classList.toggle('game-view-icon-tab--busy', transcriptionInFlight);
   recordButton.disabled = transcriptionInFlight;
 
   if (recordingInProgress) {
@@ -100,6 +101,19 @@ function closeRealtimeConnection() {
   realtimeAudioStream = null;
 }
 
+function updatePromptOverlay() {
+  const overlayText = completedTranscriptionSegments.join(' ').trim();
+  const shouldShowOverlay = !editPanelOpen && overlayText.length > 0;
+
+  if (!(promptOverlay instanceof HTMLElement)) {
+    return;
+  }
+
+  promptOverlay.textContent = shouldShowOverlay ? overlayText : '';
+  promptOverlay.classList.toggle('prompt-overlay--visible', shouldShowOverlay);
+  promptOverlay.setAttribute('aria-hidden', shouldShowOverlay ? 'false' : 'true');
+}
+
 function appendCompletedTranscriptSegment(transcriptSegment) {
   const normalizedSegment = transcriptSegment.trim();
   if (normalizedSegment.length === 0) {
@@ -107,8 +121,13 @@ function appendCompletedTranscriptSegment(transcriptSegment) {
   }
 
   completedTranscriptionSegments.push(normalizedSegment);
-  promptInput.value = completedTranscriptionSegments.join(' ').trim();
-  focusPromptInput();
+
+  if (editPanelOpen) {
+    promptInput.value = completedTranscriptionSegments.join(' ').trim();
+    focusPromptInput();
+  }
+
+  updatePromptOverlay();
 }
 
 function handleRealtimeDataChannelMessage(event) {
@@ -224,6 +243,7 @@ async function startRealtimeRecording() {
   transcriptionInFlight = true;
   updateRecordButtonVisualState();
   completedTranscriptionSegments = [];
+  updatePromptOverlay();
 
   let peerConnection = null;
   let dataChannel = null;
@@ -348,6 +368,12 @@ function applyBottomPanelState() {
 
   document.body.classList.toggle('game-page--edit-open', editPanelOpen);
   document.body.classList.toggle('game-page--codex-expanded', codexPanelExpanded);
+
+  if (editPanelOpen) {
+    promptInput.value = completedTranscriptionSegments.join(' ').trim();
+  }
+
+  updatePromptOverlay();
 }
 
 function toggleEditPanel() {
@@ -566,6 +592,8 @@ promptForm.addEventListener('submit', (event) => {
   });
 
   promptInput.value = '';
+  completedTranscriptionSegments = [];
+  updatePromptOverlay();
   focusPromptInput();
 });
 
