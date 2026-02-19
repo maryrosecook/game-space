@@ -217,7 +217,6 @@ body {
   height: var(--edit-drawer-height);
   padding: 12px 14px;
   background: rgba(5, 10, 28, 0.95);
-  border-top: 1px solid rgba(120, 157, 237, 0.38);
   box-shadow: 0 -12px 24px rgba(2, 6, 17, 0.45);
   display: flex;
   flex-direction: column;
@@ -326,8 +325,7 @@ body {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
   align-items: center;
-  background: linear-gradient(180deg, rgba(3, 7, 20, 0.02) 0%, rgba(3, 7, 20, 0.96) 44%, rgba(3, 7, 20, 0.98) 100%);
-  box-shadow: 0 -10px 24px rgba(3, 8, 24, 0.55);
+  background: rgba(3, 7, 20, 0.98);
   transform: translateY(0);
   transition: transform 0.24s ease;
 }
