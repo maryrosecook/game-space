@@ -797,6 +797,32 @@ export function createApp(options: AppOptions = {}): express.Express {
     },
   );
 
+  app.delete(
+    "/api/games/:versionId",
+    requireAdmin,
+    requireValidCsrf,
+    async (request, response, next) => {
+      try {
+        const versionId = request.params.versionId;
+        if (typeof versionId !== "string" || !isSafeVersionId(versionId)) {
+          response.status(400).json({ error: "Invalid version id" });
+          return;
+        }
+
+        const directoryPath = gameDirectoryPath(gamesRootPath, versionId);
+        if (!(await hasGameDirectory(gamesRootPath, versionId))) {
+          response.status(404).json({ error: "Game version not found" });
+          return;
+        }
+
+        await fs.rm(directoryPath, { recursive: true, force: false });
+        response.status(200).json({ status: "ok", versionId });
+      } catch (error: unknown) {
+        next(error);
+      }
+    },
+  );
+
   app.post(
     "/api/games/:versionId/prompts",
     requireAdmin,

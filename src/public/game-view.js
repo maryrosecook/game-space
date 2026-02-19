@@ -7,6 +7,7 @@ const editTab = document.getElementById('game-tab-edit');
 const favoriteButton = document.getElementById('game-tab-favorite');
 const recordButton = document.getElementById('prompt-record-button');
 const codexToggle = document.getElementById('game-codex-toggle');
+const deleteButton = document.getElementById('game-tab-delete');
 const promptOverlay = document.getElementById('prompt-overlay');
 const codexTranscript = document.getElementById('game-codex-transcript');
 const gameSessionView = document.getElementById('game-codex-session-view');
@@ -23,6 +24,7 @@ if (
   !(favoriteButton instanceof HTMLButtonElement) ||
   !(recordButton instanceof HTMLButtonElement) ||
   !(codexToggle instanceof HTMLButtonElement) ||
+  !(deleteButton instanceof HTMLButtonElement) ||
   !(codexTranscript instanceof HTMLElement) ||
   !(gameSessionView instanceof HTMLElement)
 ) {
@@ -39,6 +41,7 @@ let transcriptStatusKey = '';
 let transcriptSignature = '';
 let transcriptRequestInFlight = false;
 let favoriteRequestInFlight = false;
+let deleteRequestInFlight = false;
 let editPanelOpen = false;
 let codexPanelExpanded = false;
 let gameFavorited = initialFavorite;
@@ -206,12 +209,13 @@ async function requestRealtimeClientSecret() {
 }
 
 async function toggleFavorite() {
-  if (!versionId || favoriteRequestInFlight) {
+  if (!versionId || favoriteRequestInFlight || deleteRequestInFlight) {
     return;
   }
 
   favoriteRequestInFlight = true;
   favoriteButton.disabled = true;
+  deleteButton.disabled = true;
 
   try {
     const response = await fetch(`/api/games/${encodeURIComponent(versionId)}/favorite`, {
@@ -233,6 +237,40 @@ async function toggleFavorite() {
   } finally {
     favoriteRequestInFlight = false;
     favoriteButton.disabled = false;
+    deleteButton.disabled = false;
+  }
+}
+
+
+async function deleteGameVersion() {
+  if (!versionId || favoriteRequestInFlight || deleteRequestInFlight) {
+    return;
+  }
+
+  const confirmed = window.confirm('Delete this game? This action cannot be undone.');
+  if (!confirmed) {
+    return;
+  }
+
+  deleteRequestInFlight = true;
+  favoriteButton.disabled = true;
+  deleteButton.disabled = true;
+
+  try {
+    const response = await fetch(`/api/games/${encodeURIComponent(versionId)}`, {
+      method: 'DELETE',
+      headers: csrfRequestHeaders()
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    window.location.assign('/');
+  } finally {
+    deleteRequestInFlight = false;
+    favoriteButton.disabled = false;
+    deleteButton.disabled = false;
   }
 }
 
@@ -653,5 +691,9 @@ recordButton.addEventListener('click', () => {
 
 favoriteButton.addEventListener('click', () => {
   void toggleFavorite();
+});
+
+deleteButton.addEventListener('click', () => {
+  void deleteGameVersion();
 });
 startTranscriptPolling();

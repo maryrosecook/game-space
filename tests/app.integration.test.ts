@@ -922,6 +922,7 @@ describe('express app integration', () => {
     expect(publicView.text).not.toContain('id="game-codex-toggle"');
     expect(publicView.text).not.toContain('id="game-codex-transcript"');
     expect(publicView.text).not.toContain('id="game-tab-favorite"');
+    expect(publicView.text).not.toContain('id="game-tab-delete"');
     expect(publicView.text).not.toContain('/public/game-view.js');
     expect(publicView.text).toContain('/public/game-live-reload.js');
     expect(publicView.text).toContain("'touchend'");
@@ -940,7 +941,7 @@ describe('express app integration', () => {
     expect(adminView.text).toContain('id="game-codex-transcript"');
     expect(adminView.text).toContain('id="game-tab-edit"');
     expect(adminView.text).toContain('id="game-tab-favorite"');
-    expect(adminView.text).toContain('class="game-view-tab-label">Edit</span>');
+    expect(adminView.text).toContain('id="game-tab-delete"');
     expect(adminView.text).toContain('class="game-view-tab-spinner"');
     expect(adminView.text).toContain('aria-label="Favorite game"');
     expect(adminView.text).toContain('aria-pressed="false"');
@@ -997,6 +998,42 @@ describe('express app integration', () => {
       favorite: false
     });
     expect((await readMetadata(path.join(gamesRootPath, 'v1', 'metadata.json'))).favorite).toBe(false);
+  });
+
+  it('deletes a game directory when called by an authenticated admin', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-delete-game-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    const gamePath = await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v1',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md')
+    });
+
+    const authSession = await loginAsAdmin(app);
+
+    await request(app)
+      .delete('/api/games/v1')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .expect(200)
+      .expect({
+        status: 'ok',
+        versionId: 'v1'
+      });
+
+    await expect(fs.stat(gamePath)).rejects.toThrow();
   });
 
   it('serves dev reload tokens from /api/dev/reload-token when live reload is enabled', async () => {
@@ -1094,6 +1131,21 @@ describe('express app integration', () => {
 
     await request(app)
       .post('/api/games/source/favorite')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', 'wrong-token')
+      .expect(403);
+
+    await request(app)
+      .delete('/api/games/source')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(403);
+
+    await request(app)
+      .delete('/api/games/source')
       .set('Host', TEST_HOST)
       .set('Origin', TEST_ORIGIN)
       .set('Cookie', authSession.cookieHeader)
