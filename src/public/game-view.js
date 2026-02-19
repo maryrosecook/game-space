@@ -11,10 +11,14 @@ const promptOverlay = document.getElementById('prompt-overlay');
 const codexTranscript = document.getElementById('game-codex-transcript');
 const gameSessionView = document.getElementById('game-codex-session-view');
 
+const promptInputIsTextEntry =
+  promptInput instanceof HTMLInputElement ||
+  (typeof HTMLTextAreaElement === 'function' && promptInput instanceof HTMLTextAreaElement);
+
 if (
   !(promptPanel instanceof HTMLElement) ||
   !(promptForm instanceof HTMLFormElement) ||
-  !(promptInput instanceof HTMLInputElement) ||
+  !promptInputIsTextEntry ||
   !(editTab instanceof HTMLButtonElement) ||
   !(favoriteButton instanceof HTMLButtonElement) ||
   !(recordButton instanceof HTMLButtonElement) ||
@@ -124,6 +128,7 @@ function appendCompletedTranscriptSegment(transcriptSegment) {
 
   if (editPanelOpen) {
     promptInput.value = completedTranscriptionSegments.join(' ').trim();
+    resizePromptInput();
     focusPromptInput();
   }
 
@@ -378,6 +383,7 @@ function applyBottomPanelState() {
 
   if (editPanelOpen) {
     promptInput.value = completedTranscriptionSegments.join(' ').trim();
+    resizePromptInput();
   }
 
   updatePromptOverlay();
@@ -577,6 +583,7 @@ async function submitPrompt(prompt) {
 }
 
 applyBottomPanelState();
+resizePromptInput();
 
 editTab.addEventListener('click', () => {
   toggleEditPanel();
@@ -599,13 +606,29 @@ promptForm.addEventListener('submit', (event) => {
   });
 
   promptInput.value = '';
+  resizePromptInput();
   completedTranscriptionSegments = [];
   updatePromptOverlay();
   focusPromptInput();
 });
 
+function resizePromptInput() {
+  if (!(promptInput instanceof HTMLElement) || !('style' in promptInput)) {
+    return;
+  }
+
+  promptInput.style.height = 'auto';
+  if (typeof promptInput.scrollHeight === 'number') {
+    promptInput.style.height = `${promptInput.scrollHeight}px`;
+  }
+}
+
+promptInput.addEventListener('input', () => {
+  resizePromptInput();
+});
+
 promptInput.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
+  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     event.preventDefault();
     promptForm.requestSubmit();
   }
