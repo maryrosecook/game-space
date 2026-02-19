@@ -5,6 +5,7 @@ if (!(listRoot instanceof HTMLElement) || !(generateButton instanceof HTMLButton
 }
 
 const csrfToken = document.body.dataset.csrfToken;
+let activeGenerationRequest = null;
 
 function csrfHeaders() {
   const headers = {};
@@ -24,6 +25,11 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function applyGenerateState(isGenerating) {
+  generateButton.classList.toggle('ideas-generate-button--generating', isGenerating);
+  generateButton.setAttribute('aria-busy', isGenerating ? 'true' : 'false');
+}
+
 function renderIdeas(ideas) {
   if (!Array.isArray(ideas) || ideas.length === 0) {
     listRoot.innerHTML = '<p class="codex-empty">No ideas yet. Generate one to get started.</p>';
@@ -34,7 +40,9 @@ function renderIdeas(ideas) {
     .map((idea, index) => {
       const builtBadge = idea.hasBeenBuilt ? '<span class="idea-built-pill" aria-label="Built">Built</span>' : '';
       return `<li class="idea-row" data-idea-index="${index}">
-        <span class="idea-prompt">${escapeHtml(idea.prompt)}</span>
+        <div class="idea-content">
+          <span class="idea-prompt">${escapeHtml(idea.prompt)}</span>
+        </div>
         <div class="idea-actions">
           ${builtBadge}
           <button class="idea-action-button" type="button" data-action="build" data-idea-index="${index}" aria-label="Build from idea">
@@ -61,21 +69,39 @@ function renderIdeas(ideas) {
 }
 
 async function generateIdea() {
-  generateButton.disabled = true;
+  if (activeGenerationRequest) {
+    activeGenerationRequest.abort();
+  }
+
+  const requestController = new AbortController();
+  activeGenerationRequest = requestController;
+  applyGenerateState(true);
 
   try {
     const response = await fetch('/api/ideas/generate', {
       method: 'POST',
-      headers: csrfHeaders()
+      headers: csrfHeaders(),
+      signal: requestController.signal
     });
     if (!response.ok) {
       return;
     }
 
     const payload = await response.json();
+    if (activeGenerationRequest !== requestController) {
+      return;
+    }
+
     renderIdeas(payload.ideas);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return;
+    }
   } finally {
-    generateButton.disabled = false;
+    if (activeGenerationRequest === requestController) {
+      activeGenerationRequest = null;
+      applyGenerateState(false);
+    }
   }
 }
 

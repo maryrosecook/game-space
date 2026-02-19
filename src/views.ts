@@ -86,7 +86,9 @@ function renderIdeasList(ideas: readonly IdeasViewIdea[]): string {
         ? '<span class="idea-built-pill" aria-label="Built">Built</span>'
         : '';
       return `<li class="idea-row" data-idea-index="${index}">
-        <span class="idea-prompt">${prompt}</span>
+        <div class="idea-content">
+          <span class="idea-prompt">${prompt}</span>
+        </div>
         <div class="idea-actions">
           ${builtBadge}
           <button class="idea-action-button" type="button" data-action="build" data-idea-index="${index}" aria-label="Build from idea">
@@ -131,13 +133,14 @@ export function renderIdeasView(
         <a class="codex-home-link" href="/">Back to games</a>
       </header>
       <section class="ideas-controls">
-        <button id="ideas-generate-button" class="ideas-generate-button" type="button" aria-label="Generate idea">
+        <button id="ideas-generate-button" class="ideas-generate-button" type="button" aria-label="Generate idea" aria-busy="false">
           <svg class="idea-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M9 18h6"></path>
             <path d="M10 22h4"></path>
             <path d="M12 2a7 7 0 0 0-4 12.74V17h8v-2.26A7 7 0 0 0 12 2z"></path>
           </svg>
-          Generate
+          <span>Generate</span>
+          <span class="ideas-generate-spinner" aria-hidden="true"></span>
         </button>
       </section>
       <section id="ideas-list-root" aria-live="polite">

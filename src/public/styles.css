@@ -824,6 +824,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .game-view-tab--generating .game-view-tab-spinner,
+  .ideas-generate-button--generating .ideas-generate-spinner,
   .game-view-icon-tab--record.game-view-icon-tab--recording {
     animation: none;
   }
@@ -845,7 +846,7 @@ body {
 .ideas-generate-button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   background: #1d4ed8;
   color: #eff6ff;
   border: 1px solid rgba(147, 197, 253, 0.6);
@@ -853,6 +854,22 @@ body {
   padding: 8px 12px;
   font-weight: 700;
   cursor: pointer;
+}
+
+
+
+.ideas-generate-spinner {
+  display: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  border-top-color: #eff6ff;
+}
+
+.ideas-generate-button--generating .ideas-generate-spinner {
+  display: inline-block;
+  animation: game-tab-spinner-rotate 0.8s linear infinite;
 }
 
 .ideas-list {
@@ -866,9 +883,12 @@ body {
 
 .idea-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.idea-content {
+  flex: 1 1 auto;
   padding: 10px 12px;
   border: 1px solid rgba(120, 157, 237, 0.35);
   border-radius: 10px;
@@ -876,7 +896,6 @@ body {
 }
 
 .idea-prompt {
-  flex: 1 1 auto;
   color: #dbeafe;
 }
 
@@ -884,6 +903,10 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(120, 157, 237, 0.35);
+  border-radius: 10px;
+  background: rgba(4, 12, 28, 0.7);
 }
 
 .idea-action-button {
