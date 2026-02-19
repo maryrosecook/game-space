@@ -1,0 +1,12 @@
+{
+  "name": "game-v1-bounce",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --format=esm --platform=browser --target=es2020 --outfile=dist/game.js",
+    "watch": "esbuild src/main.ts --bundle --format=esm --platform=browser --target=es2020 --outfile=dist/game.js --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.10"
+  }
+}

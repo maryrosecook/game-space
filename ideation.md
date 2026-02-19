@@ -6,4 +6,5 @@ Requirements:
 - The game is played on a phone and only touch interactions are available.
 - Focus on the game's unique mechanics and include a concise visual style description.
 - Make it highly original and fun.
+- Assume all generated game builds must start from the `starter` game template.
 - Return only the final idea text.

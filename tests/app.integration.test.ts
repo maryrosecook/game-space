@@ -1045,6 +1045,15 @@ describe('express app integration', () => {
       }
     });
 
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'starter',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
     const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
     await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
 
@@ -1324,6 +1333,15 @@ describe('express app integration', () => {
       }
     });
 
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'starter',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
     const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
     await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
 
@@ -1350,12 +1368,16 @@ describe('express app integration', () => {
       .set('Cookie', authSession.cookieHeader)
       .set('X-CSRF-Token', authSession.csrfToken)
       .set('Content-Type', 'application/json')
-      .send({ versionId: 'source' })
+      .send({})
       .expect(202);
 
     expect(typeof response.body.forkId).toBe('string');
     expect(codexRunner.calls).toHaveLength(1);
     expect(codexRunner.calls[0]?.prompt).toBe('BASE PROMPT\n\ncreate gravity flipping pinball');
+
+    const forkMetadataPath = path.join(gamesRootPath, response.body.forkId as string, 'metadata.json');
+    const forkMetadata = await readMetadata(forkMetadataPath);
+    expect(forkMetadata.parentId).toBe('starter');
 
     const ideasAfterBuild = JSON.parse(await fs.readFile(ideasPath, 'utf8')) as Array<{ hasBeenBuilt: boolean }>;
     expect(ideasAfterBuild[0]?.hasBeenBuilt).toBe(true);
