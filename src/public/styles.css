@@ -209,19 +209,17 @@ body {
 
 .prompt-panel {
   position: fixed;
-  left: 0;
-  right: auto;
-  bottom: var(--bottom-tab-height);
-  width: min(calc(var(--game-layout-height) * var(--render-aspect-width) / var(--render-aspect-height)), 58vw);
-  z-index: 34;
+  inset: auto 0 0 0;
+  z-index: 24;
   height: var(--edit-drawer-height);
   padding: 12px 14px;
   background: rgba(5, 10, 28, 0.95);
+  border-top: 1px solid rgba(120, 157, 237, 0.38);
   box-shadow: 0 -12px 24px rgba(2, 6, 17, 0.45);
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  transform: translateY(calc(100% + var(--bottom-tab-height) + 6px));
+  transform: translateY(calc(100% + 6px));
   opacity: 0.9;
   pointer-events: none;
   transition: transform 0.24s ease, opacity 0.24s ease;
@@ -325,7 +323,8 @@ body {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
   align-items: center;
-  background: rgba(3, 7, 20, 0.98);
+  background: linear-gradient(180deg, rgba(3, 7, 20, 0.02) 0%, rgba(3, 7, 20, 0.96) 44%, rgba(3, 7, 20, 0.98) 100%);
+  box-shadow: 0 -10px 24px rgba(3, 8, 24, 0.55);
   transform: translateY(0);
   transition: transform 0.24s ease;
 }
@@ -489,34 +488,30 @@ body {
 
 .game-page--edit-open .game-bottom-tabs {
   transform: translateY(calc(-1 * var(--edit-drawer-height)));
-  z-index: 36;
 }
 
 .game-page--edit-open .game-view-tab--edit {
   --tab-fill: rgba(6, 12, 31, 0.97);
-  border-color: rgba(177, 208, 255, 0.92);
-  transform: translateY(-6px);
+  border-color: rgba(132, 168, 245, 0.55);
+  transform: translateY(6px);
 }
 
 .game-page--edit-open .game-home-link,
 .game-page--edit-open .game-view-icon-tab {
-  transform: translateY(0);
+  transform: translateY(9px);
 }
 
 .game-page--edit-open .game-view-tab--edit::after {
   content: '';
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -7px;
-  height: 8px;
-  border-left: 1px solid rgba(177, 208, 255, 0.92);
-  border-right: 1px solid rgba(177, 208, 255, 0.92);
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  height: 2px;
   background: rgba(5, 10, 28, 0.95);
 }
 
 .game-page--codex-expanded .prompt-panel {
-  width: 100vw;
   height: calc(100dvh - var(--bottom-tab-height));
   padding-top: calc(var(--bottom-tab-height) + 10px);
 }
