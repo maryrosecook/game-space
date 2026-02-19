@@ -366,6 +366,23 @@ function toggleRecording() {
   void startRealtimeRecording();
 }
 
+function updateEditDrawerHeight() {
+  if (!(promptPanel instanceof HTMLElement)) {
+    return;
+  }
+
+  const panelRectHeight =
+    typeof promptPanel.getBoundingClientRect === 'function' ? promptPanel.getBoundingClientRect().height : 0;
+  const panelOffsetHeight = typeof promptPanel.offsetHeight === 'number' ? promptPanel.offsetHeight : 0;
+  const panelHeight = Math.ceil(Math.max(panelRectHeight, panelOffsetHeight));
+
+  if (panelHeight <= 0) {
+    return;
+  }
+
+  document.body.style.setProperty('--edit-drawer-height', `${panelHeight}px`);
+}
+
 function applyBottomPanelState() {
   promptPanel.classList.toggle('prompt-panel--open', editPanelOpen);
   promptPanel.setAttribute('aria-hidden', editPanelOpen ? 'false' : 'true');
@@ -384,6 +401,7 @@ function applyBottomPanelState() {
   if (editPanelOpen) {
     promptInput.value = completedTranscriptionSegments.join(' ').trim();
     resizePromptInput();
+    updateEditDrawerHeight();
   }
 
   updatePromptOverlay();
@@ -584,6 +602,7 @@ async function submitPrompt(prompt) {
 
 applyBottomPanelState();
 resizePromptInput();
+updateEditDrawerHeight();
 
 editTab.addEventListener('click', () => {
   toggleEditPanel();
@@ -618,9 +637,17 @@ function resizePromptInput() {
   }
 
   promptInput.style.height = 'auto';
-  if (typeof promptInput.scrollHeight === 'number') {
-    promptInput.style.height = `${promptInput.scrollHeight}px`;
+
+  const computedPromptStyle = window.getComputedStyle(promptInput);
+  const maxHeight = Number.parseFloat(computedPromptStyle.maxHeight);
+  const nextHeight = typeof promptInput.scrollHeight === 'number' ? promptInput.scrollHeight : 0;
+  const clampedHeight = Number.isFinite(maxHeight) && maxHeight > 0 ? Math.min(nextHeight, maxHeight) : nextHeight;
+
+  if (clampedHeight > 0) {
+    promptInput.style.height = `${clampedHeight}px`;
   }
+
+  updateEditDrawerHeight();
 }
 
 promptInput.addEventListener('input', () => {
@@ -632,6 +659,10 @@ promptInput.addEventListener('keydown', (event) => {
     event.preventDefault();
     promptForm.requestSubmit();
   }
+});
+
+window.addEventListener('resize', () => {
+  resizePromptInput();
 });
 
 window.addEventListener(
