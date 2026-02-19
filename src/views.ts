@@ -115,15 +115,7 @@ function renderIdeasList(ideas: readonly IdeasViewIdea[]): string {
 export function renderIdeasView(
   ideas: readonly IdeasViewIdea[],
   csrfToken: string,
-  versionIds: readonly string[],
 ): string {
-  const versionOptions = versionIds
-    .map((versionId) => {
-      const escaped = escapeHtml(versionId);
-      return `<option value="${escaped}">${escaped}</option>`;
-    })
-    .join("");
-
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -139,8 +131,6 @@ export function renderIdeasView(
         <a class="codex-home-link" href="/">Back to games</a>
       </header>
       <section class="ideas-controls">
-        <label class="codex-label" for="ideas-version-select">Build from version</label>
-        <select id="ideas-version-select" class="codex-select" name="versionId">${versionOptions}</select>
         <button id="ideas-generate-button" class="ideas-generate-button" type="button" aria-label="Generate idea">
           <svg class="idea-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M9 18h6"></path>

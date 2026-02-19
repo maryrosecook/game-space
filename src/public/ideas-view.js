@@ -1,12 +1,6 @@
 const listRoot = document.getElementById('ideas-list-root');
 const generateButton = document.getElementById('ideas-generate-button');
-const versionSelect = document.getElementById('ideas-version-select');
-
-if (
-  !(listRoot instanceof HTMLElement) ||
-  !(generateButton instanceof HTMLButtonElement) ||
-  !(versionSelect instanceof HTMLSelectElement)
-) {
+if (!(listRoot instanceof HTMLElement) || !(generateButton instanceof HTMLButtonElement)) {
   throw new Error('Ideas view controls missing from page');
 }
 
@@ -104,18 +98,13 @@ async function deleteIdea(ideaIndex) {
 }
 
 async function buildIdea(ideaIndex) {
-  const sourceVersionId = versionSelect.value.trim();
-  if (sourceVersionId.length === 0) {
-    return;
-  }
-
   const response = await fetch(`/api/ideas/${encodeURIComponent(String(ideaIndex))}/build`, {
     method: 'POST',
     headers: {
       ...csrfHeaders(),
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ versionId: sourceVersionId.trim() })
+    body: JSON.stringify({})
   });
 
   if (!response.ok) {

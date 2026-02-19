@@ -75,6 +75,7 @@ type AppOptions = {
 
 const TRANSCRIPTION_MODEL_UNAVAILABLE_PATTERN =
   /model_not_found|does not have access to model/i;
+const IDEAS_STARTER_VERSION_ID = "starter";
 
 function defaultLogger(message: string, error: unknown): void {
   console.error(message, error);
@@ -389,12 +390,11 @@ export function createApp(options: AppOptions = {}): express.Express {
   app.get("/ideas", requireAdmin, async (request, response, next) => {
     try {
       const ideas = await readIdeasFile(ideasPath);
-      const versions = await listGameVersions(gamesRootPath);
       const csrfToken = ensureCsrfToken(request, response);
       response
         .status(200)
         .type("html")
-        .send(renderIdeasView(ideas, csrfToken, versions.map((version) => version.id)));
+        .send(renderIdeasView(ideas, csrfToken));
     } catch (error: unknown) {
       next(error);
     }
@@ -444,14 +444,9 @@ export function createApp(options: AppOptions = {}): express.Express {
           return;
         }
 
-        const versionId = request.body?.versionId;
-        if (typeof versionId !== "string" || !isSafeVersionId(versionId)) {
-          response.status(400).json({ error: "Invalid version id" });
-          return;
-        }
-
+        const versionId = IDEAS_STARTER_VERSION_ID;
         if (!(await hasGameDirectory(gamesRootPath, versionId))) {
-          response.status(404).json({ error: "Game version not found" });
+          response.status(503).json({ error: "Starter game is not available" });
           return;
         }
 
