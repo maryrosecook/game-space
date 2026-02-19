@@ -1276,4 +1276,128 @@ describe('express app integration', () => {
     expect(forkMetadata.codexSessionId).toBe(emittedSessionId);
     expect(forkMetadata.codexSessionStatus).toBe('created');
   });
+  it('hides ideas features from unauthenticated users and shows ideas link for admins', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-ideas-auth-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'source',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      ideasPath: path.join(tempDirectoryPath, 'ideas.json')
+    });
+
+    const publicHomepage = await request(app).get('/').set('Host', TEST_HOST).expect(200);
+    expect(publicHomepage.text).not.toContain('href="/ideas"');
+
+    await request(app).get('/ideas').set('Host', TEST_HOST).expect(404);
+    await request(app).get('/api/ideas').set('Host', TEST_HOST).expect(404);
+
+    const adminSession = await loginAsAdmin(app);
+    const adminHomepage = await request(app)
+      .get('/')
+      .set('Host', TEST_HOST)
+      .set('Cookie', adminSession.cookieHeader)
+      .expect(200);
+    expect(adminHomepage.text).toContain('href="/ideas"');
+  });
+
+  it('builds ideas via the same prompt pipeline and marks idea as built', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-ideas-build-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'source',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
+    await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
+
+    const ideasPath = path.join(tempDirectoryPath, 'ideas.json');
+    await fs.writeFile(
+      ideasPath,
+      `${JSON.stringify([{ prompt: 'create gravity flipping pinball', hasBeenBuilt: false }], null, 2)}\n`,
+      'utf8'
+    );
+
+    const codexRunner = new CapturingRunner();
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath,
+      ideasPath,
+      codexRunner
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await request(app)
+      .post('/api/ideas/0/build')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .set('Content-Type', 'application/json')
+      .send({ versionId: 'source' })
+      .expect(202);
+
+    expect(typeof response.body.forkId).toBe('string');
+    expect(codexRunner.calls).toHaveLength(1);
+    expect(codexRunner.calls[0]?.prompt).toBe('BASE PROMPT\n\ncreate gravity flipping pinball');
+
+    const ideasAfterBuild = JSON.parse(await fs.readFile(ideasPath, 'utf8')) as Array<{ hasBeenBuilt: boolean }>;
+    expect(ideasAfterBuild[0]?.hasBeenBuilt).toBe(true);
+  });
+
+  it('deletes ideas entries through the protected delete endpoint', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-ideas-delete-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    const ideasPath = path.join(tempDirectoryPath, 'ideas.json');
+    await fs.writeFile(
+      ideasPath,
+      `${JSON.stringify(
+        [
+          { prompt: 'idea one', hasBeenBuilt: false },
+          { prompt: 'idea two', hasBeenBuilt: false }
+        ],
+        null,
+        2
+      )}
+`,
+      'utf8'
+    );
+
+    const app = createApp({
+      gamesRootPath,
+      ideasPath
+    });
+
+    const authSession = await loginAsAdmin(app);
+    await request(app)
+      .delete('/api/ideas/0')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .expect(200);
+
+    const ideasAfterDelete = JSON.parse(await fs.readFile(ideasPath, 'utf8')) as Array<{ prompt: string }>;
+    expect(ideasAfterDelete).toHaveLength(1);
+    expect(ideasAfterDelete[0]?.prompt).toBe('idea two');
+  });
+
 });
