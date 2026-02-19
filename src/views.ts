@@ -283,6 +283,14 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         ></textarea>
         <div class="prompt-action-row">
           <button
+            id="prompt-submit-button"
+            class="prompt-action-button"
+            type="submit"
+            aria-label="Submit prompt"
+          >
+            <span>Submit</span>
+          </button>
+          <button
             id="game-tab-favorite"
             class="prompt-action-button game-view-icon-tab--favorite${isFavorite ? ' game-view-icon-tab--active' : ''}"
             type="button"

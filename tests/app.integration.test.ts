@@ -940,6 +940,7 @@ describe('express app integration', () => {
     expect(adminView.text).toContain('id="game-codex-toggle"');
     expect(adminView.text).toContain('id="game-codex-transcript"');
     expect(adminView.text).toContain('id="game-tab-edit"');
+    expect(adminView.text).toContain('id="prompt-submit-button"');
     expect(adminView.text).toContain('id="game-tab-favorite"');
     expect(adminView.text).toContain('id="game-tab-delete"');
     expect(adminView.text).toContain('class="game-view-tab-spinner"');
