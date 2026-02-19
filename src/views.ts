@@ -196,14 +196,6 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           required
         />
         <button
-          id="prompt-record-button"
-          class="prompt-record-button"
-          type="button"
-          aria-label="Start voice recording"
-        >
-          <span aria-hidden="true">🎙️</span>
-        </button>
-        <button
           id="game-codex-toggle"
           class="prompt-codex-toggle"
           type="button"
@@ -243,6 +235,30 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         >
           <span class="game-view-tab-label">Edit</span>
           <span class="game-view-tab-spinner" aria-hidden="true"></span>
+        </button>
+        <button
+          id="prompt-record-button"
+          class="game-view-icon-tab game-view-icon-tab--record"
+          type="button"
+          aria-label="Start voice recording"
+        >
+          <svg
+            class="game-view-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 19v3"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <rect x="9" y="2" width="6" height="13" rx="3"></rect>
+          </svg>
         </button>
         <button
           id="game-tab-favorite"
@@ -285,6 +301,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
     <main class="game-layout${isAdmin ? '' : ' game-layout--public'}">
       <section class="game-stage">
         <div class="game-render-area">
+          ${isAdmin ? '<div id="prompt-overlay" class="prompt-overlay" aria-hidden="true"></div>' : ''}
           <canvas id="game-canvas" aria-label="Game canvas"></canvas>
         </div>
       </section>
