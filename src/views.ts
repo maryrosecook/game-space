@@ -25,6 +25,7 @@ type HomepageRenderOptions = {
 export function renderHomepage(versions: readonly GameVersion[], options: HomepageRenderOptions = {}): string {
   const isAdmin = options.isAdmin ?? false;
   const authLabel = isAdmin ? 'Auth' : 'Login';
+  const ideasLink = isAdmin ? '<a class="auth-link" href="/ideas">Ideas</a>' : '';
   const tiles = versions
     .map((version) => {
       const id = escapeHtml(version.id);
@@ -57,10 +58,103 @@ export function renderHomepage(versions: readonly GameVersion[], options: Homepa
     <main class="homepage-shell">
       <header class="page-header page-header--with-auth">
         <h1>Fountain</h1>
-        <a class="auth-link" href="/auth">${authLabel}</a>
+        <div class="page-header-links">
+          ${ideasLink}
+          <a class="auth-link" href="/auth">${authLabel}</a>
+        </div>
       </header>
       ${content}
     </main>
+  </body>
+</html>`;
+}
+
+type IdeasViewIdea = {
+  prompt: string;
+  hasBeenBuilt: boolean;
+};
+
+function renderIdeasList(ideas: readonly IdeasViewIdea[]): string {
+  if (ideas.length === 0) {
+    return '<p class="codex-empty">No ideas yet. Generate one to get started.</p>';
+  }
+
+  return `<ul class="ideas-list" role="list">${ideas
+    .map((idea, index) => {
+      const prompt = escapeHtml(idea.prompt);
+      const builtBadge = idea.hasBeenBuilt
+        ? '<span class="idea-built-pill" aria-label="Built">Built</span>'
+        : '';
+      return `<li class="idea-row" data-idea-index="${index}">
+        <span class="idea-prompt">${prompt}</span>
+        <div class="idea-actions">
+          ${builtBadge}
+          <button class="idea-action-button" type="button" data-action="build" data-idea-index="${index}" aria-label="Build from idea">
+            <svg class="idea-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4.5 16.5c-1.5 1.26-3 5.5-2 6.5s5.24-.5 6.5-2c1.5-1.8 1.5-4.5 0-6-1.5-1.5-4.2-1.5-6 0z"></path>
+              <path d="m12 15-3-3a9 9 0 0 1 3-8l4 4a9 9 0 0 1-8 3z"></path>
+              <path d="M16 8h5"></path>
+              <path d="M19 5v6"></path>
+            </svg>
+          </button>
+          <button class="idea-action-button idea-action-button--danger" type="button" data-action="delete" data-idea-index="${index}" aria-label="Delete idea">
+            <svg class="idea-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 6h18"></path>
+              <path d="M8 6V4h8v2"></path>
+              <path d="M19 6l-1 14H6L5 6"></path>
+              <path d="M10 11v6"></path>
+              <path d="M14 11v6"></path>
+            </svg>
+          </button>
+        </div>
+      </li>`;
+    })
+    .join('')}</ul>`;
+}
+
+export function renderIdeasView(
+  ideas: readonly IdeasViewIdea[],
+  csrfToken: string,
+  versionIds: readonly string[],
+): string {
+  const versionOptions = versionIds
+    .map((versionId) => {
+      const escaped = escapeHtml(versionId);
+      return `<option value="${escaped}">${escaped}</option>`;
+    })
+    .join("");
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ideas</title>
+    <link rel="stylesheet" href="/public/styles.css" />
+  </head>
+  <body class="codex-page" data-csrf-token="${escapeHtml(csrfToken)}">
+    <main class="codex-shell">
+      <header class="page-header codex-header">
+        <h1>Ideas</h1>
+        <a class="codex-home-link" href="/">Back to games</a>
+      </header>
+      <section class="ideas-controls">
+        <label class="codex-label" for="ideas-version-select">Build from version</label>
+        <select id="ideas-version-select" class="codex-select" name="versionId">${versionOptions}</select>
+        <button id="ideas-generate-button" class="ideas-generate-button" type="button" aria-label="Generate idea">
+          <svg class="idea-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 18h6"></path>
+            <path d="M10 22h4"></path>
+            <path d="M12 2a7 7 0 0 0-4 12.74V17h8v-2.26A7 7 0 0 0 12 2z"></path>
+          </svg>
+          Generate
+        </button>
+      </section>
+      <section id="ideas-list-root" aria-live="polite">
+        ${renderIdeasList(ideas)}
+      </section>
+    </main>
+    <script type="module" src="/public/ideas-view.js"></script>
   </body>
 </html>`;
 }

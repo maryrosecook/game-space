@@ -25,6 +25,8 @@ import { pathExists } from "./services/fsUtils";
 import { buildAllGames } from "./services/gameBuildPipeline";
 import { requireRuntimeGameAssetPathMiddleware } from "./services/gameAssetAllowlist";
 import { createForkedGameVersion } from "./services/forkGameVersion";
+import { generateIdeaPrompt } from "./services/ideaGeneration";
+import { readIdeasFile, writeIdeasFile } from "./services/ideas";
 import {
   composeCodexPrompt,
   readBuildPromptFile,
@@ -46,6 +48,7 @@ import {
   renderCodexView,
   renderGameView,
   renderHomepage,
+  renderIdeasView,
 } from "./views";
 import {
   DEFAULT_TRANSCRIPTION_MODEL,
@@ -60,6 +63,8 @@ type AppOptions = {
   repoRootPath?: string;
   gamesRootPath?: string;
   buildPromptPath?: string;
+  ideationPromptPath?: string;
+  ideasPath?: string;
   codexSessionsRootPath?: string;
   codexRunner?: CodexRunner;
   logError?: ErrorLogger;
@@ -100,6 +105,127 @@ function renderAuthPage(
   );
 }
 
+type PromptSubmitResult = {
+  forkId: string;
+};
+
+async function submitPromptForVersion(options: {
+  gamesRootPath: string;
+  buildPromptPath: string;
+  versionId: string;
+  promptInput: string;
+  codexRunner: CodexRunner;
+  logError: ErrorLogger;
+}): Promise<PromptSubmitResult> {
+  const { gamesRootPath, buildPromptPath, versionId, promptInput, codexRunner, logError } = options;
+
+  const forkedMetadata = await createForkedGameVersion({
+    gamesRootPath,
+    sourceVersionId: versionId,
+    sourcePrompt: promptInput,
+  });
+
+  const buildPrompt = await readBuildPromptFile(buildPromptPath);
+  const fullPrompt = composeCodexPrompt(buildPrompt, promptInput);
+  const forkDirectoryPath = path.join(gamesRootPath, forkedMetadata.id);
+  const forkMetadataPath = path.join(forkDirectoryPath, "metadata.json");
+  let lastPersistedSessionId: string | null = null;
+  let lastPersistedSessionStatus = resolveCodexSessionStatus(
+    forkedMetadata.codexSessionId ?? null,
+    forkedMetadata.codexSessionStatus,
+  );
+
+  async function persistSessionId(sessionId: string | null): Promise<void> {
+    if (!sessionId || sessionId === lastPersistedSessionId) {
+      return;
+    }
+
+    const currentMetadata = await readMetadataFile(forkMetadataPath);
+    if (!currentMetadata) {
+      throw new Error(`Fork metadata missing while storing session id for ${forkedMetadata.id}`);
+    }
+
+    await writeMetadataFile(forkMetadataPath, {
+      ...currentMetadata,
+      codexSessionId: sessionId,
+      codexSessionStatus: resolveCodexSessionStatus(sessionId, currentMetadata.codexSessionStatus),
+    });
+
+    lastPersistedSessionId = sessionId;
+  }
+
+  async function persistSessionStatus(codexSessionStatus: CodexSessionStatus): Promise<void> {
+    if (codexSessionStatus === lastPersistedSessionStatus) {
+      return;
+    }
+
+    const currentMetadata = await readMetadataFile(forkMetadataPath);
+    if (!currentMetadata) {
+      throw new Error(`Fork metadata missing while storing session status for ${forkedMetadata.id}`);
+    }
+
+    await writeMetadataFile(forkMetadataPath, {
+      ...currentMetadata,
+      codexSessionStatus,
+    });
+
+    lastPersistedSessionStatus = codexSessionStatus;
+  }
+
+  function persistSessionIdInBackground(sessionId: string): void {
+    void persistSessionId(sessionId).catch((error: unknown) => {
+      logError(`Failed to store codex session id for ${forkedMetadata.id}`, error);
+    });
+  }
+
+  const runOptions: CodexRunOptions = {
+    onSessionId: (sessionId: string) => {
+      persistSessionIdInBackground(sessionId);
+    },
+  };
+
+  await persistSessionStatus("created");
+
+  void codexRunner
+    .run(fullPrompt, forkDirectoryPath, runOptions)
+    .then(async (runResult) => {
+      try {
+        await persistSessionId(runResult.sessionId);
+      } catch (error: unknown) {
+        logError(`Failed to store codex session id for ${forkedMetadata.id}`, error);
+      }
+
+      if (!runResult.success) {
+        try {
+          await persistSessionStatus("error");
+        } catch (error: unknown) {
+          logError(`Failed to store codex session status for ${forkedMetadata.id}`, error);
+        }
+
+        if (runResult.failureMessage) {
+          logError(`codex exec failed for ${forkedMetadata.id}`, new Error(runResult.failureMessage));
+        }
+        return;
+      }
+
+      try {
+        await persistSessionStatus("stopped");
+      } catch (error: unknown) {
+        logError(`Failed to store codex session status for ${forkedMetadata.id}`, error);
+      }
+    })
+    .catch((error) => {
+      void persistSessionStatus("error").catch((statusError: unknown) => {
+        logError(`Failed to store codex session status for ${forkedMetadata.id}`, statusError);
+      });
+      logError(`codex exec failed for ${forkedMetadata.id}`, error);
+    });
+
+  return {
+    forkId: forkedMetadata.id,
+  };
+}
+
 export function createApp(options: AppOptions = {}): express.Express {
   const repoRootPath = options.repoRootPath ?? process.cwd();
   const gamesRootPath =
@@ -109,6 +235,9 @@ export function createApp(options: AppOptions = {}): express.Express {
   const codexSessionsRootPath =
     options.codexSessionsRootPath ??
     path.join(os.homedir(), ".codex", "sessions");
+  const ideationPromptPath =
+    options.ideationPromptPath ?? path.join(repoRootPath, "ideation.md");
+  const ideasPath = options.ideasPath ?? path.join(repoRootPath, "ideas.json");
   const codexRunner = options.codexRunner ?? new SpawnCodexRunner();
   const logError = options.logError ?? defaultLogger;
   const shouldBuildGamesOnStartup = options.shouldBuildGamesOnStartup ?? false;
@@ -256,6 +385,141 @@ export function createApp(options: AppOptions = {}): express.Express {
       next(error);
     }
   });
+
+  app.get("/ideas", requireAdmin, async (request, response, next) => {
+    try {
+      const ideas = await readIdeasFile(ideasPath);
+      const versions = await listGameVersions(gamesRootPath);
+      const csrfToken = ensureCsrfToken(request, response);
+      response
+        .status(200)
+        .type("html")
+        .send(renderIdeasView(ideas, csrfToken, versions.map((version) => version.id)));
+    } catch (error: unknown) {
+      next(error);
+    }
+  });
+
+  app.get("/api/ideas", requireAdmin, async (_request, response, next) => {
+    try {
+      const ideas = await readIdeasFile(ideasPath);
+      response.status(200).json({ ideas });
+    } catch (error: unknown) {
+      next(error);
+    }
+  });
+
+  app.post(
+    "/api/ideas/generate",
+    requireAdmin,
+    requireValidCsrf,
+    async (_request, response, next) => {
+      try {
+        const prompt = await generateIdeaPrompt(
+          buildPromptPath,
+          ideationPromptPath,
+          repoRootPath,
+        );
+
+        const ideas = await readIdeasFile(ideasPath);
+        const nextIdeas = [{ prompt, hasBeenBuilt: false }, ...ideas];
+        await writeIdeasFile(ideasPath, nextIdeas);
+
+        response.status(201).json({ prompt, ideas: nextIdeas });
+      } catch (error: unknown) {
+        next(error);
+      }
+    },
+  );
+
+  app.post(
+    "/api/ideas/:ideaIndex/build",
+    requireAdmin,
+    requireValidCsrf,
+    async (request, response, next) => {
+      try {
+        const ideaIndex = Number.parseInt(request.params.ideaIndex ?? "", 10);
+        if (!Number.isInteger(ideaIndex) || ideaIndex < 0) {
+          response.status(400).json({ error: "Invalid idea index" });
+          return;
+        }
+
+        const versionId = request.body?.versionId;
+        if (typeof versionId !== "string" || !isSafeVersionId(versionId)) {
+          response.status(400).json({ error: "Invalid version id" });
+          return;
+        }
+
+        if (!(await hasGameDirectory(gamesRootPath, versionId))) {
+          response.status(404).json({ error: "Game version not found" });
+          return;
+        }
+
+        const ideas = await readIdeasFile(ideasPath);
+        if (ideaIndex >= ideas.length) {
+          response.status(404).json({ error: "Idea not found" });
+          return;
+        }
+
+        const idea = ideas[ideaIndex];
+        if (!idea) {
+          response.status(404).json({ error: "Idea not found" });
+          return;
+        }
+
+        const submitResult = await submitPromptForVersion({
+          gamesRootPath,
+          buildPromptPath,
+          versionId,
+          promptInput: idea.prompt,
+          codexRunner,
+          logError,
+        });
+
+        const nextIdeas = ideas.map((entry, index) =>
+          index === ideaIndex
+            ? {
+                ...entry,
+                hasBeenBuilt: true,
+              }
+            : entry,
+        );
+        await writeIdeasFile(ideasPath, nextIdeas);
+
+        response.status(202).json({ forkId: submitResult.forkId, ideas: nextIdeas });
+      } catch (error: unknown) {
+        next(error);
+      }
+    },
+  );
+
+  app.delete(
+    "/api/ideas/:ideaIndex",
+    requireAdmin,
+    requireValidCsrf,
+    async (request, response, next) => {
+      try {
+        const ideaIndex = Number.parseInt(request.params.ideaIndex ?? "", 10);
+        if (!Number.isInteger(ideaIndex) || ideaIndex < 0) {
+          response.status(400).json({ error: "Invalid idea index" });
+          return;
+        }
+
+        const ideas = await readIdeasFile(ideasPath);
+        if (ideaIndex >= ideas.length) {
+          response.status(404).json({ error: "Idea not found" });
+          return;
+        }
+
+        const nextIdeas = ideas.filter((_entry, index) => index !== ideaIndex);
+        await writeIdeasFile(ideasPath, nextIdeas);
+
+        response.status(200).json({ ideas: nextIdeas });
+      } catch (error: unknown) {
+        next(error);
+      }
+    },
+  );
 
   app.get("/game/:versionId", async (request, response, next) => {
     try {
@@ -541,138 +805,16 @@ export function createApp(options: AppOptions = {}): express.Express {
           return;
         }
 
-        const forkedMetadata = await createForkedGameVersion({
+        const submitResult = await submitPromptForVersion({
           gamesRootPath,
-          sourceVersionId: versionId,
-          sourcePrompt: promptInput,
+          buildPromptPath,
+          versionId,
+          promptInput,
+          codexRunner,
+          logError,
         });
 
-        const buildPrompt = await readBuildPromptFile(buildPromptPath);
-        const fullPrompt = composeCodexPrompt(buildPrompt, promptInput);
-        const forkDirectoryPath = path.join(gamesRootPath, forkedMetadata.id);
-        const forkMetadataPath = path.join(forkDirectoryPath, "metadata.json");
-        let lastPersistedSessionId: string | null = null;
-        let lastPersistedSessionStatus = resolveCodexSessionStatus(
-          forkedMetadata.codexSessionId ?? null,
-          forkedMetadata.codexSessionStatus,
-        );
-
-        async function persistSessionId(
-          sessionId: string | null,
-        ): Promise<void> {
-          if (!sessionId || sessionId === lastPersistedSessionId) {
-            return;
-          }
-
-          const currentMetadata = await readMetadataFile(forkMetadataPath);
-          if (!currentMetadata) {
-            throw new Error(
-              `Fork metadata missing while storing session id for ${forkedMetadata.id}`,
-            );
-          }
-
-          await writeMetadataFile(forkMetadataPath, {
-            ...currentMetadata,
-            codexSessionId: sessionId,
-            codexSessionStatus: resolveCodexSessionStatus(
-              sessionId,
-              currentMetadata.codexSessionStatus,
-            ),
-          });
-
-          lastPersistedSessionId = sessionId;
-        }
-
-        async function persistSessionStatus(
-          codexSessionStatus: CodexSessionStatus,
-        ): Promise<void> {
-          if (codexSessionStatus === lastPersistedSessionStatus) {
-            return;
-          }
-
-          const currentMetadata = await readMetadataFile(forkMetadataPath);
-          if (!currentMetadata) {
-            throw new Error(
-              `Fork metadata missing while storing session status for ${forkedMetadata.id}`,
-            );
-          }
-
-          await writeMetadataFile(forkMetadataPath, {
-            ...currentMetadata,
-            codexSessionStatus,
-          });
-
-          lastPersistedSessionStatus = codexSessionStatus;
-        }
-
-        function persistSessionIdInBackground(sessionId: string): void {
-          void persistSessionId(sessionId).catch((error: unknown) => {
-            logError(
-              `Failed to store codex session id for ${forkedMetadata.id}`,
-              error,
-            );
-          });
-        }
-
-        const runOptions: CodexRunOptions = {
-          onSessionId: (sessionId: string) => {
-            persistSessionIdInBackground(sessionId);
-          },
-        };
-
-        await persistSessionStatus("created");
-
-        void codexRunner
-          .run(fullPrompt, forkDirectoryPath, runOptions)
-          .then(async (runResult) => {
-            try {
-              await persistSessionId(runResult.sessionId);
-            } catch (error: unknown) {
-              logError(
-                `Failed to store codex session id for ${forkedMetadata.id}`,
-                error,
-              );
-            }
-
-            if (!runResult.success) {
-              try {
-                await persistSessionStatus("error");
-              } catch (error: unknown) {
-                logError(
-                  `Failed to store codex session status for ${forkedMetadata.id}`,
-                  error,
-                );
-              }
-
-              if (runResult.failureMessage) {
-                logError(
-                  `codex exec failed for ${forkedMetadata.id}`,
-                  new Error(runResult.failureMessage),
-                );
-              }
-              return;
-            }
-
-            try {
-              await persistSessionStatus("stopped");
-            } catch (error: unknown) {
-              logError(
-                `Failed to store codex session status for ${forkedMetadata.id}`,
-                error,
-              );
-            }
-          })
-          .catch((error) => {
-            void persistSessionStatus("error").catch((statusError: unknown) => {
-              logError(
-                `Failed to store codex session status for ${forkedMetadata.id}`,
-                statusError,
-              );
-            });
-            logError(`codex exec failed for ${forkedMetadata.id}`, error);
-          });
-
-        response.status(202).json({ forkId: forkedMetadata.id });
+        response.status(202).json({ forkId: submitResult.forkId });
       } catch (error: unknown) {
         next(error);
       }
