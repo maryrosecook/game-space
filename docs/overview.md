@@ -42,6 +42,7 @@ Top three features:
   - `pr-feature-videos.yml` - PR-scoped, opt-in Playwright video workflow that records selected E2E specs and upserts one PR comment with artifact links.
 - `.github/pull_request_template.md` - PR template with `video-tests` selector block for requesting feature-video runs.
 - `games/` - Versioned game sandboxes (one runtime/build boundary per version).
+  - `starter/` - Lean modular WebGL starter with a runtime shell (`main.ts`), shared helpers (`runtime.ts`), replaceable game module (`starterGame.ts`), and a forking guide at `games/starter/README.md` (mobile touch-only input).
   - `v1-bounce/` - Initial bouncing-ball WebGL game implementation.
   - `d0cf7658-3371-4f01-99e2-ca90fc1899cf/` - Forked bouncing-ball variant.
 - `tests/` - Vitest unit/integration coverage for app routes and core services, plus Playwright E2E specs under `tests/e2e/`.
@@ -90,6 +91,7 @@ Top three features:
 - Realtime voice transcription model: browser never receives `OPENAI_API_KEY`; server mints short-lived client secrets via OpenAI Realtime transcription sessions using `gpt-4o-transcribe`, and the client streams mic audio directly to OpenAI over WebRTC.
 - Prompt safety model: user prompt text is never shell-interpolated; `SpawnCodexRunner` passes full prompt bytes through stdin to `codex exec --json --dangerously-bypass-approvals-and-sandbox -`.
 - Runtime-state derivation model: `codexTurnInfo.ts` keeps an in-memory tracker per worktree (`sessionPath`, append offset, partial-line buffer, task lifecycle counters, user/assistant counters, latest assistant metadata), scans for the newest matching JSONL by `session_meta.payload.cwd`, and sets `eyeState` to `generating` while `task_started` count exceeds terminal task events (`task_complete` and related terminal markers); otherwise `idle`. For legacy logs without task markers, it falls back to user/assistant message balance. When no tracker is active, lifecycle state maps fallback runtime state.
+- Starter game base model: `games/starter/src/main.ts` only orchestrates lifecycle wiring, `games/starter/src/runtime.ts` provides shared helpers (fixed-step loop/time, touch input mapping, scene machine, random, collision, and text asset loading), and `games/starter/src/starterGame.ts` holds game-specific config/init/update/render logic. `games/starter/README.md` documents how to fork into a completely different game with minimal rewiring.
 - Favorites model: each game version can be marked favorite in `metadata.json`; the homepage filters to favorites for logged-out users, while authenticated admins can toggle favorite state from the game-page star control.
 - Tile-color model: `tileColor.ts` generates random `#RRGGBB` colors that satisfy a minimum 4.5:1 contrast ratio with white text (fallback `#1D3557`), and forks/seeded versions persist this value in `metadata.json`.
 - Static serving model: Express serves shared `src/public/*`; `/games/*` is runtime-allowlisted and blocks metadata/source/config/dev artifacts.
