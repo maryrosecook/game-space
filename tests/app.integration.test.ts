@@ -383,7 +383,8 @@ describe('express app integration', () => {
     expect(css.text).toContain('grid-template-columns: repeat(auto-fit, minmax(min(100%, 90px), 1fr));');
     expect(css.text).toContain('--render-aspect-width: 9;');
     expect(css.text).toContain('--bottom-tab-height: 68px;');
-    expect(css.text).toContain('--game-layout-height: calc(100dvh - var(--bottom-tab-height));');
+    expect(css.text).toContain('--game-top-strip-height: 5px;');
+    expect(css.text).toContain('--game-layout-height: calc(100dvh - var(--bottom-tab-height) - var(--game-top-strip-height));');
     expect(css.text).toContain('border-radius: 18px 18px 0 0;');
     expect(css.text).toContain('overflow-wrap: anywhere;');
     expect(css.text).toContain('.game-page--codex-expanded .prompt-panel');
@@ -923,6 +924,8 @@ describe('express app integration', () => {
     expect(publicView.text).not.toContain('id="game-codex-transcript"');
     expect(publicView.text).not.toContain('id="game-tab-favorite"');
     expect(publicView.text).not.toContain('id="game-tab-delete"');
+    expect(publicView.text).not.toContain('id="game-tab-edit"');
+    expect(publicView.text).toContain('id="game-home-button"');
     expect(publicView.text).not.toContain('/public/game-view.js');
     expect(publicView.text).toContain('/public/game-live-reload.js');
     expect(publicView.text).toContain("'touchend'");
@@ -951,6 +954,8 @@ describe('express app integration', () => {
     expect(adminView.text).toContain('/public/game-view.js');
     expect(adminView.text).toContain('data-csrf-token="');
     expect(adminView.text).toContain('data-game-favorited="false"');
+    expect(adminView.text).toContain('class="game-top-strip"');
+    expect(adminView.text).toContain('style="--game-tile-color: #1D3557;"');
   });
 
   it('toggles game favorite metadata when called by an authenticated admin', async () => {

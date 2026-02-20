@@ -121,8 +121,9 @@ body {
 .game-page {
   overflow: hidden;
   --bottom-tab-height: 68px;
+  --game-top-strip-height: 5px;
   --edit-drawer-height: 150px;
-  --game-layout-height: calc(100dvh - var(--bottom-tab-height));
+  --game-layout-height: calc(100dvh - var(--bottom-tab-height) - var(--game-top-strip-height));
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -130,9 +131,14 @@ body {
 }
 
 .game-page--public {
-  --bottom-tab-height: 0px;
   --edit-drawer-height: 0px;
-  --game-layout-height: 100dvh;
+}
+
+
+.game-top-strip {
+  width: 100vw;
+  height: var(--game-top-strip-height);
+  background: var(--game-tile-color, #1D3557);
 }
 
 .game-layout {

@@ -584,6 +584,7 @@ export function createApp(options: AppOptions = {}): express.Express {
             isAdmin,
             csrfToken,
             isFavorite: metadata?.favorite === true,
+            tileColor: metadata?.tileColor,
           }),
         );
     } catch (error: unknown) {
