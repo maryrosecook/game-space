@@ -260,6 +260,7 @@ type GameViewRenderOptions = {
   isAdmin?: boolean;
   csrfToken?: string;
   isFavorite?: boolean;
+  tileColor?: string;
 };
 
 export function renderGameView(versionId: string, options: GameViewRenderOptions = {}): string {
@@ -267,6 +268,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
   const enableLiveReload = options.enableLiveReload ?? false;
   const isAdmin = options.isAdmin ?? false;
   const isFavorite = options.isFavorite === true;
+  const tileColor = typeof options.tileColor === 'string' ? options.tileColor : '#1D3557';
   const csrfToken = isAdmin && typeof options.csrfToken === 'string' ? escapeHtml(options.csrfToken) : null;
   const liveReloadScript = enableLiveReload
     ? '\n    <script type="module" src="/public/game-live-reload.js"></script>'
@@ -275,6 +277,85 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
   const bodyDataAttributes = `${csrfToken
     ? `data-version-id="${escapeHtml(versionId)}" data-csrf-token="${csrfToken}"`
     : `data-version-id="${escapeHtml(versionId)}"`} data-game-favorited="${isFavorite ? 'true' : 'false'}"`;
+
+  const gameToolbarMarkup = `<nav class="game-bottom-tabs" aria-label="Game tools">
+      <a
+        id="game-home-button"
+        class="game-home-link"
+        href="/"
+        aria-label="Back to homepage"
+      >
+        <svg
+          class="game-view-icon"
+          xmlns="http://www.w3.org/2000/svg"
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m15 18-6-6 6-6"></path>
+        </svg>
+      </a>
+      ${isAdmin
+        ? `<div class="game-tool-tabs">
+        <button
+          id="game-tab-edit"
+          class="game-view-tab game-view-tab--edit"
+          type="button"
+          aria-controls="prompt-panel"
+          aria-expanded="false"
+        >
+          <svg
+            class="game-view-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 3a9 9 0 1 0 9 9"></path>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 3.6 15a1.65 1.65 0 0 0-1.51-1H2a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 3.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8 3.6a1.65 1.65 0 0 0 1-1.51V2a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 3.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 8a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <span class="game-view-tab-spinner" aria-hidden="true"></span>
+        </button>
+        <button
+          id="prompt-record-button"
+          class="game-view-icon-tab game-view-icon-tab--record"
+          type="button"
+          aria-label="Start voice recording"
+        >
+          <svg
+            class="game-view-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 19v3"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <rect x="9" y="2" width="6" height="13" rx="3"></rect>
+          </svg>
+        </button>
+      </div>`
+        : ''}
+    </nav>`;
 
   const adminPanelsMarkup = isAdmin
     ? `<section id="prompt-panel" class="prompt-panel" aria-hidden="true" aria-label="Create next version prompt">
@@ -385,83 +466,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         </section>
       </section>
     </section>
-
-    <nav class="game-bottom-tabs" aria-label="Game tools">
-      <a
-        id="game-home-button"
-        class="game-home-link"
-        href="/"
-        aria-label="Back to homepage"
-      >
-        <svg
-          class="game-view-icon"
-          xmlns="http://www.w3.org/2000/svg"
-          width="22"
-          height="22"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="m15 18-6-6 6-6"></path>
-        </svg>
-      </a>
-      <div class="game-tool-tabs">
-        <button
-          id="game-tab-edit"
-          class="game-view-tab game-view-tab--edit"
-          type="button"
-          aria-controls="prompt-panel"
-          aria-expanded="false"
-        >
-          <svg
-            class="game-view-icon"
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M12 3a9 9 0 1 0 9 9"></path>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 3.6 15a1.65 1.65 0 0 0-1.51-1H2a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 3.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8 3.6a1.65 1.65 0 0 0 1-1.51V2a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 3.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 8a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            <circle cx="12" cy="12" r="3"></circle>
-          </svg>
-          <span class="game-view-tab-spinner" aria-hidden="true"></span>
-        </button>
-        <button
-          id="prompt-record-button"
-          class="game-view-icon-tab game-view-icon-tab--record"
-          type="button"
-          aria-label="Start voice recording"
-        >
-          <svg
-            class="game-view-icon"
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M12 19v3"></path>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-            <rect x="9" y="2" width="6" height="13" rx="3"></rect>
-          </svg>
-        </button>
-      </div>
-    </nav>`
+    ${gameToolbarMarkup}`
     : '';
 
   const gameViewScriptMarkup = isAdmin ? '\n    <script type="module" src="/public/game-view.js"></script>' : '';
@@ -474,7 +479,8 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
     <title>Game ${escapeHtml(versionId)}</title>
     <link rel="stylesheet" href="/public/styles.css" />
   </head>
-  <body class="${bodyClass}" ${bodyDataAttributes}>
+  <body class="${bodyClass}" ${bodyDataAttributes} style="--game-tile-color: ${escapeHtml(tileColor)};">
+    <div class="game-top-strip" aria-hidden="true"></div>
     <main class="game-layout${isAdmin ? '' : ' game-layout--public'}">
       <section class="game-stage">
         <div class="game-render-area">
@@ -484,7 +490,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
       </section>
     </main>
 
-    ${adminPanelsMarkup}
+    ${isAdmin ? adminPanelsMarkup : gameToolbarMarkup}
 
     <script>
       (() => {
