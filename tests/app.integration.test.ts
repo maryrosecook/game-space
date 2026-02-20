@@ -927,6 +927,8 @@ describe('express app integration', () => {
     expect(publicView.text).toContain('/public/game-live-reload.js');
     expect(publicView.text).toContain("'touchend'");
     expect(publicView.text).toContain("'dblclick'");
+    expect(publicView.text).toContain("'selectstart'");
+    expect(publicView.text).toContain("'contextmenu'");
 
     const authSession = await loginAsAdmin(app);
     const adminView = await request(app)
