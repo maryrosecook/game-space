@@ -490,6 +490,11 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
       (() => {
         let lastTouchEndAt = 0;
 
+        const isTextEntryTarget = (target) =>
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          (target instanceof HTMLElement && target.isContentEditable);
+
         document.addEventListener(
           'touchend',
           (event) => {
@@ -505,6 +510,30 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         document.addEventListener(
           'dblclick',
           (event) => {
+            event.preventDefault();
+          },
+          { passive: false }
+        );
+
+        document.addEventListener(
+          'selectstart',
+          (event) => {
+            if (isTextEntryTarget(event.target)) {
+              return;
+            }
+
+            event.preventDefault();
+          },
+          { passive: false }
+        );
+
+        document.addEventListener(
+          'contextmenu',
+          (event) => {
+            if (isTextEntryTarget(event.target)) {
+              return;
+            }
+
             event.preventDefault();
           },
           { passive: false }
