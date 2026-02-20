@@ -8,5 +8,6 @@ Requirements:
 - Include a concrete game aesthetic (art direction, vibe, and setting) instead of generic visual language.
 - Be explicit about player inputs and what each input does in moment-to-moment play.
 - Bias toward established genres, while allowing a small chance of a more outlandish genre mashup.
+- Do not suggest endless runners.
 - Assume all generated game builds must start from the `starter` game template.
 - Return only the final idea text.
