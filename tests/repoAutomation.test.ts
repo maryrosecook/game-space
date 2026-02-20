@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import { describe, expect, it } from 'vitest';
 
@@ -79,5 +80,15 @@ describe('repo automation configuration', () => {
     expect(workflow).not.toContain('git pull origin main');
     expect(workflow).toContain('npm run build');
     expect(workflow).toContain('pm2 restart game-space');
+  });
+
+  it('pr feature video workflow remains valid yaml after script updates', () => {
+    const workflowPath = path.join(process.cwd(), '.github/workflows/pr-feature-videos.yml');
+
+    expect(() =>
+      execFileSync('ruby', ['-e', 'require "yaml"; YAML.load_file(ARGV.fetch(0))', workflowPath], {
+        stdio: 'pipe'
+      })
+    ).not.toThrow();
   });
 });
