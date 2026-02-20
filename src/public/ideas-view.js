@@ -30,6 +30,27 @@ function applyGenerateState(isGenerating) {
   generateButton.setAttribute('aria-busy', isGenerating ? 'true' : 'false');
 }
 
+
+async function syncIdeasState() {
+  try {
+    const response = await fetch('/api/ideas', {
+      headers: csrfHeaders()
+    });
+    if (!response.ok) {
+      return;
+    }
+
+    const payload = await response.json();
+    if (Array.isArray(payload.ideas)) {
+      renderIdeas(payload.ideas);
+    }
+
+    applyGenerateState(payload.isGenerating === true);
+  } catch {
+    // Best-effort refresh only.
+  }
+}
+
 function renderIdeas(ideas) {
   if (!Array.isArray(ideas) || ideas.length === 0) {
     listRoot.innerHTML = '<p class="codex-empty">No ideas yet. Generate one to get started.</p>';
@@ -175,3 +196,10 @@ listRoot.addEventListener('click', (event) => {
     void buildIdea(ideaIndex);
   }
 });
+
+
+window.addEventListener('pageshow', () => {
+  void syncIdeasState();
+});
+
+void syncIdeasState();

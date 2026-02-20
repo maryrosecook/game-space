@@ -117,7 +117,13 @@ function renderIdeasList(ideas: readonly IdeasViewIdea[]): string {
 export function renderIdeasView(
   ideas: readonly IdeasViewIdea[],
   csrfToken: string,
+  isGenerating: boolean = false,
 ): string {
+  const generatingClass = isGenerating
+    ? " ideas-generate-button--generating"
+    : "";
+  const generatingBusyState = isGenerating ? "true" : "false";
+
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -133,7 +139,7 @@ export function renderIdeasView(
         <a class="codex-home-link" href="/">Back to games</a>
       </header>
       <section class="ideas-controls">
-        <button id="ideas-generate-button" class="ideas-generate-button" type="button" aria-label="Generate idea" aria-busy="false">
+        <button id="ideas-generate-button" class="ideas-generate-button${generatingClass}" type="button" aria-label="Generate idea" aria-busy="${generatingBusyState}">
           <svg class="idea-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M9 18h6"></path>
             <path d="M10 22h4"></path>
