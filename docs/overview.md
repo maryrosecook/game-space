@@ -111,6 +111,7 @@ Top three features:
   - Prompt fork/session lifecycle persistence flow and transcript parsing behavior.
   - Realtime transcription session creation route behavior (`200`, `502`, `503`) and game-page client WebRTC transcription wiring.
   - Game page client behavior for CSRF header inclusion, admin/public UI states, favorite-star toggling, and Edit-tab generating spinner class toggling.
+  - Repo automation workflow integrity checks, including YAML parse validation for `.github/workflows/pr-feature-videos.yml`.
 - End-to-end automation flow:
   - Baseline E2E run (no recording): `npm run test:e2e`.
   - Video run (opt-in only): `npm run test:e2e:video` or set `PLAYWRIGHT_CAPTURE_VIDEO=1`.

@@ -117,26 +117,28 @@ jobs:
             const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
 
             const body = enabled
-              ? `${marker}
-## Feature Video Artifacts
-Videos were generated for selected Playwright tests.
-
-**Selected tests**
-${selectorsText}
-
-**Artifacts**
-- [Open workflow run](${runUrl})
-- Download artifact: \`feature-videos-${context.runId}\``
-`
-              : `${marker}
-## Feature Video Artifacts
-No video selectors were provided in this PR update, so video recording was skipped.
-
-To request videos, add selectors between:
-- \`<!-- video-tests:start -->\`
-- \`<!-- video-tests:end -->\`
-in the PR body (or commit \.github/video-tests.txt).
-`;
+              ? [
+                  marker,
+                  '## Feature Video Artifacts',
+                  'Videos were generated for selected Playwright tests.',
+                  '',
+                  '**Selected tests**',
+                  selectorsText,
+                  '',
+                  '**Artifacts**',
+                  `- [Open workflow run](${runUrl})`,
+                  `- Download artifact: \`feature-videos-${context.runId}\``
+                ].join('\n')
+              : [
+                  marker,
+                  '## Feature Video Artifacts',
+                  'No video selectors were provided in this PR update, so video recording was skipped.',
+                  '',
+                  'To request videos, add selectors between:',
+                  '- `<!-- video-tests:start -->`',
+                  '- `<!-- video-tests:end -->`',
+                  'in the PR body (or commit `.github/video-tests.txt`).'
+                ].join('\n');
 
             if (existing) {
               await github.rest.issues.updateComment({
