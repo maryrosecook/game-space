@@ -393,10 +393,11 @@ export function createApp(options: AppOptions = {}): express.Express {
     try {
       const ideas = await readIdeasFile(ideasPath);
       const csrfToken = ensureCsrfToken(request, response);
+      const isIdeaGenerationActive = activeIdeaGeneration !== null;
       response
         .status(200)
         .type("html")
-        .send(renderIdeasView(ideas, csrfToken));
+        .send(renderIdeasView(ideas, csrfToken, isIdeaGenerationActive));
     } catch (error: unknown) {
       next(error);
     }
@@ -405,7 +406,7 @@ export function createApp(options: AppOptions = {}): express.Express {
   app.get("/api/ideas", requireAdmin, async (_request, response, next) => {
     try {
       const ideas = await readIdeasFile(ideasPath);
-      response.status(200).json({ ideas });
+      response.status(200).json({ ideas, isGenerating: activeIdeaGeneration !== null });
     } catch (error: unknown) {
       next(error);
     }

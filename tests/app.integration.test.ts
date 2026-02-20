@@ -1338,6 +1338,38 @@ describe('express app integration', () => {
     expect(forkMetadata.codexSessionId).toBe(emittedSessionId);
     expect(forkMetadata.codexSessionStatus).toBe('created');
   });
+
+  it('returns idea generation status in ideas api responses', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-ideas-status-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    const ideasPath = path.join(tempDirectoryPath, 'ideas.json');
+    await fs.writeFile(
+      ideasPath,
+      `${JSON.stringify([{ prompt: 'idea one', hasBeenBuilt: false }], null, 2)}
+`,
+      'utf8'
+    );
+
+    const app = createApp({
+      gamesRootPath,
+      ideasPath
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await request(app)
+      .get('/api/ideas')
+      .set('Host', TEST_HOST)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(200);
+
+    expect(response.body).toEqual({
+      ideas: [{ prompt: 'idea one', hasBeenBuilt: false }],
+      isGenerating: false
+    });
+  });
+
   it('hides ideas features from unauthenticated users and shows ideas link for admins', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-app-ideas-auth-');
     const gamesRootPath = path.join(tempDirectoryPath, 'games');
