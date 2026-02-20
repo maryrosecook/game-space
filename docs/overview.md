@@ -49,6 +49,7 @@ Top three features:
 - `playwright.config.ts` - Default E2E runner config (video off unless explicitly enabled).
 - `docs/`
   - `overview.md` - High-level architecture and operational summary.
+- `AGENTS.md` - Repo-specific Codex instructions, including sequential lint/typecheck validation to avoid memory overload.
 - `.env.example` - Template for required admin auth secrets.
 - `conductor.json` - Conductor workspace startup config (`npm install`, `npm run dev`).
 - `package.json` - NPM scripts and dependencies.
@@ -98,11 +99,13 @@ Top three features:
 - Dev live-reload model: token file stays on disk under each game `dist/`, but browser access is routed through `/api/dev/reload-token/:versionId` in dev mode.
 - Deployment model: GitHub Actions deploys `main` to DigitalOcean over SSH using repository secrets and PM2 process management.
 - PR video model: Playwright videos are opt-in per PR update; selectors come from PR metadata/template block (or `.github/video-tests.txt`), and workflow comments are edited in place.
+- Codex validation model: repo-level agent instructions require `npm run typecheck` and `npm run lint` to run sequentially (typecheck first, then lint) to reduce memory pressure.
 
 # Testing
 
-- Run lint: `npm run lint`
 - Run type checking: `npm run typecheck`
+- Run lint: `npm run lint`
+- Run type checking and lint sequentially (never in parallel) to avoid memory overload.
 - Run tests: `npm run test`
 - Coverage focus:
   - Auth login/logout cookies, fixed TTL, CSRF checks, and brute-force backoff behavior.
