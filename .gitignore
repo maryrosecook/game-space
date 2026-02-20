@@ -2,6 +2,9 @@
 factory/
 node_modules/
 dist/
-games/
-games/
+games/*
+!games/starter/
+!games/starter/**
+games/starter/dist/
+games/starter/node_modules/
 .env
