@@ -2,6 +2,15 @@ function formatRole(role) {
   return role === 'assistant' ? 'Assistant' : 'User';
 }
 
+function normalizeTranscriptTitle(value) {
+  if (typeof value !== 'string') {
+    return 'Codex Transcript';
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : 'Codex Transcript';
+}
+
 function isSupportedMessage(message) {
   if (!message || typeof message !== 'object') {
     return false;
@@ -10,10 +19,12 @@ function isSupportedMessage(message) {
   return (message.role === 'user' || message.role === 'assistant') && typeof message.text === 'string';
 }
 
-export function createCodexTranscriptPresenter(sessionView) {
+export function createCodexTranscriptPresenter(sessionView, options = {}) {
   if (!(sessionView instanceof HTMLElement)) {
-    throw new Error('Codex session container is missing from the page');
+    throw new Error('Transcript container is missing from the page');
   }
+
+  const transcriptTitle = normalizeTranscriptTitle(options.transcriptTitle);
 
   function clear() {
     sessionView.replaceChildren();
@@ -38,7 +49,7 @@ export function createCodexTranscriptPresenter(sessionView) {
   }
 
   function showLoadingState() {
-    showEmptyState('Loading transcript', 'Reading Codex session data...');
+    showEmptyState('Loading transcript', `Reading ${transcriptTitle} data...`);
   }
 
   function appendSessionHeader(sessionId) {
@@ -46,7 +57,7 @@ export function createCodexTranscriptPresenter(sessionView) {
     header.className = 'codex-session-header';
 
     const heading = document.createElement('h2');
-    heading.textContent = 'Transcript';
+    heading.textContent = transcriptTitle;
 
     const detail = document.createElement('code');
     detail.className = 'codex-session-id';
@@ -81,7 +92,7 @@ export function createCodexTranscriptPresenter(sessionView) {
     }
 
     if (thread.childElementCount === 0) {
-      showEmptyState('No visible messages', 'This session has no user/assistant text entries yet.');
+      showEmptyState('No visible messages', 'This session has no visible message or event entries yet.');
       return false;
     }
 

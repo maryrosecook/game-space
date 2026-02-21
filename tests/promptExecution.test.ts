@@ -50,6 +50,11 @@ describe('composeCodexPrompt', () => {
     expect(parseSessionIdFromCodexEventLine(line)).toBe('019c49ac-5744-71f1-9a0d-c2a98885e4d4');
   });
 
+  it('extracts session id from claude stream events', () => {
+    const line = '{"type":"result","session_id":"77e122f3-31c9-4f14-acd4-886d3d8479af"}';
+    expect(parseSessionIdFromCodexEventLine(line)).toBe('77e122f3-31c9-4f14-acd4-886d3d8479af');
+  });
+
   it('returns null for unrelated or invalid JSONL lines', () => {
     expect(parseSessionIdFromCodexEventLine('{"type":"response_item","payload":{}}')).toBeNull();
     expect(parseSessionIdFromCodexEventLine('{"type":"thread.started","thread_id":""}')).toBeNull();

@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 
 import { isObjectRecord } from './fsUtils';
+import { readCodegenConfigFromEnv, type CodegenConfig } from './codegenConfig';
 
 export type CodexRunResult = {
   sessionId: string | null;
@@ -27,6 +29,16 @@ export function parseSessionIdFromCodexEventLine(serializedEventLine: string): s
 
   if (!isObjectRecord(rawEvent) || typeof rawEvent.type !== 'string') {
     return null;
+  }
+
+  const claudeSessionId = rawEvent.session_id;
+  if (typeof claudeSessionId === 'string' && claudeSessionId.length > 0) {
+    return claudeSessionId;
+  }
+
+  const claudeSessionIdCamelCase = rawEvent.sessionId;
+  if (typeof claudeSessionIdCamelCase === 'string' && claudeSessionIdCamelCase.length > 0) {
+    return claudeSessionIdCamelCase;
   }
 
   if (rawEvent.type === 'thread.started') {
@@ -160,6 +172,137 @@ export class SpawnCodexRunner implements CodexRunner {
 
       childProcess.stdin.end(prompt);
     });
+  }
+}
+
+type SpawnClaudeRunnerOptions = {
+  model: string;
+  thinking: string;
+};
+
+function buildClaudeRunnerArgs(model: string, thinking: string, sessionId: string): string[] {
+  const args: string[] = [
+    '--verbose',
+    '--print',
+    '--output-format',
+    'stream-json',
+    '--dangerously-skip-permissions',
+    '--model',
+    model,
+    '--session-id',
+    sessionId
+  ];
+
+  if (thinking.trim().length > 0) {
+    args.push(
+      '--append-system-prompt',
+      `Use ${thinking.trim()} thinking mode while preserving complete and correct output.`
+    );
+  }
+
+  return args;
+}
+
+export class SpawnClaudeRunner implements CodexRunner {
+  private readonly model: string;
+  private readonly thinking: string;
+
+  constructor(options: SpawnClaudeRunnerOptions) {
+    this.model = options.model;
+    this.thinking = options.thinking;
+  }
+
+  async run(prompt: string, cwd: string, options: CodexRunOptions = {}): Promise<CodexRunResult> {
+    return new Promise<CodexRunResult>((resolve, reject) => {
+      const { onSessionId } = options;
+      const generatedSessionId = randomUUID();
+      notifySessionId(onSessionId, generatedSessionId);
+      const args = buildClaudeRunnerArgs(this.model, this.thinking, generatedSessionId);
+      const childProcess = spawn('claude', args, {
+        cwd,
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      let errorOutput = '';
+      let stdoutBuffer = '';
+      let sessionId: string | null = generatedSessionId;
+
+      childProcess.stdout.setEncoding('utf8');
+      childProcess.stdout.on('data', (chunk: string) => {
+        stdoutBuffer += chunk;
+        const drained = drainStdoutLines(stdoutBuffer, sessionId, onSessionId);
+        stdoutBuffer = drained.remainingOutput;
+        sessionId = drained.sessionId;
+      });
+
+      childProcess.stderr.setEncoding('utf8');
+      childProcess.stderr.on('data', (chunk: string) => {
+        errorOutput += chunk;
+      });
+
+      childProcess.on('error', (error) => {
+        reject(error);
+      });
+
+      childProcess.on('close', (exitCode) => {
+        const finalLine = stdoutBuffer.trim();
+        if (finalLine.length > 0) {
+          const nextSessionId = maybeCaptureSessionId(finalLine, sessionId);
+          if (!sessionId && nextSessionId) {
+            notifySessionId(onSessionId, nextSessionId);
+          }
+
+          sessionId = nextSessionId;
+        }
+
+        if (exitCode === 0) {
+          resolve({
+            sessionId,
+            success: true,
+            failureMessage: null
+          });
+          return;
+        }
+
+        const details = errorOutput.trim().length > 0 ? `: ${errorOutput.trim()}` : '';
+        resolve({
+          sessionId,
+          success: false,
+          failureMessage: `claude exec failed with exit code ${exitCode ?? 'unknown'}${details}`
+        });
+      });
+
+      childProcess.stdin.end(prompt);
+    });
+  }
+}
+
+type ReadCodegenConfig = () => CodegenConfig;
+
+export class SpawnCodegenRunner implements CodexRunner {
+  private readonly readCodegenConfig: ReadCodegenConfig;
+  private readonly codexRunner: CodexRunner;
+
+  constructor(
+    readCodegenConfig: ReadCodegenConfig = () => readCodegenConfigFromEnv(),
+    codexRunner: CodexRunner = new SpawnCodexRunner()
+  ) {
+    this.readCodegenConfig = readCodegenConfig;
+    this.codexRunner = codexRunner;
+  }
+
+  async run(prompt: string, cwd: string, options: CodexRunOptions = {}): Promise<CodexRunResult> {
+    const codegenConfig = this.readCodegenConfig();
+    if (codegenConfig.provider !== 'claude') {
+      return this.codexRunner.run(prompt, cwd, options);
+    }
+
+    const claudeRunner = new SpawnClaudeRunner({
+      model: codegenConfig.claudeModel,
+      thinking: codegenConfig.claudeThinking
+    });
+
+    return claudeRunner.run(prompt, cwd, options);
   }
 }
 

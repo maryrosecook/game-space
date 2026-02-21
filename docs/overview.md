@@ -4,7 +4,7 @@ Local-first game version browser and editor where every version is playable, for
 
 Top three features:
 - Filesystem-backed version catalog rendered as responsive homepage tiles (`Fountain`), with hyphen-normalized labels and favorite highlighting; logged-out users see only favorites while direct non-favorite game URLs still load.
-- Cookie-authenticated admin workflow (`/auth`) that unlocks prompt execution and Codex transcript access while keeping public gameplay (`/` and `/game/:versionId`) available without login.
+- Cookie-authenticated admin workflow (`/auth`) that unlocks prompt execution and transcript access, including runtime switching between Codex and Claude codegen providers, while keeping public gameplay (`/` and `/game/:versionId`) available without login.
 - Admin game controls on `/game/:versionId` include prompt editing, transcript toggle, and an icon-only star toggle (no tab chrome) that persists favorite state to each game's `metadata.json`; the back link and controls share bottom alignment.
 
 # Repo structure
@@ -15,22 +15,23 @@ Top three features:
   - `views.ts` - Homepage/auth/game/codex HTML rendering.
   - `types.ts` - Shared metadata/version TypeScript types.
   - `public/` - Static browser assets.
-    - `styles.css` - Homepage/game/auth styling, favorite tile/button states, admin/public game states, transcript layouts, and Edit-tab generating spinner animation.
-    - `game-view.js` - Admin game-page prompt submit, favorite toggle API calls, realtime voice transcription (session mint + WebRTC stream + transcript events), bottom-tab behavior, transcript polling, and generating-state class toggling from server `eyeState`.
+    - `styles.css` - Homepage/game/auth styling, favorite tile/button states, admin/public game states, provider selector controls on `/auth`, transcript layouts, and Edit-tab generating spinner animation.
+    - `game-view.js` - Admin game-page prompt submit, favorite toggle API calls, realtime voice transcription (session mint + WebRTC stream + transcript events), bottom-tab behavior, transcript polling, provider-specific transcript heading labels (`Codex Transcript` or `Claude Transcript`), and Edit-tab generating-state class toggling from server `eyeState`.
     - `game-live-reload.js` - Dev-only game-page polling via `/api/dev/reload-token/:versionId`.
-    - `codex-view.js` - `/codex` selector wiring and transcript loading.
-    - `codex-transcript-presenter.js` - Shared transcript presenter used by `/codex` and game pages.
-  - `services/` - Filesystem, auth, build, prompt, and Codex-session orchestration.
+    - `codex-view.js` - `/codex` selector wiring and transcript loading with provider-specific heading labels.
+    - `codex-transcript-presenter.js` - Shared transcript presenter used by `/codex` and game pages, with configurable transcript title text.
+  - `services/` - Filesystem, auth, build, provider-configurable prompt execution, and session/transcript orchestration.
     - `fsUtils.ts` - Shared fs/object/error helpers.
     - `adminAuth.ts` - Admin password verification, iron-session sealed cookies, fixed TTL, and login rate limiter.
     - `csrf.ts` - Same-origin + double-submit CSRF token issuance/validation.
+    - `codegenConfig.ts` - Environment-backed codegen provider/model config parsing and runtime provider store used by auth/provider switching.
     - `gameAssetAllowlist.ts` - Runtime-safe `/games/:versionId/dist/*` allowlist and sensitive-path blocking.
     - `gameVersions.ts` - Version ID validation, metadata parsing/writing (including `favorite`), lifecycle status normalization, and version listing.
     - `forkGameVersion.ts` - Fork copy + lineage metadata creation.
     - `tileColor.ts` - Shared readable tile-color generator used for fork metadata and backfills.
-    - `promptExecution.ts` - Build-prompt loading, prompt composition, and `codex exec --json` runner.
-    - `codexSessions.ts` - Codex session-file lookup plus JSONL parsing for user/assistant transcript turns and task lifecycle events.
-    - `codexTurnInfo.ts` - Per-worktree runtime-state tracker that scans latest matching session JSONL by `session_meta.payload.cwd`, reads append-only bytes, and derives `eyeState` from task lifecycle events (with message-balance fallback for logs without task markers).
+    - `promptExecution.ts` - Build-prompt loading, prompt composition, and provider-specific non-interactive runners (`codex exec --json` and `claude --print --output-format stream-json`) behind the existing `CodexRunner` interface.
+    - `codexSessions.ts` - Session-file lookup plus JSONL parsing/normalization for Codex and Claude transcript entries, including user/assistant text, Codex task lifecycle events, and Claude tool call/result events.
+    - `codexTurnInfo.ts` - Per-worktree runtime-state tracker that scans latest matching session JSONL by worktree cwd metadata (`session_meta.payload.cwd` or top-level `cwd`), reads append-only bytes, and derives `eyeState` from task lifecycle events (with message-balance fallback).
     - `openaiTranscription.ts` - OpenAI Realtime transcription session factory (`/v1/realtime/transcription_sessions`) that returns ephemeral client secrets for browser WebRTC transcription.
     - `gameBuildPipeline.ts` - Per-game dependency install/build and source-path-to-version mapping.
     - `devLiveReload.ts` - Per-version reload-token pathing/writes used by the dev watch loop.
@@ -50,7 +51,7 @@ Top three features:
 - `docs/`
   - `overview.md` - High-level architecture and operational summary.
 - `AGENTS.md` - Repo-specific Codex instructions, including sequential lint/typecheck validation to avoid memory overload.
-- `.env.example` - Template for required admin auth secrets.
+- `.env.example` - Template for required admin auth secrets and codegen provider/model defaults.
 - `conductor.json` - Conductor workspace startup config (`npm install`, `npm run dev`).
 - `package.json` - NPM scripts and dependencies.
 - `game-build-prompt.md` - Prompt prelude prepended to user prompt text before Codex execution.
@@ -58,13 +59,13 @@ Top three features:
 
 # Most important code paths
 
-- Auth flow: `GET /auth` renders `renderAuthView()` with CSRF token; `POST /auth/login` validates CSRF + password hash + rate limits, sets an iron-session sealed admin cookie, and redirects; `POST /auth/logout` validates CSRF and clears the admin cookie.
+- Auth flow: `GET /auth` renders `renderAuthView()` with CSRF token and active provider/model details; `POST /auth/login` validates CSRF + password hash + rate limits, sets an iron-session sealed admin cookie, and redirects; `POST /auth/provider` lets admins switch active codegen provider (`codex` or `claude`) with CSRF validation; `POST /auth/logout` validates CSRF and clears the admin cookie.
 - Homepage flow: `GET /` calls `listGameVersions()` and renders `renderHomepage()` with auth-aware top-right CTA (`Login` or `Auth`); logged-out mode filters to favorited versions and favorited tiles render with a yellow border.
 - Game page flow: `GET /game/:versionId` validates availability, renders `renderGameView()` in admin/public mode, and only injects prompt/transcript UI plus CSRF/favorite data attributes for authenticated admins.
 - Favorite toggle flow: `POST /api/games/:versionId/favorite` requires admin + CSRF, flips the `favorite` boolean in `metadata.json`, and returns the new state for `src/public/game-view.js` to reflect in the star button.
-- Prompt fork flow: `POST /api/games/:versionId/prompts` requires admin + CSRF, forks via `createForkedGameVersion()`, sets lifecycle state to `created`, composes full prompt, launches Codex runner, persists `codexSessionId` as soon as observed, and transitions lifecycle to `stopped` or `error` when the run settles.
+- Prompt fork flow: `POST /api/games/:versionId/prompts` requires admin + CSRF, forks via `createForkedGameVersion()`, sets lifecycle state to `created`, composes full prompt, launches the provider-selected runner (`codex` or `claude`) behind `CodexRunner`, persists `codexSessionId` as soon as observed, and transitions lifecycle to `stopped` or `error` when the run settles.
 - Realtime voice transcription flow: `POST /api/transcribe` (admin + CSRF) mints an OpenAI Realtime transcription session and returns a short-lived `clientSecret`; `src/public/game-view.js` then exchanges SDP with `https://api.openai.com/v1/realtime?intent=transcription`, streams mic audio over WebRTC, and applies `conversation.item.input_audio_transcription.completed` text to the prompt input.
-- Codex transcript/runtime flow: `/codex` and `/api/codex-sessions/:versionId` require admin; transcript API resolves metadata, derives runtime `eyeState` via `getCodexTurnInfo()` (JSONL task lifecycle detection), and returns user/assistant turns plus lifecycle/runtime state fields.
+- Codex transcript/runtime flow: `/codex` and `/api/codex-sessions/:versionId` require admin; transcript API resolves metadata, derives runtime `eyeState` via `getCodexTurnInfo()` (task lifecycle for Codex logs, message-balance fallback for Claude logs), reads session JSONL from both `~/.codex/sessions` and `~/.claude/projects`, and returns normalized transcript entries plus lifecycle/runtime state.
 - Static/runtime serving flow: `/games/*` first passes `requireRuntimeGameAssetPathMiddleware()` so only runtime-safe `dist` assets are public; sensitive or dev files (including `dist/reload-token.txt`) return `404`.
 - Dev reload flow: when `GAME_SPACE_DEV_LIVE_RELOAD=1`, `scripts/dev.ts` rewrites per-version `dist/reload-token.txt`; browser polling uses `/api/dev/reload-token/:versionId` instead of direct `/games` file access.
 
@@ -79,10 +80,15 @@ Top three features:
     - `node_modules/` - Per-version installed dependencies.
 - `~/.codex/sessions/` - External local Codex store used for transcript/runtime-state lookup.
   - `YYYY/MM/DD/rollout-...-<session-id>.jsonl` - Session event log parsed for `session_meta` cwd matching, task lifecycle events, and user/assistant message turns.
+- `~/.claude/projects/` - External local Claude Code store used for transcript/runtime-state lookup when provider is Claude.
+  - `<project-slug>/<session-id>.jsonl` - Session event log parsed for top-level `cwd`, and normalized user/assistant message turns.
 - `.env` (local, gitignored) - Admin auth secrets.
   - `GAME_SPACE_ADMIN_PASSWORD_HASH` - `scrypt$<saltBase64>$<hashBase64>`.
   - `GAME_SPACE_ADMIN_SESSION_SECRET` - Session sealing secret used by iron-session for admin session cookies.
   - `OPENAI_API_KEY` - Server-side key used only to mint ephemeral Realtime transcription sessions.
+  - `CODEGEN_PROVIDER` - Active codegen provider (`codex` or `claude`), defaults to `codex`.
+  - `CODEGEN_CLAUDE_MODEL` - Claude model name used by provider-selected prompt execution, defaults to `claude-sonnet-4-6`.
+  - `CODEGEN_CLAUDE_THINKING` - Claude thinking mode hint appended to provider-selected runs, defaults to `adaptive`.
 
 # Architecture notes
 
@@ -90,8 +96,9 @@ Top three features:
 - Admin auth model: iron-session sealed, `HttpOnly`, `Secure`, `SameSite=Strict` session cookie with fixed 3-day TTL; unauthorized protected-route requests return `404`.
 - CSRF model: same-origin enforcement plus double-submit token (cookie + hidden form field or `X-CSRF-Token` header).
 - Realtime voice transcription model: browser never receives `OPENAI_API_KEY`; server mints short-lived client secrets via OpenAI Realtime transcription sessions using `gpt-4o-transcribe`, and the client streams mic audio directly to OpenAI over WebRTC.
-- Prompt safety model: user prompt text is never shell-interpolated; `SpawnCodexRunner` passes full prompt bytes through stdin to `codex exec --json --dangerously-bypass-approvals-and-sandbox -`.
-- Runtime-state derivation model: `codexTurnInfo.ts` keeps an in-memory tracker per worktree (`sessionPath`, append offset, partial-line buffer, task lifecycle counters, user/assistant counters, latest assistant metadata), scans for the newest matching JSONL by `session_meta.payload.cwd`, and sets `eyeState` to `generating` while `task_started` count exceeds terminal task events (`task_complete` and related terminal markers); otherwise `idle`. For legacy logs without task markers, it falls back to user/assistant message balance. When no tracker is active, lifecycle state maps fallback runtime state.
+- Codegen provider model: `RuntimeCodegenConfigStore` loads env defaults once and keeps a mutable in-memory `provider` setting that `/auth/provider` can update; `SpawnCodegenRunner` reads this setting at run-time and dispatches to either Codex or Claude CLI while preserving the `CodexRunner` API contract.
+- Prompt safety model: user prompt text is never shell-interpolated; provider runners pass full prompt bytes through stdin (`codex exec --json --dangerously-bypass-approvals-and-sandbox -` or `claude --print --output-format stream-json --dangerously-skip-permissions`).
+- Runtime-state derivation model: `codexTurnInfo.ts` keeps an in-memory tracker per worktree (`sessionPath`, append offset, partial-line buffer, task lifecycle counters, user/assistant counters, latest assistant metadata), scans for the newest matching JSONL by worktree cwd metadata (`session_meta.payload.cwd` for Codex or top-level `cwd` for Claude), and sets `eyeState` to `generating` while `task_started` count exceeds terminal task events (`task_complete` and related terminal markers); otherwise `idle`. For logs without task markers, it falls back to user/assistant message balance. When no tracker is active, lifecycle state maps fallback runtime state.
 - Starter game base model: `games/starter/src/main.ts` only orchestrates lifecycle wiring, `games/starter/src/runtime.ts` provides shared helpers (fixed-step loop/time, touch input mapping, scene machine, random, collision, and text asset loading), and `games/starter/src/starterGame.ts` holds game-specific config/init/update/render logic. `games/starter/README.md` documents how to fork into a completely different game with minimal rewiring.
 - Favorites model: each game version can be marked favorite in `metadata.json`; the homepage filters to favorites for logged-out users, while authenticated admins can toggle favorite state from the game-page star control.
 - Tile-color model: `tileColor.ts` generates random `#RRGGBB` colors that satisfy a minimum 4.5:1 contrast ratio with white text (fallback `#1D3557`), and forks/seeded versions persist this value in `metadata.json`.
@@ -112,10 +119,11 @@ Top three features:
   - Protected-route gating for `/codex`, transcript API, prompt API, and favorite toggle API.
   - Homepage branding/filter behavior (`Fountain` header/title, logged-out favorites-only view, and favorite tile styling).
   - Runtime-state derivation from Codex JSONL task lifecycle events and lifecycle-status fallback mapping.
+  - Provider switching from `/auth` (`codex -> claude -> codex`) and active provider/model rendering.
   - `/games` runtime allowlist allow/deny behavior and dev reload-token API route.
-  - Prompt fork/session lifecycle persistence flow and transcript parsing behavior.
+  - Prompt fork/session lifecycle persistence flow and transcript parsing behavior across Codex + Claude JSONL formats.
   - Realtime transcription session creation route behavior (`200`, `502`, `503`) and game-page client WebRTC transcription wiring.
-  - Game page client behavior for CSRF header inclusion, admin/public UI states, favorite-star toggling, and Edit-tab generating spinner class toggling.
+  - Game page client behavior for CSRF header inclusion, admin/public UI states, favorite-star toggling, and Edit-tab generating spinner class toggling for both Codex and Claude generation states.
   - Repo automation workflow integrity checks, including YAML parse validation for `.github/workflows/pr-feature-videos.yml`.
 - End-to-end automation flow:
   - Baseline E2E run (no recording): `npm run test:e2e`.
@@ -130,5 +138,6 @@ Top three features:
   - Run `npm run dev`.
   - Verify logged-out behavior: `/` shows only favorited game tiles, direct `/game/:versionId` URLs still load, and `/codex`, prompt API, and favorite toggle API are unavailable.
   - Verify logged-in behavior via `/auth`: prompt controls/transcripts and the favorite star appear on game pages; `/codex` loads and transcript/favorite APIs respond.
-  - While a Codex run is active for a game worktree, verify the `Edit` tab shows a spinner on the right and clears when generation completes.
+  - On `/auth`, switch provider `Codex -> Claude -> Codex` and verify the selected provider and active model/thinking labels update accordingly.
+  - While a Codex or Claude run is active for a game worktree, verify the `Edit` tab shows a spinner on the right and clears when generation completes.
   - Verify dev live reload by editing a game source file and observing browser refresh after rebuild token changes.

@@ -582,9 +582,18 @@ body {
   color: #ccddff;
 }
 
+.auth-provider-active {
+  margin: 0 0 8px;
+  color: #d9e7ff;
+}
+
 .auth-form {
   display: grid;
   gap: 10px;
+}
+
+.auth-form--provider {
+  margin-bottom: 16px;
 }
 
 .auth-label {
@@ -600,6 +609,12 @@ body {
   color: #f4f8ff;
   padding: 12px;
   font-size: 1rem;
+}
+
+.auth-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: linear-gradient(170deg, rgba(16, 29, 63, 0.95), rgba(8, 15, 35, 0.95));
 }
 
 .auth-input:focus-visible {
