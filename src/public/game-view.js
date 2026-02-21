@@ -34,7 +34,11 @@ if (
 const versionId = document.body.dataset.versionId;
 const csrfToken = document.body.dataset.csrfToken;
 const initialFavorite = document.body.dataset.gameFavorited === 'true';
-const transcriptPresenter = createCodexTranscriptPresenter(gameSessionView);
+const codegenProvider = document.body.dataset.codegenProvider === 'claude' ? 'claude' : 'codex';
+const transcriptProviderLabel = codegenProvider === 'claude' ? 'Claude' : 'Codex';
+const transcriptPresenter = createCodexTranscriptPresenter(gameSessionView, {
+  transcriptTitle: `${transcriptProviderLabel} Transcript`
+});
 const transcriptPollIntervalMs = 2000;
 const generatingClassName = 'game-view-tab--generating';
 let transcriptStatusKey = '';
@@ -561,8 +565,8 @@ async function loadGameTranscript() {
     if (payload.status === 'no-session') {
       showTranscriptState(
         'no-session',
-        'No Codex session linked',
-        'This game version does not have a saved Codex session id yet.'
+        'No session linked',
+        `This game version does not have a saved ${transcriptProviderLabel} session id yet.`
       );
       return;
     }

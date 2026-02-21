@@ -30,10 +30,15 @@ import { readIdeasFile, writeIdeasFile } from "./services/ideas";
 import {
   composeCodexPrompt,
   readBuildPromptFile,
-  SpawnCodexRunner,
+  SpawnCodegenRunner,
   type CodexRunOptions,
   type CodexRunner,
 } from "./services/promptExecution";
+import {
+  isCodegenProvider,
+  RuntimeCodegenConfigStore,
+  type CodegenConfig,
+} from "./services/codegenConfig";
 import {
   gameDirectoryPath,
   hasGameDirectory,
@@ -66,7 +71,9 @@ type AppOptions = {
   ideationPromptPath?: string;
   ideasPath?: string;
   codexSessionsRootPath?: string;
+  claudeSessionsRootPath?: string;
   codexRunner?: CodexRunner;
+  codegenConfigStore?: RuntimeCodegenConfigStore;
   logError?: ErrorLogger;
   shouldBuildGamesOnStartup?: boolean;
   enableGameLiveReload?: boolean;
@@ -94,6 +101,7 @@ function renderAuthPage(
   response: express.Response,
   isAdmin: boolean,
   statusCode: number,
+  codegenConfig: CodegenConfig,
   errorMessage: string | null = null,
 ): void {
   const csrfToken = ensureCsrfToken(request, response);
@@ -101,6 +109,9 @@ function renderAuthPage(
     renderAuthView({
       isAdmin,
       csrfToken,
+      codegenProvider: codegenConfig.provider,
+      claudeModel: codegenConfig.claudeModel,
+      claudeThinking: codegenConfig.claudeThinking,
       errorMessage,
     }),
   );
@@ -236,10 +247,17 @@ export function createApp(options: AppOptions = {}): express.Express {
   const codexSessionsRootPath =
     options.codexSessionsRootPath ??
     path.join(os.homedir(), ".codex", "sessions");
+  const claudeSessionsRootPath =
+    options.claudeSessionsRootPath ??
+    path.join(os.homedir(), ".claude", "projects");
   const ideationPromptPath =
     options.ideationPromptPath ?? path.join(repoRootPath, "ideation.md");
   const ideasPath = options.ideasPath ?? path.join(repoRootPath, "ideas.json");
-  const codexRunner = options.codexRunner ?? new SpawnCodexRunner();
+  const codegenConfigStore =
+    options.codegenConfigStore ?? new RuntimeCodegenConfigStore();
+  const codexRunner =
+    options.codexRunner ??
+    new SpawnCodegenRunner(() => codegenConfigStore.read());
   const logError = options.logError ?? defaultLogger;
   const shouldBuildGamesOnStartup = options.shouldBuildGamesOnStartup ?? false;
   const enableGameLiveReload =
@@ -277,7 +295,7 @@ export function createApp(options: AppOptions = {}): express.Express {
   app.get("/auth", async (request, response, next) => {
     try {
       const isAdmin = await isAdminAuthenticated(request, authConfig);
-      renderAuthPage(request, response, isAdmin, 200);
+      renderAuthPage(request, response, isAdmin, 200, codegenConfigStore.read());
     } catch (error: unknown) {
       next(error);
     }
@@ -291,6 +309,7 @@ export function createApp(options: AppOptions = {}): express.Express {
           response,
           false,
           403,
+          codegenConfigStore.read(),
           "Invalid CSRF token. Refresh and try again.",
         );
         return;
@@ -305,6 +324,7 @@ export function createApp(options: AppOptions = {}): express.Express {
           response,
           false,
           429,
+          codegenConfigStore.read(),
           "Too many attempts. Wait a moment and try again.",
         );
         return;
@@ -313,7 +333,14 @@ export function createApp(options: AppOptions = {}): express.Express {
       const passwordInput = request.body?.password;
       if (typeof passwordInput !== "string" || passwordInput.length === 0) {
         loginAttemptLimiter.registerFailure(limiterKey);
-        renderAuthPage(request, response, false, 401, "Invalid password.");
+        renderAuthPage(
+          request,
+          response,
+          false,
+          401,
+          codegenConfigStore.read(),
+          "Invalid password.",
+        );
         return;
       }
 
@@ -323,7 +350,14 @@ export function createApp(options: AppOptions = {}): express.Express {
       );
       if (!isValidPassword) {
         loginAttemptLimiter.registerFailure(limiterKey);
-        renderAuthPage(request, response, false, 401, "Invalid password.");
+        renderAuthPage(
+          request,
+          response,
+          false,
+          401,
+          codegenConfigStore.read(),
+          "Invalid password.",
+        );
         return;
       }
 
@@ -350,6 +384,7 @@ export function createApp(options: AppOptions = {}): express.Express {
           response,
           true,
           403,
+          codegenConfigStore.read(),
           "Invalid CSRF token. Refresh and try again.",
         );
         return;
@@ -357,6 +392,46 @@ export function createApp(options: AppOptions = {}): express.Express {
 
       clearAdminSessionCookie(response);
       issueCsrfToken(response);
+      response.redirect(303, "/auth");
+    } catch (error: unknown) {
+      next(error);
+    }
+  });
+
+  app.post("/auth/provider", async (request, response, next) => {
+    try {
+      const isAdmin = await isAdminAuthenticated(request, authConfig);
+      if (!isAdmin) {
+        response.status(404).type("text/plain").send("Not found");
+        return;
+      }
+
+      if (!isCsrfRequestValid(request)) {
+        renderAuthPage(
+          request,
+          response,
+          true,
+          403,
+          codegenConfigStore.read(),
+          "Invalid CSRF token. Refresh and try again.",
+        );
+        return;
+      }
+
+      const providerInput = request.body?.provider;
+      if (!isCodegenProvider(providerInput)) {
+        renderAuthPage(
+          request,
+          response,
+          true,
+          400,
+          codegenConfigStore.read(),
+          "Invalid codegen provider.",
+        );
+        return;
+      }
+
+      codegenConfigStore.setProvider(providerInput);
       response.redirect(303, "/auth");
     } catch (error: unknown) {
       next(error);
@@ -383,7 +458,10 @@ export function createApp(options: AppOptions = {}): express.Express {
   app.get("/codex", requireAdmin, async (_request, response, next) => {
     try {
       const versions = await listGameVersions(gamesRootPath);
-      response.status(200).type("html").send(renderCodexView(versions));
+      response
+        .status(200)
+        .type("html")
+        .send(renderCodexView(versions, codegenConfigStore.read().provider));
     } catch (error: unknown) {
       next(error);
     }
@@ -585,6 +663,7 @@ export function createApp(options: AppOptions = {}): express.Express {
             csrfToken,
             isFavorite: metadata?.favorite === true,
             tileColor: metadata?.tileColor,
+            codegenProvider: codegenConfigStore.read().provider,
           }),
         );
     } catch (error: unknown) {
@@ -658,10 +737,14 @@ export function createApp(options: AppOptions = {}): express.Express {
           metadata.codexSessionId ?? null,
           metadata.codexSessionStatus,
         );
+        const sessionRootPaths = [
+          codexSessionsRootPath,
+          claudeSessionsRootPath,
+        ];
         const turnInfo = await getCodexTurnInfo({
           repoRootPath,
           worktreePath: gameDirectoryPath(gamesRootPath, versionId),
-          sessionsRootPath: codexSessionsRootPath,
+          sessionsRootPath: sessionRootPaths,
           codexSessionStatus,
         });
         const codexSessionId = metadata.codexSessionId ?? null;
@@ -676,7 +759,7 @@ export function createApp(options: AppOptions = {}): express.Express {
         }
 
         const messages = await readCodexTranscriptBySessionId(
-          codexSessionsRootPath,
+          sessionRootPaths,
           codexSessionId,
         );
         if (!messages) {

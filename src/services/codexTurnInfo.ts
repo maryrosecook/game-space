@@ -41,7 +41,7 @@ export type CodexTurnInfo = {
 type GetCodexTurnInfoOptions = {
   repoRootPath: string;
   worktreePath: string;
-  sessionsRootPath: string;
+  sessionsRootPath: string | readonly string[];
   codexSessionStatus: CodexSessionStatus;
   now?: () => Date;
 };
@@ -87,16 +87,22 @@ function createTracker(sessionPath: string, now: () => Date): WorktreeTurnTracke
 }
 
 function parseSessionMetaCwd(rawEvent: unknown): string | null {
-  if (!isObjectRecord(rawEvent) || rawEvent.type !== 'session_meta' || !('payload' in rawEvent)) {
+  if (!isObjectRecord(rawEvent)) {
     return null;
   }
 
-  const payload = rawEvent.payload;
-  if (!isObjectRecord(payload) || typeof payload.cwd !== 'string' || payload.cwd.trim().length === 0) {
-    return null;
+  if (rawEvent.type === 'session_meta' && 'payload' in rawEvent) {
+    const payload = rawEvent.payload;
+    if (isObjectRecord(payload) && typeof payload.cwd === 'string' && payload.cwd.trim().length > 0) {
+      return normalizePath(payload.cwd);
+    }
   }
 
-  return normalizePath(payload.cwd);
+  if (typeof rawEvent.cwd === 'string' && rawEvent.cwd.trim().length > 0) {
+    return normalizePath(rawEvent.cwd);
+  }
+
+  return null;
 }
 
 function extractSessionMetaCwd(jsonlText: string): string | null {
@@ -150,75 +156,90 @@ type SessionPathAndMtime = {
   mtimeMs: number;
 };
 
+function normalizeSessionsRootPaths(sessionsRootPath: string | readonly string[]): string[] {
+  if (typeof sessionsRootPath === 'string') {
+    return sessionsRootPath.trim().length > 0 ? [sessionsRootPath] : [];
+  }
+
+  return sessionsRootPath.filter((rootPath) => rootPath.trim().length > 0);
+}
+
 async function findLatestSessionPathForWorktree(
-  sessionsRootPath: string,
+  sessionsRootPath: string | readonly string[],
   worktreePath: string
 ): Promise<string | null> {
   const normalizedWorktreePath = normalizePath(worktreePath);
-  const pendingDirectories: string[] = [sessionsRootPath];
+  const rootPaths = normalizeSessionsRootPaths(sessionsRootPath);
+  if (rootPaths.length === 0) {
+    return null;
+  }
+
   let latest: SessionPathAndMtime | null = null;
 
-  while (pendingDirectories.length > 0) {
-    const directoryPath = pendingDirectories.pop();
-    if (!directoryPath) {
-      continue;
-    }
-
-    let directoryEntries: Dirent[];
-    try {
-      directoryEntries = await fs.readdir(directoryPath, { withFileTypes: true });
-    } catch (error: unknown) {
-      if (hasErrorCode(error, 'ENOENT')) {
-        if (directoryPath === sessionsRootPath) {
-          return null;
-        }
-
+  for (const rootPath of rootPaths) {
+    const pendingDirectories: string[] = [rootPath];
+    while (pendingDirectories.length > 0) {
+      const directoryPath = pendingDirectories.pop();
+      if (!directoryPath) {
         continue;
       }
 
-      throw error;
-    }
-
-    for (const entry of directoryEntries) {
-      const entryPath = path.join(directoryPath, entry.name);
-      if (entry.isDirectory()) {
-        pendingDirectories.push(entryPath);
-        continue;
-      }
-
-      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) {
-        continue;
-      }
-
-      let fileStats: Stats;
+      let directoryEntries: Dirent[];
       try {
-        fileStats = await fs.stat(entryPath);
+        directoryEntries = await fs.readdir(directoryPath, { withFileTypes: true });
       } catch (error: unknown) {
         if (hasErrorCode(error, 'ENOENT')) {
+          if (directoryPath === rootPath) {
+            break;
+          }
+
           continue;
         }
 
         throw error;
       }
 
-      const sessionCwd = await readSessionMetaCwdFromFile(entryPath);
-      if (sessionCwd !== normalizedWorktreePath) {
-        continue;
-      }
+      for (const entry of directoryEntries) {
+        const entryPath = path.join(directoryPath, entry.name);
+        if (entry.isDirectory()) {
+          pendingDirectories.push(entryPath);
+          continue;
+        }
 
-      if (!latest || fileStats.mtimeMs > latest.mtimeMs) {
-        latest = {
-          path: entryPath,
-          mtimeMs: fileStats.mtimeMs
-        };
-        continue;
-      }
+        if (!entry.isFile() || !entry.name.endsWith('.jsonl')) {
+          continue;
+        }
 
-      if (fileStats.mtimeMs === latest.mtimeMs && entryPath.localeCompare(latest.path) > 0) {
-        latest = {
-          path: entryPath,
-          mtimeMs: fileStats.mtimeMs
-        };
+        let fileStats: Stats;
+        try {
+          fileStats = await fs.stat(entryPath);
+        } catch (error: unknown) {
+          if (hasErrorCode(error, 'ENOENT')) {
+            continue;
+          }
+
+          throw error;
+        }
+
+        const sessionCwd = await readSessionMetaCwdFromFile(entryPath);
+        if (sessionCwd !== normalizedWorktreePath) {
+          continue;
+        }
+
+        if (!latest || fileStats.mtimeMs > latest.mtimeMs) {
+          latest = {
+            path: entryPath,
+            mtimeMs: fileStats.mtimeMs
+          };
+          continue;
+        }
+
+        if (fileStats.mtimeMs === latest.mtimeMs && entryPath.localeCompare(latest.path) > 0) {
+          latest = {
+            path: entryPath,
+            mtimeMs: fileStats.mtimeMs
+          };
+        }
       }
     }
   }

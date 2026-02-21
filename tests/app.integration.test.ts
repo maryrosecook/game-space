@@ -27,6 +27,9 @@ const TEST_ADMIN_SESSION_SECRET = 'session-secret-for-tests-must-be-long';
 const originalPasswordHash = process.env.GAME_SPACE_ADMIN_PASSWORD_HASH;
 const originalSessionSecret = process.env.GAME_SPACE_ADMIN_SESSION_SECRET;
 const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+const originalCodegenProvider = process.env.CODEGEN_PROVIDER;
+const originalCodegenClaudeModel = process.env.CODEGEN_CLAUDE_MODEL;
+const originalCodegenClaudeThinking = process.env.CODEGEN_CLAUDE_THINKING;
 
 type CapturedRun = {
   prompt: string;
@@ -299,6 +302,9 @@ beforeEach(() => {
   process.env.GAME_SPACE_ADMIN_PASSWORD_HASH = TEST_ADMIN_PASSWORD_HASH;
   process.env.GAME_SPACE_ADMIN_SESSION_SECRET = TEST_ADMIN_SESSION_SECRET;
   delete process.env.OPENAI_API_KEY;
+  delete process.env.CODEGEN_PROVIDER;
+  process.env.CODEGEN_CLAUDE_MODEL = 'claude-sonnet-4-6';
+  process.env.CODEGEN_CLAUDE_THINKING = 'adaptive';
 });
 
 afterAll(() => {
@@ -318,6 +324,24 @@ afterAll(() => {
     process.env.OPENAI_API_KEY = originalOpenAiApiKey;
   } else {
     delete process.env.OPENAI_API_KEY;
+  }
+
+  if (typeof originalCodegenProvider === 'string') {
+    process.env.CODEGEN_PROVIDER = originalCodegenProvider;
+  } else {
+    delete process.env.CODEGEN_PROVIDER;
+  }
+
+  if (typeof originalCodegenClaudeModel === 'string') {
+    process.env.CODEGEN_CLAUDE_MODEL = originalCodegenClaudeModel;
+  } else {
+    delete process.env.CODEGEN_CLAUDE_MODEL;
+  }
+
+  if (typeof originalCodegenClaudeThinking === 'string') {
+    process.env.CODEGEN_CLAUDE_THINKING = originalCodegenClaudeThinking;
+  } else {
+    delete process.env.CODEGEN_CLAUDE_THINKING;
   }
 });
 
@@ -429,6 +453,8 @@ describe('express app integration', () => {
     const response = await request(app).get('/auth').set('Host', TEST_HOST).expect(200);
     expect(response.text).toContain('Enter the admin password');
     expect(response.text).toContain('action="/auth/login"');
+    expect(response.text).not.toContain('action="/auth/provider"');
+    expect(response.text).not.toContain('Codegen provider');
     expect(response.text).toContain('name="csrfToken"');
 
     const setCookieHeaders = readSetCookieHeaders(response.headers['set-cookie']);
@@ -543,6 +569,106 @@ describe('express app integration', () => {
       .set('Host', TEST_HOST)
       .set('Cookie', serializeCookieHeader(loggedOutCookies))
       .expect(404);
+  });
+
+  it('lets authenticated admins switch codegen provider from the auth page', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-auth-provider-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v1',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md')
+    });
+
+    const authSession = await loginAsAdmin(app);
+
+    const adminAuthPage = await request(app)
+      .get('/auth')
+      .set('Host', TEST_HOST)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(200);
+    expect(adminAuthPage.text).toContain('action="/auth/provider"');
+    expect(adminAuthPage.text).toContain('Active provider: Codex');
+    expect(adminAuthPage.text).toContain('value="codex" selected');
+
+    const switchResponse = await request(app)
+      .post('/auth/provider')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .type('form')
+      .send({
+        provider: 'claude',
+        csrfToken: authSession.csrfToken
+      })
+      .expect(303);
+    expect(switchResponse.headers.location).toBe('/auth');
+
+    const switchedAuthPage = await request(app)
+      .get('/auth')
+      .set('Host', TEST_HOST)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(200);
+    expect(switchedAuthPage.text).toContain('Active provider: Claude');
+    expect(switchedAuthPage.text).toContain('Active model: claude-sonnet-4-6');
+    expect(switchedAuthPage.text).toContain('Thinking mode: adaptive');
+    expect(switchedAuthPage.text).toContain('value="claude" selected');
+
+    const adminGameView = await request(app)
+      .get('/game/v1')
+      .set('Host', TEST_HOST)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(200);
+    expect(adminGameView.text).toContain('data-codegen-provider="claude"');
+    expect(adminGameView.text).toContain('aria-label="Toggle Claude transcript"');
+    expect(adminGameView.text).toContain('<h2>Claude Transcript</h2>');
+
+    const claudeCodexPage = await request(app)
+      .get('/codex')
+      .set('Host', TEST_HOST)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(200);
+    expect(claudeCodexPage.text).toContain('data-codegen-provider="claude"');
+    expect(claudeCodexPage.text).toContain('Select a game version to inspect its Claude transcript.');
+
+    await request(app)
+      .post('/auth/provider')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .type('form')
+      .send({
+        provider: 'codex',
+        csrfToken: authSession.csrfToken
+      })
+      .expect(303);
+
+    const codexGameView = await request(app)
+      .get('/game/v1')
+      .set('Host', TEST_HOST)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(200);
+    expect(codexGameView.text).toContain('data-codegen-provider="codex"');
+    expect(codexGameView.text).toContain('aria-label="Toggle Codex transcript"');
+    expect(codexGameView.text).toContain('<h2>Codex Transcript</h2>');
+
+    const codexPage = await request(app)
+      .get('/codex')
+      .set('Host', TEST_HOST)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(200);
+    expect(codexPage.text).toContain('data-codegen-provider="codex"');
+    expect(codexPage.text).toContain('Select a game version to inspect its Codex transcript.');
   });
 
   it('creates realtime transcription sessions for admin users', async () => {
@@ -786,6 +912,71 @@ describe('express app integration', () => {
     ]);
   });
 
+  it('reads claude transcript files through the existing codex sessions endpoint', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-claude-transcript-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    const codexSessionsRootPath = path.join(tempDirectoryPath, 'codex-sessions');
+    const claudeSessionsRootPath = path.join(tempDirectoryPath, 'claude-projects');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+    await fs.mkdir(codexSessionsRootPath, { recursive: true });
+
+    const sessionId = '77e122f3-31c9-4f14-acd4-886d3d8479af';
+    const versionId = 'v1';
+    const worktreePath = path.join(gamesRootPath, versionId);
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: versionId,
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z',
+        codexSessionId: sessionId
+      }
+    });
+
+    const claudeProjectPath = path.join(claudeSessionsRootPath, '-Users-test-project');
+    await fs.mkdir(claudeProjectPath, { recursive: true });
+    const escapedWorktreePath = worktreePath.replaceAll('\\', '\\\\');
+    await fs.writeFile(
+      path.join(claudeProjectPath, `${sessionId}.jsonl`),
+      [
+        `{"timestamp":"2026-02-10T10:00:00.000Z","cwd":"${escapedWorktreePath}","sessionId":"${sessionId}","type":"user","message":{"role":"user","content":"add gravity"}}`,
+        `{"timestamp":"2026-02-10T10:00:01.000Z","cwd":"${escapedWorktreePath}","sessionId":"${sessionId}","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Gravity added."}]}}`
+      ].join('\n') + '\n',
+      'utf8'
+    );
+
+    const app = createApp({
+      gamesRootPath,
+      codexSessionsRootPath,
+      claudeSessionsRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md')
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await request(app)
+      .get('/api/codex-sessions/v1')
+      .set('Host', TEST_HOST)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(200);
+
+    expect(response.body.status).toBe('ok');
+    expect(response.body.sessionId).toBe(sessionId);
+    expect(response.body.codexSessionStatus).toBe('stopped');
+    expect(response.body.eyeState).toBe('idle');
+    expect(response.body.messages).toEqual([
+      {
+        role: 'user',
+        text: 'add gravity',
+        timestamp: '2026-02-10T10:00:00.000Z'
+      },
+      {
+        role: 'assistant',
+        text: 'Gravity added.',
+        timestamp: '2026-02-10T10:00:01.000Z'
+      }
+    ]);
+  });
+
   it('returns no-session runtime state when metadata has no linked codex session', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-app-codex-no-session-state-');
     const gamesRootPath = path.join(tempDirectoryPath, 'games');
@@ -954,6 +1145,9 @@ describe('express app integration', () => {
     expect(adminView.text).toContain('/public/game-view.js');
     expect(adminView.text).toContain('data-csrf-token="');
     expect(adminView.text).toContain('data-game-favorited="false"');
+    expect(adminView.text).toContain('data-codegen-provider="codex"');
+    expect(adminView.text).toContain('aria-label="Toggle Codex transcript"');
+    expect(adminView.text).toContain('<h2>Codex Transcript</h2>');
     expect(adminView.text).toContain('class="game-top-strip"');
     expect(adminView.text).toContain('style="--game-tile-color: #1D3557;"');
   });

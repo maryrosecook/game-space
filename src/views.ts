@@ -1,4 +1,5 @@
 import type { GameVersion } from './types';
+import type { CodegenProvider } from './services/codegenConfig';
 
 function escapeHtml(value: string): string {
   return value
@@ -16,6 +17,10 @@ function formatDateTime(value: string): string {
 
 function formatHomepageVersionName(versionId: string): string {
   return versionId.replaceAll('-', ' ');
+}
+
+function codegenProviderLabel(codegenProvider: CodegenProvider): string {
+  return codegenProvider === 'claude' ? 'Claude' : 'Codex';
 }
 
 type HomepageRenderOptions = {
@@ -158,7 +163,11 @@ export function renderIdeasView(
 </html>`;
 }
 
-export function renderCodexView(versions: readonly GameVersion[]): string {
+export function renderCodexView(
+  versions: readonly GameVersion[],
+  codegenProvider: CodegenProvider = 'codex'
+): string {
+  const providerLabel = codegenProviderLabel(codegenProvider);
   const options = versions
     .map((version) => {
       const id = escapeHtml(version.id);
@@ -177,13 +186,13 @@ export function renderCodexView(versions: readonly GameVersion[]): string {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Codex Sessions</title>
+    <title>Codex/Claude Sessions</title>
     <link rel="stylesheet" href="/public/styles.css" />
   </head>
-  <body class="codex-page">
+  <body class="codex-page" data-codegen-provider="${escapeHtml(codegenProvider)}">
     <main class="codex-shell">
       <header class="page-header codex-header">
-        <h1>Codex Sessions</h1>
+        <h1>Codex/Claude Sessions</h1>
         <a class="codex-home-link" href="/">Back to games</a>
       </header>
       <section class="codex-controls">
@@ -191,7 +200,7 @@ export function renderCodexView(versions: readonly GameVersion[]): string {
         ${selectorContent}
       </section>
       <section id="codex-session-view" class="codex-session-view" aria-live="polite">
-        <p class="codex-empty">Select a game version to inspect its Codex transcript.</p>
+        <p class="codex-empty">Select a game version to inspect its ${providerLabel} transcript.</p>
       </section>
     </main>
     <script type="module" src="/public/codex-view.js"></script>
@@ -202,19 +211,44 @@ export function renderCodexView(versions: readonly GameVersion[]): string {
 type AuthViewRenderOptions = {
   isAdmin: boolean;
   csrfToken: string;
+  codegenProvider: CodegenProvider;
+  claudeModel: string;
+  claudeThinking: string;
   errorMessage?: string | null;
 };
 
 export function renderAuthView(options: AuthViewRenderOptions): string {
   const isAdmin = options.isAdmin;
   const csrfToken = escapeHtml(options.csrfToken);
+  const codegenProvider = options.codegenProvider;
+  const claudeModel = escapeHtml(options.claudeModel);
+  const claudeThinking = escapeHtml(options.claudeThinking);
   const errorMessage =
     typeof options.errorMessage === 'string' && options.errorMessage.length > 0
       ? `<p class="auth-error" role="alert">${escapeHtml(options.errorMessage)}</p>`
       : '';
 
+  const providerStatus = codegenProvider === 'claude'
+    ? `<p class="auth-provider-active">Active provider: Claude</p>
+      <p class="auth-provider-active">Active model: ${claudeModel}</p>
+      <p class="auth-provider-active">Thinking mode: ${claudeThinking}</p>`
+    : `<p class="auth-provider-active">Active provider: Codex</p>
+      <p class="auth-provider-active">Active model: managed by Codex CLI</p>`;
+
+  const providerForm = `<form class="auth-form auth-form--provider" method="post" action="/auth/provider">
+        <input type="hidden" name="csrfToken" value="${csrfToken}" />
+        <label class="auth-label" for="codegen-provider">Codegen provider</label>
+        <select id="codegen-provider" class="auth-input auth-select" name="provider">
+          <option value="codex"${codegenProvider === 'codex' ? ' selected' : ''}>Codex</option>
+          <option value="claude"${codegenProvider === 'claude' ? ' selected' : ''}>Claude</option>
+        </select>
+        <button class="auth-submit" type="submit">Save provider</button>
+      </form>`;
+
   const formMarkup = isAdmin
     ? `<p class="auth-status">Admin session is active.</p>
+      ${providerStatus}
+      ${providerForm}
       <form class="auth-form" method="post" action="/auth/logout">
         <input type="hidden" name="csrfToken" value="${csrfToken}" />
         <button class="auth-submit" type="submit">Logout</button>
@@ -261,6 +295,7 @@ type GameViewRenderOptions = {
   csrfToken?: string;
   isFavorite?: boolean;
   tileColor?: string;
+  codegenProvider?: CodegenProvider;
 };
 
 export function renderGameView(versionId: string, options: GameViewRenderOptions = {}): string {
@@ -269,6 +304,8 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
   const isAdmin = options.isAdmin ?? false;
   const isFavorite = options.isFavorite === true;
   const tileColor = typeof options.tileColor === 'string' ? options.tileColor : '#1D3557';
+  const codegenProvider = options.codegenProvider ?? 'codex';
+  const providerLabel = codegenProviderLabel(codegenProvider);
   const csrfToken = isAdmin && typeof options.csrfToken === 'string' ? escapeHtml(options.csrfToken) : null;
   const liveReloadScript = enableLiveReload
     ? '\n    <script type="module" src="/public/game-live-reload.js"></script>'
@@ -276,7 +313,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
   const bodyClass = isAdmin ? 'game-page game-page--admin' : 'game-page game-page--public';
   const bodyDataAttributes = `${csrfToken
     ? `data-version-id="${escapeHtml(versionId)}" data-csrf-token="${csrfToken}"`
-    : `data-version-id="${escapeHtml(versionId)}"`} data-game-favorited="${isFavorite ? 'true' : 'false'}"`;
+    : `data-version-id="${escapeHtml(versionId)}"`} data-game-favorited="${isFavorite ? 'true' : 'false'}" data-codegen-provider="${escapeHtml(codegenProvider)}"`;
 
   const gameToolbarMarkup = `<nav class="game-bottom-tabs" aria-label="Game tools">
       <a
@@ -406,7 +443,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           type="button"
           aria-controls="game-codex-transcript"
           aria-expanded="false"
-          aria-label="Toggle Codex transcript"
+          aria-label="Toggle ${providerLabel} transcript"
         >
           <svg
             class="game-view-icon"
@@ -459,7 +496,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
       </form>
       <section id="game-codex-transcript" class="game-codex-transcript" aria-hidden="true">
         <header class="game-codex-transcript-header">
-          <h2>Codex Transcript</h2>
+          <h2>${providerLabel} Transcript</h2>
         </header>
         <section id="game-codex-session-view" class="codex-session-view codex-session-view--game" aria-live="polite">
           <p class="codex-empty">Loading transcript...</p>

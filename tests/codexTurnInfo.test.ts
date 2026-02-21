@@ -20,6 +20,20 @@ function assistantLine(text: string, timestamp = '2026-02-17T10:00:01.000Z'): st
   return `{"timestamp":"${timestamp}","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"${text}"}]}}`;
 }
 
+function claudeUserLine(worktreePath: string, text: string, timestamp = '2026-02-17T10:00:00.000Z'): string {
+  const escapedWorktreePath = worktreePath.replaceAll('\\', '\\\\');
+  return `{"timestamp":"${timestamp}","cwd":"${escapedWorktreePath}","sessionId":"77e122f3-31c9-4f14-acd4-886d3d8479af","type":"user","message":{"role":"user","content":"${text}"}}`;
+}
+
+function claudeAssistantLine(
+  worktreePath: string,
+  text: string,
+  timestamp = '2026-02-17T10:00:01.000Z'
+): string {
+  const escapedWorktreePath = worktreePath.replaceAll('\\', '\\\\');
+  return `{"timestamp":"${timestamp}","cwd":"${escapedWorktreePath}","sessionId":"77e122f3-31c9-4f14-acd4-886d3d8479af","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"${text}"}]}}`;
+}
+
 function taskStartedLine(timestamp = '2026-02-17T10:00:00.050Z'): string {
   return `{"timestamp":"${timestamp}","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1"}}`;
 }
@@ -179,5 +193,49 @@ describe('codex turn runtime state detection', () => {
       codexSessionStatus: 'error'
     });
     expect(errorFallback.eyeState).toBe('error');
+  });
+
+  it('tracks claude sessions by top-level cwd metadata and message balance', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-codex-turn-claude-');
+    const codexSessionsRootPath = path.join(tempDirectoryPath, 'codex-sessions');
+    const claudeSessionsRootPath = path.join(tempDirectoryPath, 'claude-projects');
+    const worktreePath = path.join(tempDirectoryPath, 'games', 'v1');
+    const claudeProjectPath = path.join(claudeSessionsRootPath, '-Users-test-project');
+    await fs.mkdir(worktreePath, { recursive: true });
+    await fs.mkdir(codexSessionsRootPath, { recursive: true });
+    await fs.mkdir(claudeProjectPath, { recursive: true });
+
+    const sessionFilePath = path.join(claudeProjectPath, '77e122f3-31c9-4f14-acd4-886d3d8479af.jsonl');
+    await fs.writeFile(
+      sessionFilePath,
+      [claudeUserLine(worktreePath, 'add gravity')].join('\n') + '\n',
+      'utf8'
+    );
+
+    const generatingTurn = await getCodexTurnInfo({
+      repoRootPath: tempDirectoryPath,
+      worktreePath,
+      sessionsRootPath: [codexSessionsRootPath, claudeSessionsRootPath],
+      codexSessionStatus: 'created'
+    });
+    expect(generatingTurn.hasActiveTracker).toBe(true);
+    expect(generatingTurn.lastUserPromptIndex).toBe(1);
+    expect(generatingTurn.lastAssistantMessageIndex).toBe(0);
+    expect(generatingTurn.eyeState).toBe('generating');
+
+    await fs.appendFile(sessionFilePath, `${claudeAssistantLine(worktreePath, 'Done.')}\n`, 'utf8');
+
+    const idleTurn = await getCodexTurnInfo({
+      repoRootPath: tempDirectoryPath,
+      worktreePath,
+      sessionsRootPath: [codexSessionsRootPath, claudeSessionsRootPath],
+      codexSessionStatus: 'stopped'
+    });
+    expect(idleTurn.lastAssistantMessageIndex).toBe(1);
+    expect(idleTurn.latestAssistantMessage).toEqual({
+      text: 'Done.',
+      timestamp: '2026-02-17T10:00:01.000Z'
+    });
+    expect(idleTurn.eyeState).toBe('idle');
   });
 });

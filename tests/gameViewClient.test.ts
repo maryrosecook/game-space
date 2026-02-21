@@ -195,11 +195,11 @@ class TestRTCPeerConnection {
 }
 
 class TestBodyElement extends TestHTMLElement {
-  public readonly dataset: { versionId?: string; csrfToken?: string; gameFavorited?: string };
+  public readonly dataset: { versionId?: string; csrfToken?: string; gameFavorited?: string; codegenProvider?: string };
 
-  constructor(versionId: string, csrfToken: string | undefined, gameFavorited: boolean) {
+  constructor(versionId: string, csrfToken: string | undefined, gameFavorited: boolean, codegenProvider?: string) {
     super();
-    this.dataset = { versionId, csrfToken, gameFavorited: gameFavorited ? 'true' : 'false' };
+    this.dataset = { versionId, csrfToken, gameFavorited: gameFavorited ? 'true' : 'false', codegenProvider };
   }
 }
 
@@ -207,9 +207,9 @@ class TestDocument extends TestEventTarget {
   public readonly body: TestBodyElement;
   private readonly elements = new Map<string, unknown>();
 
-  constructor(versionId: string, csrfToken: string | undefined, gameFavorited: boolean) {
+  constructor(versionId: string, csrfToken: string | undefined, gameFavorited: boolean, codegenProvider?: string) {
     super();
-    this.body = new TestBodyElement(versionId, csrfToken, gameFavorited);
+    this.body = new TestBodyElement(versionId, csrfToken, gameFavorited, codegenProvider);
   }
 
   registerElement(id: string, element: unknown): void {
@@ -226,8 +226,10 @@ type GameViewHarness = {
   consoleLogs: unknown[][];
   assignCalls: string[];
   body: TestBodyElement;
+  transcriptTitle: string | null;
   editTab: TestHTMLButtonElement;
   favoriteButton: TestHTMLButtonElement;
+  deleteButton: TestHTMLButtonElement;
   recordButton: TestHTMLButtonElement;
   codexToggle: TestHTMLButtonElement;
   promptForm: TestHTMLFormElement;
@@ -244,6 +246,7 @@ type RunGameViewOptions = {
   csrfToken?: string | undefined;
   startTranscriptPolling?: boolean;
   gameFavorited?: boolean;
+  codegenProvider?: string;
 };
 
 function createEvent(overrides: Partial<TestEvent> = {}): TestEvent {
@@ -271,23 +274,26 @@ async function runGameViewScript(
   const csrfToken = Object.hasOwn(options, 'csrfToken') ? options.csrfToken : 'csrf-token-123';
   const startTranscriptPolling = options.startTranscriptPolling ?? false;
   const gameFavorited = options.gameFavorited ?? false;
+  const codegenProvider = options.codegenProvider;
   const promptPanel = new TestHTMLElement();
   const promptForm = new TestHTMLFormElement();
   const promptInput = new TestHTMLInputElement();
   const editTab = new TestHTMLButtonElement();
   const favoriteButton = new TestHTMLButtonElement();
+  const deleteButton = new TestHTMLButtonElement();
   const recordButton = new TestHTMLButtonElement();
   const codexToggle = new TestHTMLButtonElement();
   const codexTranscript = new TestHTMLElement();
   const promptOverlay = new TestHTMLElement();
   const gameSessionView = new TestHTMLElement();
 
-  const document = new TestDocument('source-version', csrfToken, gameFavorited);
+  const document = new TestDocument('source-version', csrfToken, gameFavorited, codegenProvider);
   document.registerElement('prompt-panel', promptPanel);
   document.registerElement('prompt-form', promptForm);
   document.registerElement('prompt-input', promptInput);
   document.registerElement('game-tab-edit', editTab);
   document.registerElement('game-tab-favorite', favoriteButton);
+  document.registerElement('game-tab-delete', deleteButton);
   document.registerElement('prompt-record-button', recordButton);
   document.registerElement('game-codex-toggle', codexToggle);
   document.registerElement('game-codex-transcript', codexTranscript);
@@ -301,6 +307,7 @@ async function runGameViewScript(
   const mediaTrack = new TestMediaStreamTrack();
   const mediaStream = new TestMediaStream([mediaTrack]);
   let getUserMediaCalls = 0;
+  let transcriptTitle: string | null = null;
   TestRTCPeerConnection.latestInstance = null;
 
   const navigator = {
@@ -370,7 +377,8 @@ async function runGameViewScript(
     HTMLInputElement: TestHTMLInputElement,
     navigator,
     RTCPeerConnection: TestRTCPeerConnection,
-    createCodexTranscriptPresenter() {
+    createCodexTranscriptPresenter(_sessionView: unknown, options?: { transcriptTitle?: string }) {
+      transcriptTitle = typeof options?.transcriptTitle === 'string' ? options.transcriptTitle : null;
       return {
         showEmptyState() {},
         renderTranscript() {}
@@ -387,8 +395,10 @@ async function runGameViewScript(
     consoleLogs,
     assignCalls,
     body: document.body,
+    transcriptTitle,
     editTab,
     favoriteButton,
+    deleteButton,
     recordButton,
     codexToggle,
     promptForm,
@@ -776,5 +786,33 @@ describe('game view prompt submit client', () => {
     await flushAsyncOperations();
     expect(harness.editTab.classList.contains('game-view-tab--generating')).toBe(false);
     expect(harness.editTab.getAttribute('aria-busy')).toBe('false');
+  });
+
+  it('shows generating spinner behavior for claude provider', async () => {
+    const harness = await runGameViewScript(
+      async () => ({
+        ok: true,
+        async json() {
+          return { status: 'no-session', eyeState: 'generating' };
+        }
+      }),
+      { startTranscriptPolling: true, codegenProvider: 'claude' }
+    );
+
+    await flushAsyncOperations();
+    expect(harness.transcriptTitle).toBe('Claude Transcript');
+    expect(harness.editTab.classList.contains('game-view-tab--generating')).toBe(true);
+    expect(harness.editTab.getAttribute('aria-busy')).toBe('true');
+  });
+
+  it('uses codex transcript title by default', async () => {
+    const harness = await runGameViewScript(async () => ({
+      ok: true,
+      async json() {
+        return { status: 'no-session', eyeState: 'idle' };
+      }
+    }));
+
+    expect(harness.transcriptTitle).toBe('Codex Transcript');
   });
 });

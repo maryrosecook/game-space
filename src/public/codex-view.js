@@ -2,7 +2,11 @@ import { createCodexTranscriptPresenter } from './codex-transcript-presenter.js'
 
 const gameSelect = document.getElementById('codex-game-select');
 const sessionView = document.getElementById('codex-session-view');
-const transcriptPresenter = createCodexTranscriptPresenter(sessionView);
+const codegenProvider = document.body.dataset.codegenProvider === 'claude' ? 'claude' : 'codex';
+const transcriptProviderLabel = codegenProvider === 'claude' ? 'Claude' : 'Codex';
+const transcriptPresenter = createCodexTranscriptPresenter(sessionView, {
+  transcriptTitle: `${transcriptProviderLabel} Transcript`
+});
 
 function parseVersionIdFromQuery() {
   const url = new URL(window.location.href);
@@ -46,7 +50,10 @@ async function loadTranscript(versionId) {
   }
 
   if (payload.status === 'no-session') {
-    transcriptPresenter.showEmptyState('No Codex session linked', 'This game version does not have a saved Codex session id.');
+    transcriptPresenter.showEmptyState(
+      'No session linked',
+      `This game version does not have a saved ${transcriptProviderLabel} session id.`
+    );
     return;
   }
 
@@ -94,5 +101,8 @@ if (gameSelect instanceof HTMLSelectElement) {
     void loadTranscript(versionId);
   });
 } else {
-  transcriptPresenter.showEmptyState('No versions available', 'Create a game version to inspect Codex session transcripts.');
+  transcriptPresenter.showEmptyState(
+    'No versions available',
+    `Create a game version to inspect ${transcriptProviderLabel} session transcripts.`
+  );
 }
