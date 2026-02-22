@@ -407,9 +407,9 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
             id="prompt-submit-button"
             class="prompt-action-button"
             type="submit"
-            aria-label="Submit prompt"
+            aria-label="Build prompt"
           >
-            <span>Submit</span>
+            <span>Build</span>
           </button>
           <button
             id="game-tab-favorite"
@@ -440,7 +440,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           type="button"
           aria-controls="game-codex-transcript"
           aria-expanded="false"
-          aria-label="Toggle ${providerLabel} transcript"
+          aria-label="Toggle ${providerLabel} session"
         >
           <svg
             class="game-view-icon"
@@ -461,7 +461,6 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
             <line x1="8" x2="8" y1="16" y2="16"></line>
             <line x1="16" x2="16" y1="16" y2="16"></line>
           </svg>
-          <span>Transcript</span>
         </button>
         <button
           id="game-tab-delete"

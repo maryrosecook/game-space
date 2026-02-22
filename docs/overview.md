@@ -5,7 +5,7 @@ Local-first game version browser and editor where every version is playable, for
 Top three features:
 - Filesystem-backed version catalog rendered as responsive homepage tiles (`Fountain`), with hyphen-normalized labels and favorite highlighting; logged-out users see only favorites while direct non-favorite game URLs still load.
 - Cookie-authenticated admin workflow (`/auth`) that unlocks prompt execution and transcript access, including runtime switching between Codex and Claude codegen providers, while keeping public gameplay (`/` and `/game/:versionId`) available without login.
-- Admin game controls on `/game/:versionId` include prompt editing, transcript toggle, and an icon-only star toggle (no tab chrome) that persists favorite state to each game's `metadata.json`; the back link and controls share bottom alignment.
+- Admin game controls on `/game/:versionId` include prompt editing with a `Build` submit action, an icon-only session toggle for transcript visibility, and an icon-only star toggle (no tab chrome) that persists favorite state to each game's `metadata.json`; the back link and controls share bottom alignment.
 
 # Repo structure
 
@@ -16,7 +16,7 @@ Top three features:
   - `types.ts` - Shared metadata/version TypeScript types.
   - `public/` - Static browser assets.
     - `styles.css` - Homepage/game/auth styling, favorite tile/button states, admin/public game states, provider selector controls on `/auth`, transcript layouts, and Edit-tab generating spinner animation.
-    - `game-view.js` - Admin game-page prompt submit, favorite toggle API calls, realtime voice transcription (session mint + WebRTC stream + transcript events), bottom-tab behavior, transcript polling, provider-specific transcript heading labels (`Codex Transcript` or `Claude Transcript`), and Edit-tab generating-state class toggling from server `eyeState`.
+    - `game-view.js` - Admin game-page Build prompt submission, favorite toggle API calls, realtime voice transcription (session mint + WebRTC stream + transcript events), bottom-tab behavior, transcript polling, provider-specific transcript heading labels (`Codex Transcript` or `Claude Transcript`), and Edit-tab generating-state class toggling from server `eyeState`.
     - `game-live-reload.js` - Dev-only game-page polling via `/api/dev/reload-token/:versionId`.
     - `codex-view.js` - `/codex` selector wiring and transcript loading with provider-specific heading labels.
     - `codex-transcript-presenter.js` - Shared transcript presenter used by `/codex` and game pages, with configurable transcript title text.
