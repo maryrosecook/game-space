@@ -644,7 +644,11 @@ describe('express app integration', () => {
       .set('Cookie', authSession.cookieHeader)
       .expect(200);
     expect(adminGameView.text).toContain('data-codegen-provider="claude"');
-    expect(adminGameView.text).toContain('aria-label="Toggle Claude transcript"');
+    expect(adminGameView.text).toContain('aria-label="Build prompt"');
+    expect(adminGameView.text).toContain('aria-label="Toggle Claude session"');
+    expect(adminGameView.text).toContain('<span>Build</span>');
+    expect(adminGameView.text).not.toContain('<span>Submit</span>');
+    expect(adminGameView.text).not.toContain('>Transcript</span>');
     expect(adminGameView.text).toContain('<h2>Claude Transcript</h2>');
 
     const claudeCodexPage = await request(app)
@@ -673,7 +677,11 @@ describe('express app integration', () => {
       .set('Cookie', authSession.cookieHeader)
       .expect(200);
     expect(codexGameView.text).toContain('data-codegen-provider="codex"');
-    expect(codexGameView.text).toContain('aria-label="Toggle Codex transcript"');
+    expect(codexGameView.text).toContain('aria-label="Build prompt"');
+    expect(codexGameView.text).toContain('aria-label="Toggle Codex session"');
+    expect(codexGameView.text).toContain('<span>Build</span>');
+    expect(codexGameView.text).not.toContain('<span>Submit</span>');
+    expect(codexGameView.text).not.toContain('>Transcript</span>');
     expect(codexGameView.text).toContain('<h2>Codex Transcript</h2>');
 
     const codexPage = await request(app)
@@ -1151,6 +1159,9 @@ describe('express app integration', () => {
     expect(adminView.text).toContain('id="game-codex-transcript"');
     expect(adminView.text).toContain('id="game-tab-edit"');
     expect(adminView.text).toContain('id="prompt-submit-button"');
+    expect(adminView.text).toContain('<span>Build</span>');
+    expect(adminView.text).not.toContain('<span>Submit</span>');
+    expect(adminView.text).not.toContain('>Transcript</span>');
     expect(adminView.text).toContain('id="game-tab-favorite"');
     expect(adminView.text).toContain('id="game-tab-delete"');
     expect(adminView.text).toContain('class="game-view-tab-spinner"');
@@ -1160,7 +1171,8 @@ describe('express app integration', () => {
     expect(adminView.text).toContain('data-csrf-token="');
     expect(adminView.text).toContain('data-game-favorited="false"');
     expect(adminView.text).toContain('data-codegen-provider="codex"');
-    expect(adminView.text).toContain('aria-label="Toggle Codex transcript"');
+    expect(adminView.text).toContain('aria-label="Build prompt"');
+    expect(adminView.text).toContain('aria-label="Toggle Codex session"');
     expect(adminView.text).toContain('<h2>Codex Transcript</h2>');
     expect(adminView.text).toContain('class="game-top-strip"');
     expect(adminView.text).toContain('style="--game-tile-color: #1D3557;"');
