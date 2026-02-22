@@ -127,6 +127,7 @@ class SessionCallbackOnlyRunner implements CodexRunner {
 type StoredMetadata = {
   id: string;
   parentId: string | null;
+  threeWords?: string;
   createdTime: string;
   tileColor?: string;
   favorite?: boolean;
@@ -253,8 +254,20 @@ async function postPromptAsAdmin(
 }
 
 async function readMetadata(metadataPath: string): Promise<StoredMetadata> {
-  const serialized = await fs.readFile(metadataPath, 'utf8');
-  return JSON.parse(serialized) as StoredMetadata;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const serialized = await fs.readFile(metadataPath, 'utf8');
+    try {
+      return JSON.parse(serialized) as StoredMetadata;
+    } catch (error: unknown) {
+      if (!(error instanceof SyntaxError) || attempt === 4) {
+        throw error;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  throw new Error(`Unable to read metadata: ${metadataPath}`);
 }
 
 async function waitForSessionId(metadataPath: string, expectedSessionId: string): Promise<void> {
@@ -1452,10 +1465,55 @@ describe('express app integration', () => {
     const forkMetadata = await readMetadata(forkMetadataPath);
     expect(forkMetadata.id).toBe(forkId);
     expect(forkMetadata.parentId).toBe('source');
+    expect(forkMetadata.threeWords).toBe('line-quoted-game');
     expect(forkMetadata.tileColor).toMatch(/^#[0-9A-F]{6}$/);
     expect(forkMetadata.codexSessionId).toBe(persistedSessionId);
     await waitForSessionStatus(forkMetadataPath, 'stopped');
     expect((await readMetadata(forkMetadataPath)).codexSessionStatus).toBe('stopped');
+  });
+
+  it('shows only the three-word name on homepage tiles for forked games', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-homepage-three-words-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'source',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
+    await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
+
+    const codexRunner = new SessionCallbackOnlyRunner('019c48a7-3918-7123-bc60-0d7cddb4d5d4');
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath,
+      codexRunner
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const prompt = 'Build a neon racing game with drifting cars and boost pads';
+    const response = await postPromptAsAdmin(app, authSession, 'source', prompt);
+    expect(response.status).toBe(202);
+
+    const forkId = response.body.forkId as string;
+    expect(forkId).toMatch(/^build-neon-racing-[a-z0-9]{10}$/);
+
+    await waitForSessionId(path.join(gamesRootPath, forkId, 'metadata.json'), '019c48a7-3918-7123-bc60-0d7cddb4d5d4');
+
+    const homepage = await request(app)
+      .get('/')
+      .set('Host', TEST_HOST)
+      .set('Cookie', authSession.cookieHeader)
+      .expect(200);
+
+    expect(homepage.text).toContain('>build neon racing<');
+    expect(homepage.text).not.toContain(`>${forkId.replaceAll('-', ' ')}<`);
   });
 
   it('stores session id and logs failure when codex run returns unsuccessful result', async () => {

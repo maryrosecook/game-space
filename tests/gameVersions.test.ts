@@ -168,6 +168,34 @@ describe('game version discovery', () => {
     ).toBeNull();
   });
 
+  it('accepts optional three-word labels and rejects invalid types', () => {
+    expect(
+      parseGameMetadata({
+        id: 'v6',
+        parentId: null,
+        createdTime: '2026-02-06T00:00:00.000Z',
+        threeWords: 'build-neon-racing'
+      })
+    ).toEqual({
+      id: 'v6',
+      threeWords: 'build-neon-racing',
+      parentId: null,
+      createdTime: '2026-02-06T00:00:00.000Z',
+      favorite: false,
+      codexSessionId: null,
+      codexSessionStatus: 'none'
+    });
+
+    expect(
+      parseGameMetadata({
+        id: 'v6',
+        parentId: null,
+        createdTime: '2026-02-06T00:00:00.000Z',
+        threeWords: 42
+      })
+    ).toBeNull();
+  });
+
   it('parses favorite booleans and rejects invalid favorite values', () => {
     expect(
       parseGameMetadata({

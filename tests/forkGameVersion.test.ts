@@ -34,6 +34,7 @@ describe('createForkedGameVersion', () => {
 
     expect(created).toMatchObject({
       id: 'fork-game',
+      threeWords: 'new-arcade-game',
       parentId: 'source-game',
       createdTime: '2026-03-02T00:00:00.000Z',
       favorite: false,
@@ -136,6 +137,7 @@ describe('createForkedGameVersion', () => {
     });
 
     expect(created.id).toMatch(/^build-neon-racing-[a-z0-9]{10}$/);
+    expect(created.threeWords).toBe('build-neon-racing');
 
     const second = await createForkedGameVersion({
       gamesRootPath,
@@ -145,6 +147,7 @@ describe('createForkedGameVersion', () => {
     });
 
     expect(second.id).toMatch(/^build-neon-racing-[a-z0-9]{10}$/);
+    expect(second.threeWords).toBe('build-neon-racing');
     expect(second.id).not.toBe(created.id);
   });
 
@@ -169,6 +172,7 @@ describe('createForkedGameVersion', () => {
     });
 
     expect(created.id).toMatch(/^new-arcade-game-[a-z0-9]{10}$/);
+    expect(created.threeWords).toBe('new-arcade-game');
   });
 
   it('throws when idFactory generates an invalid fork id', async () => {

@@ -84,6 +84,15 @@ function buildIdWordsFromPrompt(prompt: string): [string, string, string] {
   return [selected[0] ?? fallbackIdWords[0], selected[1] ?? fallbackIdWords[1], selected[2] ?? fallbackIdWords[2]];
 }
 
+function getThreeWordsFromPrompt(prompt?: string): string {
+  if (typeof prompt === 'string' && prompt.trim().length > 0) {
+    const [first, second, third] = buildIdWordsFromPrompt(prompt);
+    return `${first}-${second}-${third}`;
+  }
+
+  return `${fallbackIdWords[0]}-${fallbackIdWords[1]}-${fallbackIdWords[2]}`;
+}
+
 function createRandomAlphaNumericSuffix(length: number): string {
   let suffix = '';
   for (let index = 0; index < length; index += 1) {
@@ -184,6 +193,7 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
   }
 
   const forkVersionId = await createUniqueForkVersionId(gamesRootPath, idFactory);
+  const threeWords = getThreeWordsFromPrompt(sourcePrompt);
 
   const forkDirectoryPath = gameDirectoryPath(gamesRootPath, forkVersionId);
   await fs.cp(sourceDirectoryPath, forkDirectoryPath, {
@@ -198,6 +208,7 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
 
   const forkMetadata: GameMetadata = {
     id: forkVersionId,
+    threeWords,
     parentId: sourceVersionId,
     createdTime: now().toISOString(),
     tileColor: createReadableRandomHexColor(),
