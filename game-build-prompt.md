@@ -16,30 +16,10 @@ The host page will load and run your game with this fixed contract:
 - `startGame` must be exported and accept exactly one argument: an `HTMLCanvasElement`.
 - The host provides a `<canvas id="game-canvas">` and calls `startGame(canvas)`.
 - Your game must run fully client-side in the browser.
+- Read `[pwd]/README.md` for more details on the available game engine API.
 
-## Build/output contract
+## Forbidden work
 
-- Keep `package.json` scripts compatible with the existing build pipeline.
-- `npm run build` in this directory must output `dist/game.js`.
-- Ensure `package.json` includes a `typecheck` script: `tsc --noEmit`.
-- Ensure `typescript` is present in this game directory's `devDependencies`.
-- Use the existing TypeScript/WebGL/browser setup already present in this game directory.
-
-## Game design constraints
-
-- Prioritize simple geometric visuals (circles, rectangles, lines).
-- Target phone-first play in portrait orientation (`9:16`) as the primary layout.
-- Keep controls and gameplay readable on small screens.
-
-## Versioning constraints
-
-- Preserve compatibility with older game versions by changing only this selected version directory.
-- Update this version's `metadata.json` only when lineage/version semantics require it.
-
-## Metadata requirements
-
-- `metadata.json` includes an `id` field (the game version id) and may include `tileColor`.
-- If you need to set or adjust the game id, it must be exactly **three short hyphen-separated words** that clearly and lucidly summarize the user's prompt (descriptive, not random).
-- Keep `tileColor` as a valid six-digit hex color (example: `#1F4A7C`).
-
-## Do not bother writing tests
+- You must not run linting commands.
+- You must not write test files or test code.
+- You must not run tests.
