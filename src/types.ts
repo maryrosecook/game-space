@@ -4,6 +4,7 @@ export type EyeState = 'stopped' | 'idle' | 'generating' | 'error';
 
 export type GameMetadata = {
   id: string;
+  threeWords?: string;
   parentId: string | null;
   createdTime: string;
   tileColor?: string;

@@ -15,10 +15,6 @@ function formatDateTime(value: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-function formatHomepageVersionName(versionId: string): string {
-  return versionId.replaceAll('-', ' ');
-}
-
 function codegenProviderLabel(codegenProvider: CodegenProvider): string {
   return codegenProvider === 'claude' ? 'Claude' : 'Codex';
 }
@@ -34,7 +30,8 @@ export function renderHomepage(versions: readonly GameVersion[], options: Homepa
   const tiles = versions
     .map((version) => {
       const id = escapeHtml(version.id);
-      const displayId = escapeHtml(formatHomepageVersionName(version.id));
+      const tileName = version.threeWords ?? version.id;
+      const displayId = escapeHtml(tileName.replaceAll('-', ' '));
       const tileColor = typeof version.tileColor === 'string' ? version.tileColor : '#1D3557';
       const tileColorEscaped = escapeHtml(tileColor);
       const favoriteClassName = version.favorite === true ? ' game-tile--favorite' : '';

@@ -30,10 +30,18 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     return null;
   }
 
-  const { id, parentId, createdTime, tileColor, favorite, codexSessionId, codexSessionStatus } = value;
+  const { id, threeWords, parentId, createdTime, tileColor, favorite, codexSessionId, codexSessionStatus } = value;
   if (typeof id !== 'string' || id.length === 0) {
     return null;
   }
+
+  if (!(threeWords === undefined || typeof threeWords === 'string')) {
+    return null;
+  }
+
+  const normalizedThreeWords =
+    typeof threeWords === 'string' && threeWords.trim().length > 0 ? threeWords.trim() : undefined;
+
 
   if (!(parentId === null || typeof parentId === 'string')) {
     return null;
@@ -70,6 +78,7 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
 
   return {
     id,
+    ...(normalizedThreeWords ? { threeWords: normalizedThreeWords } : {}),
     parentId,
     createdTime: new Date(createdTimestamp).toISOString(),
     tileColor: normalizedTileColor,
@@ -118,8 +127,16 @@ export async function writeMetadataFile(metadataPath: string, metadata: GameMeta
       ? metadata.tileColor.trim().toUpperCase()
       : undefined;
 
+  const normalizedThreeWords =
+    typeof metadata.threeWords === 'string' && metadata.threeWords.trim().length > 0
+      ? metadata.threeWords.trim()
+      : undefined;
+
+  const metadataWithoutThreeWords = { ...metadata };
+  delete metadataWithoutThreeWords.threeWords;
   const normalizedMetadata: GameMetadata = {
-    ...metadata,
+    ...metadataWithoutThreeWords,
+    ...(normalizedThreeWords ? { threeWords: normalizedThreeWords } : {}),
     tileColor: normalizedTileColor,
     favorite: metadata.favorite === true,
     codexSessionId: metadata.codexSessionId ?? null,
