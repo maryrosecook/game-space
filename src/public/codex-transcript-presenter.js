@@ -100,6 +100,10 @@ export function createCodexTranscriptPresenter(sessionView, options = {}) {
     return true;
   }
 
+  function scrollToBottom() {
+    sessionView.scrollTop = sessionView.scrollHeight;
+  }
+
   function renderTranscript(sessionId, messages, options = {}) {
     const shouldAutoScroll = options.autoScrollToBottom === true;
 
@@ -111,7 +115,7 @@ export function createCodexTranscriptPresenter(sessionView, options = {}) {
     }
 
     if (shouldAutoScroll) {
-      sessionView.scrollTop = sessionView.scrollHeight;
+      scrollToBottom();
     }
   }
 
@@ -119,6 +123,7 @@ export function createCodexTranscriptPresenter(sessionView, options = {}) {
     clear,
     showEmptyState,
     showLoadingState,
-    renderTranscript
+    renderTranscript,
+    scrollToBottom
   };
 }
