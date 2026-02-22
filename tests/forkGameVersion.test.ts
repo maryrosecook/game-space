@@ -114,7 +114,7 @@ describe('createForkedGameVersion', () => {
     expect(forkMetadata?.parentId).toBe('source-game');
   });
 
-  it('derives a descriptive three-word id from the source prompt', async () => {
+  it('derives a descriptive three-word id from the source prompt and appends a random suffix', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-fork-prompt-id-');
     const gamesRootPath = path.join(tempDirectoryPath, 'games');
     await fs.mkdir(gamesRootPath, { recursive: true });
@@ -135,7 +135,40 @@ describe('createForkedGameVersion', () => {
       now: () => new Date('2026-03-02T00:00:00.000Z')
     });
 
-    expect(created.id).toBe('build-neon-racing');
+    expect(created.id).toMatch(/^build-neon-racing-[a-z0-9]{10}$/);
+
+    const second = await createForkedGameVersion({
+      gamesRootPath,
+      sourceVersionId: 'source-game',
+      sourcePrompt: 'Build a neon racing game with drifting cars and boost pads',
+      now: () => new Date('2026-03-02T00:00:00.000Z')
+    });
+
+    expect(second.id).toMatch(/^build-neon-racing-[a-z0-9]{10}$/);
+    expect(second.id).not.toBe(created.id);
+  });
+
+  it('uses fallback words and appends a random suffix when no source prompt is provided', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-fork-fallback-id-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'source-game',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const created = await createForkedGameVersion({
+      gamesRootPath,
+      sourceVersionId: 'source-game',
+      now: () => new Date('2026-03-02T00:00:00.000Z')
+    });
+
+    expect(created.id).toMatch(/^new-arcade-game-[a-z0-9]{10}$/);
   });
 
   it('throws when idFactory generates an invalid fork id', async () => {

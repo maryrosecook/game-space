@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { randomInt } from 'node:crypto';
 
 import { isObjectRecord, pathExists } from './fsUtils';
 import { gameDirectoryPath, isSafeVersionId, readMetadataFile, writeMetadataFile } from './gameVersions';
@@ -9,6 +10,8 @@ import type { GameMetadata } from '../types';
 const excludedDirectoryNames = new Set(['node_modules']);
 const maxForkIdAttempts = 32;
 const maxIdWordLength = 14;
+const idSuffixLength = 10;
+const idSuffixAlphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const fallbackIdWords = ['new', 'arcade', 'game'] as const;
 const stopWords = new Set([
   'a',
@@ -81,13 +84,27 @@ function buildIdWordsFromPrompt(prompt: string): [string, string, string] {
   return [selected[0] ?? fallbackIdWords[0], selected[1] ?? fallbackIdWords[1], selected[2] ?? fallbackIdWords[2]];
 }
 
+function createRandomAlphaNumericSuffix(length: number): string {
+  let suffix = '';
+  for (let index = 0; index < length; index += 1) {
+    const randomIndex = randomInt(idSuffixAlphabet.length);
+    suffix += idSuffixAlphabet[randomIndex] ?? idSuffixAlphabet[0];
+  }
+
+  return suffix;
+}
+
+function appendRandomIdSuffix(baseId: string): string {
+  return `${baseId}-${createRandomAlphaNumericSuffix(idSuffixLength)}`;
+}
+
 function createWordTripletIdFromPrompt(prompt: string): string {
   const [first, second, third] = buildIdWordsFromPrompt(prompt);
-  return `${first}-${second}-${third}`;
+  return appendRandomIdSuffix(`${first}-${second}-${third}`);
 }
 
 function createWordTripletId(): string {
-  return `${fallbackIdWords[0]}-${fallbackIdWords[1]}-${fallbackIdWords[2]}`;
+  return appendRandomIdSuffix(`${fallbackIdWords[0]}-${fallbackIdWords[1]}-${fallbackIdWords[2]}`);
 }
 
 async function createUniqueForkVersionId(gamesRootPath: string, idFactory: () => string): Promise<string> {

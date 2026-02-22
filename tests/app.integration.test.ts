@@ -1440,7 +1440,7 @@ describe('express app integration', () => {
     expect(typeof response.body.forkId).toBe('string');
 
     const forkId = response.body.forkId as string;
-    expect(forkId).toBe('line-quoted-game');
+    expect(forkId).toMatch(/^line-quoted-game-[a-z0-9]{10}$/);
 
     expect(codexRunner.calls).toHaveLength(1);
     expect(codexRunner.calls[0]?.cwd).toBe(path.join(gamesRootPath, forkId));

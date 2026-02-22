@@ -7,7 +7,7 @@ const bouncingGameSourcePaths = [
   'games/v1-bounce/src/main.ts',
   'games/d0cf7658-3371-4f01-99e2-ca90fc1899cf/src/main.ts'
 ];
-const shimmeringBowlsSourcePath = 'games/elm-cloud-sage/src/main.ts';
+const starterGameSourcePath = 'games/starter/src/main.ts';
 
 async function readGameSource(relativePath: string): Promise<string> {
   return fs.readFile(path.join(process.cwd(), relativePath), 'utf8');
@@ -25,21 +25,22 @@ describe('game runtime source', () => {
     expect(source).not.toContain('window.innerHeight');
   });
 
-  it('keeps bowls round in elm-cloud-sage with aspect-aware bounds', async () => {
-    const source = await readGameSource(shimmeringBowlsSourcePath);
+  it('keeps starter movement bounds camera-aware without viewport globals', async () => {
+    const source = await readGameSource(starterGameSourcePath);
 
-    expect(source).toContain('const viewportScale = canvas.height / Math.max(canvas.width, 1);');
-    expect(source).toContain('const horizontalRadius = bowl.radius * viewportScale;');
+    expect(source).toContain('const minX = camera.x;');
+    expect(source).toContain('const maxX = camera.x + screen.width - (thing.width ?? 0);');
+    expect(source).toContain('const maxY = camera.y + screen.height - (thing.height ?? 0);');
     expect(source).not.toContain('window.innerWidth');
     expect(source).not.toContain('window.innerHeight');
   });
 
-  it('renders one thousand shimmering bowls with shader-driven highlights', async () => {
-    const source = await readGameSource(shimmeringBowlsSourcePath);
+  it('spawns fire-colored rain particles in starter runtime updates', async () => {
+    const source = await readGameSource(starterGameSourcePath);
 
-    expect(source).toContain('const BOWL_COUNT = 1000;');
-    expect(source).toContain('gl.drawArrays(gl.POINTS, 0, BOWL_COUNT);');
-    expect(source).toContain('uniform float u_time;');
-    expect(source).toContain('float specular = pow(max(0.0, reflectedLight.z), 30.0);');
+    expect(source).toContain("const FIRE_COLOR_PALETTE = ['#ff2d00', '#ff4a00', '#ff6a00', '#ff8d00', '#ffb300', '#ffd24a'];");
+    expect(source).toContain('spawnFireRain(game, nextRainRandom);');
+    expect(source).toContain('const spawnCount = nextRandom() > 0.68 ? 2 : 1;');
+    expect(source).toContain('game.spawnParticle({');
   });
 });
