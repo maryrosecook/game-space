@@ -128,6 +128,7 @@ type StoredMetadata = {
   id: string;
   parentId: string | null;
   threeWords?: string;
+  prompt?: string;
   createdTime: string;
   tileColor?: string;
   favorite?: boolean;
@@ -1466,6 +1467,7 @@ describe('express app integration', () => {
     expect(forkMetadata.id).toBe(forkId);
     expect(forkMetadata.parentId).toBe('source');
     expect(forkMetadata.threeWords).toBe('line-quoted-game');
+    expect(forkMetadata.prompt).toBe(userPrompt);
     expect(forkMetadata.tileColor).toMatch(/^#[0-9A-F]{6}$/);
     expect(forkMetadata.codexSessionId).toBe(persistedSessionId);
     await waitForSessionStatus(forkMetadataPath, 'stopped');
@@ -1722,6 +1724,7 @@ describe('express app integration', () => {
     const forkMetadataPath = path.join(gamesRootPath, response.body.forkId as string, 'metadata.json');
     const forkMetadata = await readMetadata(forkMetadataPath);
     expect(forkMetadata.parentId).toBe('starter');
+    expect(forkMetadata.prompt).toBe('create gravity flipping pinball');
 
     const ideasAfterBuild = JSON.parse(await fs.readFile(ideasPath, 'utf8')) as Array<{ hasBeenBuilt: boolean }>;
     expect(ideasAfterBuild[0]?.hasBeenBuilt).toBe(true);

@@ -42,6 +42,7 @@ describe('createForkedGameVersion', () => {
       codexSessionStatus: 'none'
     });
     expect(created.tileColor).toMatch(/^#[0-9A-F]{6}$/);
+    expect(created.prompt).toBeUndefined();
 
     const forkMetadata = await readMetadataFile(path.join(gamesRootPath, 'fork-game', 'metadata.json'));
     expect(forkMetadata).toEqual(created);
@@ -129,25 +130,31 @@ describe('createForkedGameVersion', () => {
       }
     });
 
+    const sourcePrompt = 'Build a neon racing game with drifting cars and boost pads';
     const created = await createForkedGameVersion({
       gamesRootPath,
       sourceVersionId: 'source-game',
-      sourcePrompt: 'Build a neon racing game with drifting cars and boost pads',
+      sourcePrompt,
       now: () => new Date('2026-03-02T00:00:00.000Z')
     });
 
     expect(created.id).toMatch(/^build-neon-racing-[a-z0-9]{10}$/);
     expect(created.threeWords).toBe('build-neon-racing');
+    expect(created.prompt).toBe(sourcePrompt);
+    expect(
+      (await readMetadataFile(path.join(gamesRootPath, created.id, 'metadata.json')))?.prompt
+    ).toBe(sourcePrompt);
 
     const second = await createForkedGameVersion({
       gamesRootPath,
       sourceVersionId: 'source-game',
-      sourcePrompt: 'Build a neon racing game with drifting cars and boost pads',
+      sourcePrompt,
       now: () => new Date('2026-03-02T00:00:00.000Z')
     });
 
     expect(second.id).toMatch(/^build-neon-racing-[a-z0-9]{10}$/);
     expect(second.threeWords).toBe('build-neon-racing');
+    expect(second.prompt).toBe(sourcePrompt);
     expect(second.id).not.toBe(created.id);
   });
 
@@ -173,6 +180,7 @@ describe('createForkedGameVersion', () => {
 
     expect(created.id).toMatch(/^new-arcade-game-[a-z0-9]{10}$/);
     expect(created.threeWords).toBe('new-arcade-game');
+    expect(created.prompt).toBeUndefined();
   });
 
   it('throws when idFactory generates an invalid fork id', async () => {
