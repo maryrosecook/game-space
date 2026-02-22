@@ -410,7 +410,7 @@ describe('express app integration', () => {
       .set('Host', TEST_HOST)
       .set('Cookie', authSession.cookieHeader)
       .expect(200);
-    expect(adminHomepage.text).toContain('>Auth<');
+    expect(adminHomepage.text).toContain('>Admin<');
     expect(adminHomepage.text).toContain('>newer game<');
     const adminNewerIndex = adminHomepage.text.indexOf('data-version-id="newer-game"');
     const adminOlderIndex = adminHomepage.text.indexOf('data-version-id="older-build"');
@@ -1159,11 +1159,13 @@ describe('express app integration', () => {
     expect(adminView.text).toContain('id="game-codex-transcript"');
     expect(adminView.text).toContain('id="game-tab-edit"');
     expect(adminView.text).toContain('id="prompt-submit-button"');
+    expect(adminView.text).toMatch(/id="prompt-submit-button"[\s\S]*class="game-view-icon lucide lucide-rocket"/);
     expect(adminView.text).toContain('<span>Build</span>');
     expect(adminView.text).not.toContain('<span>Submit</span>');
     expect(adminView.text).not.toContain('>Transcript</span>');
     expect(adminView.text).toContain('id="game-tab-favorite"');
     expect(adminView.text).toContain('id="game-tab-delete"');
+    expect(adminView.text).toContain('class="game-view-icon lucide lucide-trash-2"');
     expect(adminView.text).toContain('class="game-view-tab-spinner"');
     expect(adminView.text).toContain('aria-label="Favorite game"');
     expect(adminView.text).toContain('aria-pressed="false"');
@@ -1173,6 +1175,8 @@ describe('express app integration', () => {
     expect(adminView.text).toContain('data-codegen-provider="codex"');
     expect(adminView.text).toContain('aria-label="Build prompt"');
     expect(adminView.text).toContain('aria-label="Toggle Codex session"');
+    expect(adminView.text).toMatch(/id="game-codex-toggle"[\s\S]*class="prompt-action-button prompt-action-button--icon"/);
+    expect(adminView.text).toContain('class="game-view-icon lucide lucide-bot"');
     expect(adminView.text).toContain('<h2>Codex Transcript</h2>');
     expect(adminView.text).toContain('class="game-top-strip"');
     expect(adminView.text).toContain('style="--game-tile-color: #1D3557;"');
@@ -1675,6 +1679,17 @@ describe('express app integration', () => {
       .set('Cookie', adminSession.cookieHeader)
       .expect(200);
     expect(adminHomepage.text).toContain('href="/ideas"');
+
+    const ideasView = await request(app)
+      .get('/ideas')
+      .set('Host', TEST_HOST)
+      .set('Cookie', adminSession.cookieHeader)
+      .expect(200);
+    expect(ideasView.text).toContain('class="idea-icon lucide lucide-lightbulb"');
+    expect(ideasView.text).toContain('data-idea-build-icon="');
+    expect(ideasView.text).toContain('data-idea-delete-icon="');
+    expect(ideasView.text).toContain('lucide-rocket');
+    expect(ideasView.text).toContain('lucide-trash-2');
   });
 
   it('builds ideas via the same prompt pipeline and marks idea as built', async () => {

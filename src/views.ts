@@ -1,3 +1,14 @@
+import {
+  Bot,
+  ChevronLeft,
+  Lightbulb,
+  Mic,
+  Rocket,
+  Settings,
+  Star,
+  Trash2,
+  type IconNode
+} from 'lucide';
 import type { GameVersion } from './types';
 import type { CodegenProvider } from './services/codegenConfig';
 
@@ -19,13 +30,52 @@ function codegenProviderLabel(codegenProvider: CodegenProvider): string {
   return codegenProvider === 'claude' ? 'Claude' : 'Codex';
 }
 
+type LucideIconName =
+  | 'bot'
+  | 'chevron-left'
+  | 'lightbulb'
+  | 'mic'
+  | 'rocket'
+  | 'settings'
+  | 'star'
+  | 'trash-2';
+
+const LUCIDE_ICON_NODES: Record<LucideIconName, IconNode> = {
+  bot: Bot,
+  'chevron-left': ChevronLeft,
+  lightbulb: Lightbulb,
+  mic: Mic,
+  rocket: Rocket,
+  settings: Settings,
+  star: Star,
+  'trash-2': Trash2
+};
+
+function renderLucideNode(iconNode: IconNode): string {
+  return iconNode
+    .map(([tagName, attributes]) => {
+      const serializedAttributes = Object.entries(attributes)
+        .filter(([, attributeValue]) => attributeValue !== undefined)
+        .map(([attributeName, attributeValue]) => `${attributeName}="${escapeHtml(String(attributeValue))}"`)
+        .join(' ');
+      return serializedAttributes.length > 0
+        ? `<${tagName} ${serializedAttributes}></${tagName}>`
+        : `<${tagName}></${tagName}>`;
+    })
+    .join('');
+}
+
+function renderLucideIcon(iconName: LucideIconName, className: string, size: number = 18): string {
+  return `<svg class="${className} lucide lucide-${iconName}" xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${renderLucideNode(LUCIDE_ICON_NODES[iconName])}</svg>`;
+}
+
 type HomepageRenderOptions = {
   isAdmin?: boolean;
 };
 
 export function renderHomepage(versions: readonly GameVersion[], options: HomepageRenderOptions = {}): string {
   const isAdmin = options.isAdmin ?? false;
-  const authLabel = isAdmin ? 'Auth' : 'Login';
+  const authLabel = isAdmin ? 'Admin' : 'Login';
   const ideasLink = isAdmin ? '<a class="auth-link" href="/ideas">Ideas</a>' : '';
   const tiles = versions
     .map((version) => {
@@ -94,21 +144,10 @@ function renderIdeasList(ideas: readonly IdeasViewIdea[]): string {
         <div class="idea-actions">
           ${builtBadge}
           <button class="idea-action-button" type="button" data-action="build" data-idea-index="${index}" aria-label="Build from idea">
-            <svg class="idea-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M4.5 16.5c-1.5 1.26-3 5.5-2 6.5s5.24-.5 6.5-2c1.5-1.8 1.5-4.5 0-6-1.5-1.5-4.2-1.5-6 0z"></path>
-              <path d="m12 15-3-3a9 9 0 0 1 3-8l4 4a9 9 0 0 1-8 3z"></path>
-              <path d="M16 8h5"></path>
-              <path d="M19 5v6"></path>
-            </svg>
+            ${renderLucideIcon('rocket', 'idea-icon')}
           </button>
           <button class="idea-action-button idea-action-button--danger" type="button" data-action="delete" data-idea-index="${index}" aria-label="Delete idea">
-            <svg class="idea-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M3 6h18"></path>
-              <path d="M8 6V4h8v2"></path>
-              <path d="M19 6l-1 14H6L5 6"></path>
-              <path d="M10 11v6"></path>
-              <path d="M14 11v6"></path>
-            </svg>
+            ${renderLucideIcon('trash-2', 'idea-icon')}
           </button>
         </div>
       </li>`;
@@ -121,6 +160,8 @@ export function renderIdeasView(
   csrfToken: string,
   isGenerating: boolean = false,
 ): string {
+  const rocketIdeaIcon = renderLucideIcon('rocket', 'idea-icon');
+  const trashIdeaIcon = renderLucideIcon('trash-2', 'idea-icon');
   const generatingClass = isGenerating
     ? " ideas-generate-button--generating"
     : "";
@@ -134,7 +175,7 @@ export function renderIdeasView(
     <title>Ideas</title>
     <link rel="stylesheet" href="/public/styles.css" />
   </head>
-  <body class="codex-page" data-csrf-token="${escapeHtml(csrfToken)}">
+  <body class="codex-page" data-csrf-token="${escapeHtml(csrfToken)}" data-idea-build-icon="${escapeHtml(rocketIdeaIcon)}" data-idea-delete-icon="${escapeHtml(trashIdeaIcon)}">
     <main class="codex-shell">
       <header class="page-header codex-header">
         <h1>Ideas</h1>
@@ -142,11 +183,7 @@ export function renderIdeasView(
       </header>
       <section class="ideas-controls">
         <button id="ideas-generate-button" class="ideas-generate-button${generatingClass}" type="button" aria-label="Generate idea" aria-busy="${generatingBusyState}">
-          <svg class="idea-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M9 18h6"></path>
-            <path d="M10 22h4"></path>
-            <path d="M12 2a7 7 0 0 0-4 12.74V17h8v-2.26A7 7 0 0 0 12 2z"></path>
-          </svg>
+          ${renderLucideIcon('lightbulb', 'idea-icon')}
           <span>Generate</span>
           <span class="ideas-generate-spinner" aria-hidden="true"></span>
         </button>
@@ -319,21 +356,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         href="/"
         aria-label="Back to homepage"
       >
-        <svg
-          class="game-view-icon"
-          xmlns="http://www.w3.org/2000/svg"
-          width="22"
-          height="22"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="m15 18-6-6 6-6"></path>
-        </svg>
+        ${renderLucideIcon('chevron-left', 'game-view-icon', 22)}
       </a>
       ${isAdmin
         ? `<div class="game-tool-tabs">
@@ -344,23 +367,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           aria-controls="prompt-panel"
           aria-expanded="false"
         >
-          <svg
-            class="game-view-icon"
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M12 3a9 9 0 1 0 9 9"></path>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 3.6 15a1.65 1.65 0 0 0-1.51-1H2a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 3.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8 3.6a1.65 1.65 0 0 0 1-1.51V2a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 3.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 8a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            <circle cx="12" cy="12" r="3"></circle>
-          </svg>
+          ${renderLucideIcon('settings', 'game-view-icon')}
           <span class="game-view-tab-spinner" aria-hidden="true"></span>
         </button>
         <button
@@ -369,23 +376,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           type="button"
           aria-label="Start voice recording"
         >
-          <svg
-            class="game-view-icon"
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M12 19v3"></path>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-            <rect x="9" y="2" width="6" height="13" rx="3"></rect>
-          </svg>
+          ${renderLucideIcon('mic', 'game-view-icon')}
         </button>
       </div>`
         : ''}
@@ -409,6 +400,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
             type="submit"
             aria-label="Build prompt"
           >
+            ${renderLucideIcon('rocket', 'game-view-icon')}
             <span>Build</span>
           </button>
           <button
@@ -418,76 +410,26 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
             aria-label="${isFavorite ? 'Unfavorite game' : 'Favorite game'}"
             aria-pressed="${isFavorite ? 'true' : 'false'}"
           >
-            <svg
-              class="game-view-icon"
-              xmlns="http://www.w3.org/2000/svg"
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-            </svg>
+            ${renderLucideIcon('star', 'game-view-icon')}
           </button>
-        <button
-          id="game-codex-toggle"
-          class="prompt-action-button"
-          type="button"
-          aria-controls="game-codex-transcript"
-          aria-expanded="false"
-          aria-label="Toggle ${providerLabel} session"
-        >
-          <svg
-            class="game-view-icon"
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
+          <button
+            id="game-codex-toggle"
+            class="prompt-action-button prompt-action-button--icon"
+            type="button"
+            aria-controls="game-codex-transcript"
+            aria-expanded="false"
+            aria-label="Toggle ${providerLabel} session"
           >
-            <rect width="18" height="10" x="3" y="11" rx="2"></rect>
-            <circle cx="12" cy="5" r="2"></circle>
-            <path d="M12 7v4"></path>
-            <line x1="8" x2="8" y1="16" y2="16"></line>
-            <line x1="16" x2="16" y1="16" y2="16"></line>
-          </svg>
-        </button>
-        <button
-          id="game-tab-delete"
-          class="prompt-action-button prompt-action-button--icon"
-          type="button"
-          aria-label="Delete game"
-        >
-          <svg
-            class="game-view-icon"
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
+            ${renderLucideIcon('bot', 'game-view-icon')}
+          </button>
+          <button
+            id="game-tab-delete"
+            class="prompt-action-button prompt-action-button--icon"
+            type="button"
+            aria-label="Delete game"
           >
-            <path d="M3 6h18"></path>
-            <path d="M8 6V4h8v2"></path>
-            <path d="M19 6l-1 14H6L5 6"></path>
-            <path d="M10 11v6"></path>
-            <path d="M14 11v6"></path>
-          </svg>
-        </button>
+            ${renderLucideIcon('trash-2', 'game-view-icon')}
+          </button>
         </div>
       </form>
       <section id="game-codex-transcript" class="game-codex-transcript" aria-hidden="true">
