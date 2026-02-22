@@ -196,6 +196,50 @@ describe('game version discovery', () => {
     ).toBeNull();
   });
 
+  it('accepts prompt text and rejects invalid prompt values', () => {
+    expect(
+      parseGameMetadata({
+        id: 'v7',
+        parentId: null,
+        createdTime: '2026-02-07T00:00:00.000Z',
+        prompt: 'line 1\nline 2'
+      })
+    ).toEqual({
+      id: 'v7',
+      parentId: null,
+      createdTime: '2026-02-07T00:00:00.000Z',
+      prompt: 'line 1\nline 2',
+      favorite: false,
+      codexSessionId: null,
+      codexSessionStatus: 'none'
+    });
+
+    expect(
+      parseGameMetadata({
+        id: 'v7',
+        parentId: null,
+        createdTime: '2026-02-07T00:00:00.000Z',
+        prompt: '   '
+      })
+    ).toEqual({
+      id: 'v7',
+      parentId: null,
+      createdTime: '2026-02-07T00:00:00.000Z',
+      favorite: false,
+      codexSessionId: null,
+      codexSessionStatus: 'none'
+    });
+
+    expect(
+      parseGameMetadata({
+        id: 'v7',
+        parentId: null,
+        createdTime: '2026-02-07T00:00:00.000Z',
+        prompt: 42
+      })
+    ).toBeNull();
+  });
+
   it('parses favorite booleans and rejects invalid favorite values', () => {
     expect(
       parseGameMetadata({

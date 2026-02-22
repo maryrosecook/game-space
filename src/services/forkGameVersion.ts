@@ -194,6 +194,8 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
 
   const forkVersionId = await createUniqueForkVersionId(gamesRootPath, idFactory);
   const threeWords = getThreeWordsFromPrompt(sourcePrompt);
+  const creationPrompt =
+    typeof sourcePrompt === 'string' && sourcePrompt.trim().length > 0 ? sourcePrompt : undefined;
 
   const forkDirectoryPath = gameDirectoryPath(gamesRootPath, forkVersionId);
   await fs.cp(sourceDirectoryPath, forkDirectoryPath, {
@@ -209,6 +211,7 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
   const forkMetadata: GameMetadata = {
     id: forkVersionId,
     threeWords,
+    ...(creationPrompt ? { prompt: creationPrompt } : {}),
     parentId: sourceVersionId,
     createdTime: now().toISOString(),
     tileColor: createReadableRandomHexColor(),

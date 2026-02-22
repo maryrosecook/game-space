@@ -30,7 +30,7 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     return null;
   }
 
-  const { id, threeWords, parentId, createdTime, tileColor, favorite, codexSessionId, codexSessionStatus } = value;
+  const { id, threeWords, prompt, parentId, createdTime, tileColor, favorite, codexSessionId, codexSessionStatus } = value;
   if (typeof id !== 'string' || id.length === 0) {
     return null;
   }
@@ -42,6 +42,11 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
   const normalizedThreeWords =
     typeof threeWords === 'string' && threeWords.trim().length > 0 ? threeWords.trim() : undefined;
 
+  if (!(prompt === undefined || typeof prompt === 'string')) {
+    return null;
+  }
+
+  const normalizedPrompt = typeof prompt === 'string' && prompt.trim().length > 0 ? prompt : undefined;
 
   if (!(parentId === null || typeof parentId === 'string')) {
     return null;
@@ -79,6 +84,7 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
   return {
     id,
     ...(normalizedThreeWords ? { threeWords: normalizedThreeWords } : {}),
+    ...(normalizedPrompt ? { prompt: normalizedPrompt } : {}),
     parentId,
     createdTime: new Date(createdTimestamp).toISOString(),
     tileColor: normalizedTileColor,
@@ -132,11 +138,16 @@ export async function writeMetadataFile(metadataPath: string, metadata: GameMeta
       ? metadata.threeWords.trim()
       : undefined;
 
+  const normalizedPrompt =
+    typeof metadata.prompt === 'string' && metadata.prompt.trim().length > 0 ? metadata.prompt : undefined;
+
   const metadataWithoutThreeWords = { ...metadata };
   delete metadataWithoutThreeWords.threeWords;
+  delete metadataWithoutThreeWords.prompt;
   const normalizedMetadata: GameMetadata = {
     ...metadataWithoutThreeWords,
     ...(normalizedThreeWords ? { threeWords: normalizedThreeWords } : {}),
+    ...(normalizedPrompt ? { prompt: normalizedPrompt } : {}),
     tileColor: normalizedTileColor,
     favorite: metadata.favorite === true,
     codexSessionId: metadata.codexSessionId ?? null,
