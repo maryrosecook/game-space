@@ -26,6 +26,12 @@ type FetchCall = {
 
 type FetchImplementation = (url: string, init?: Record<string, unknown>) => Promise<FetchResponse>;
 
+type TranscriptRenderCall = {
+  sessionId: unknown;
+  messages: unknown;
+  options: { autoScrollToBottom?: boolean } | undefined;
+};
+
 class TestEventTarget {
   private readonly listeners = new Map<string, EventListener[]>();
 
@@ -236,6 +242,8 @@ type GameViewHarness = {
   promptInput: TestHTMLInputElement;
   promptPanel: TestHTMLElement;
   promptOverlay: TestHTMLElement;
+  renderTranscriptCalls: TranscriptRenderCall[];
+  getScrollToBottomCalls: () => number;
   intervalCallbacks: Array<() => void>;
   getPeerConnection: () => TestRTCPeerConnection | null;
   mediaTrack: TestMediaStreamTrack;
@@ -308,6 +316,8 @@ async function runGameViewScript(
   const mediaStream = new TestMediaStream([mediaTrack]);
   let getUserMediaCalls = 0;
   let transcriptTitle: string | null = null;
+  const renderTranscriptCalls: TranscriptRenderCall[] = [];
+  let scrollToBottomCalls = 0;
   TestRTCPeerConnection.latestInstance = null;
 
   const navigator = {
@@ -381,7 +391,16 @@ async function runGameViewScript(
       transcriptTitle = typeof options?.transcriptTitle === 'string' ? options.transcriptTitle : null;
       return {
         showEmptyState() {},
-        renderTranscript() {}
+        renderTranscript(sessionId: unknown, messages: unknown, presenterOptions?: { autoScrollToBottom?: boolean }) {
+          renderTranscriptCalls.push({
+            sessionId,
+            messages,
+            options: presenterOptions
+          });
+        },
+        scrollToBottom() {
+          scrollToBottomCalls += 1;
+        }
       };
     },
     encodeURIComponent,
@@ -405,6 +424,8 @@ async function runGameViewScript(
     promptInput,
     promptPanel,
     promptOverlay,
+    renderTranscriptCalls,
+    getScrollToBottomCalls: () => scrollToBottomCalls,
     intervalCallbacks,
     getPeerConnection: () => TestRTCPeerConnection.latestInstance,
     mediaTrack,
@@ -585,6 +606,38 @@ describe('game view prompt submit client', () => {
     harness.codexToggle.dispatchEvent('click', createEvent());
     expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
     expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(false);
+  });
+
+  it('scrolls transcript to bottom when opening codex transcript after messages load', async () => {
+    const harness = await runGameViewScript(
+      async (url) => {
+        if (url !== '/api/codex-sessions/source-version') {
+          throw new Error(`Unexpected fetch URL: ${url}`);
+        }
+
+        return {
+          ok: true,
+          async json() {
+            return {
+              status: 'ok',
+              eyeState: 'idle',
+              sessionId: 'session-source',
+              messages: [{ role: 'user', text: 'first prompt', timestamp: '2026-02-22T00:00:00.000Z' }]
+            };
+          }
+        };
+      },
+      { startTranscriptPolling: true }
+    );
+
+    await flushAsyncOperations();
+    expect(harness.renderTranscriptCalls).toHaveLength(1);
+    expect(harness.getScrollToBottomCalls()).toBe(0);
+
+    harness.codexToggle.dispatchEvent('click', createEvent());
+
+    expect(harness.getScrollToBottomCalls()).toBe(1);
+    expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(true);
   });
 
   it('starts realtime transcription by creating a session and exchanging SDP', async () => {
@@ -786,6 +839,62 @@ describe('game view prompt submit client', () => {
     await flushAsyncOperations();
     expect(harness.editTab.classList.contains('game-view-tab--generating')).toBe(false);
     expect(harness.editTab.getAttribute('aria-busy')).toBe('false');
+  });
+
+  it('renders polling transcript updates with auto-scroll enabled', async () => {
+    let requestCount = 0;
+    const harness = await runGameViewScript(
+      async (url) => {
+        if (url !== '/api/codex-sessions/source-version') {
+          throw new Error(`Unexpected fetch URL: ${url}`);
+        }
+
+        requestCount += 1;
+        if (requestCount === 1) {
+          return {
+            ok: true,
+            async json() {
+              return {
+                status: 'ok',
+                eyeState: 'idle',
+                sessionId: 'session-source',
+                messages: [{ role: 'user', text: 'first prompt', timestamp: '2026-02-22T00:00:00.000Z' }]
+              };
+            }
+          };
+        }
+
+        return {
+          ok: true,
+          async json() {
+            return {
+              status: 'ok',
+              eyeState: 'idle',
+              sessionId: 'session-source',
+              messages: [
+                { role: 'user', text: 'first prompt', timestamp: '2026-02-22T00:00:00.000Z' },
+                { role: 'assistant', text: 'second reply', timestamp: '2026-02-22T00:00:01.000Z' }
+              ]
+            };
+          }
+        };
+      },
+      { startTranscriptPolling: true }
+    );
+
+    await flushAsyncOperations();
+    expect(harness.renderTranscriptCalls).toHaveLength(1);
+    expect(harness.renderTranscriptCalls[0]).toMatchObject({
+      options: { autoScrollToBottom: true }
+    });
+
+    harness.intervalCallbacks[0]?.();
+    await flushAsyncOperations();
+
+    expect(harness.renderTranscriptCalls).toHaveLength(2);
+    expect(harness.renderTranscriptCalls[1]).toMatchObject({
+      options: { autoScrollToBottom: true }
+    });
   });
 
   it('shows generating spinner behavior for claude provider', async () => {

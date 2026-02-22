@@ -462,6 +462,16 @@ function toggleEditPanel() {
   focusPromptInput();
 }
 
+function requestTranscriptScrollToBottom() {
+  if (typeof transcriptPresenter.scrollToBottom !== 'function') {
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    transcriptPresenter.scrollToBottom();
+  });
+}
+
 function toggleCodexPanelExpanded() {
   if (!editPanelOpen) {
     editPanelOpen = true;
@@ -470,9 +480,12 @@ function toggleCodexPanelExpanded() {
   codexPanelExpanded = !codexPanelExpanded;
   applyBottomPanelState();
 
-  if (!codexPanelExpanded) {
-    focusPromptInput();
+  if (codexPanelExpanded) {
+    requestTranscriptScrollToBottom();
+    return;
   }
+
+  focusPromptInput();
 }
 
 function focusPromptInput() {

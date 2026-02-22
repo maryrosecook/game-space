@@ -70,7 +70,7 @@ async function loadTranscript(versionId) {
     return;
   }
 
-  transcriptPresenter.renderTranscript(payload.sessionId, payload.messages);
+  transcriptPresenter.renderTranscript(payload.sessionId, payload.messages, { autoScrollToBottom: true });
 }
 
 if (gameSelect instanceof HTMLSelectElement) {
