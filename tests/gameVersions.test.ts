@@ -3,7 +3,13 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { isSafeVersionId, listGameVersions, parseGameMetadata } from '../src/services/gameVersions';
+import {
+  isSafeVersionId,
+  listGameVersions,
+  parseGameMetadata,
+  readMetadataFile,
+  writeMetadataFile
+} from '../src/services/gameVersions';
 import { createGameFixture, createTempDirectory } from './testHelpers';
 
 describe('game version discovery', () => {
@@ -39,6 +45,68 @@ describe('game version discovery', () => {
 
     const versions = await listGameVersions(gamesRootPath);
     expect(versions.map((version) => version.id)).toEqual(['new-game', 'old-game']);
+  });
+
+  it('writes complex prompt text as valid JSON metadata', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-write-metadata-prompt-');
+    const metadataPath = path.join(tempDirectoryPath, 'metadata.json');
+    const promptText = `Ember Shepherd — A cozy campfire puzzle-action game set in a ink-wash illustrated forest at dusk.
+Entities & Mechanics:
+
+Embers (amber, red, blue glowing sparks): fall from the top of the screen, bounce off platforms.
+The player taps an ember mid-flight to flip its horizontal direction 180°. One tap = one redirect.
+"Flame Towers" appear when 3 same-colored embers land together.
+Rain clouds douse towers; lose all towers and it's game over.`;
+
+    await writeMetadataFile(metadataPath, {
+      id: 'ember-shepherd',
+      parentId: null,
+      createdTime: '2026-02-08T00:00:00.000Z',
+      prompt: promptText,
+      codexSessionId: null,
+      codexSessionStatus: 'none'
+    });
+
+    const serializedMetadata = await fs.readFile(metadataPath, 'utf8');
+    expect(() => JSON.parse(serializedMetadata)).not.toThrow();
+
+    const parsedMetadata = await readMetadataFile(metadataPath);
+    expect(parsedMetadata?.prompt).toBe(promptText);
+  });
+
+  it('serializes concurrent metadata writes without corrupting JSON', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-write-metadata-concurrent-');
+    const metadataPath = path.join(tempDirectoryPath, 'metadata.json');
+    const promptValues = Array.from(
+      { length: 24 },
+      (_, index) => `prompt ${index} — "slot ${index}"\nline two with slash / and tab\tvalue`
+    );
+
+    await Promise.all(
+      promptValues.map((prompt, index) =>
+        writeMetadataFile(metadataPath, {
+          id: 'concurrent-game',
+          parentId: 'source-game',
+          createdTime: new Date(Date.UTC(2026, 1, 9, 0, 0, index)).toISOString(),
+          prompt,
+          favorite: index % 2 === 0,
+          codexSessionId: null,
+          codexSessionStatus: 'created'
+        })
+      )
+    );
+
+    const serializedMetadata = await fs.readFile(metadataPath, 'utf8');
+    expect(() => JSON.parse(serializedMetadata)).not.toThrow();
+
+    const parsedMetadata = await readMetadataFile(metadataPath);
+    expect(parsedMetadata).not.toBeNull();
+    if (!parsedMetadata) {
+      throw new Error('Expected metadata after concurrent writes');
+    }
+
+    expect(parsedMetadata.id).toBe('concurrent-game');
+    expect(promptValues).toContain(parsedMetadata.prompt);
   });
 
   it('normalizes parseable timestamps to ISO-8601 and rejects invalid structures', () => {
