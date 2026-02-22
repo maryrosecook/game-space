@@ -1,10 +1,12 @@
 import { type Dirent, promises as fs } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import { hasErrorCode, isObjectRecord } from './fsUtils';
 import type { CodexSessionStatus, GameMetadata, GameVersion } from '../types';
 
 const safeVersionIdPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+const metadataWriteQueueByPath = new Map<string, Promise<void>>();
 
 function isCodexSessionStatus(value: unknown): value is CodexSessionStatus {
   return value === 'none' || value === 'created' || value === 'stopped' || value === 'error';
@@ -128,6 +130,7 @@ export async function readMetadataFile(metadataPath: string): Promise<GameMetada
 }
 
 export async function writeMetadataFile(metadataPath: string, metadata: GameMetadata): Promise<void> {
+  const normalizedMetadataPath = path.resolve(metadataPath);
   const normalizedTileColor =
     typeof metadata.tileColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(metadata.tileColor.trim())
       ? metadata.tileColor.trim().toUpperCase()
@@ -153,7 +156,30 @@ export async function writeMetadataFile(metadataPath: string, metadata: GameMeta
     codexSessionId: metadata.codexSessionId ?? null,
     codexSessionStatus: resolveCodexSessionStatus(metadata.codexSessionId ?? null, metadata.codexSessionStatus)
   };
-  await fs.writeFile(metadataPath, `${JSON.stringify(normalizedMetadata, null, 2)}\n`, 'utf8');
+
+  const serializedMetadata = `${JSON.stringify(normalizedMetadata, null, 2)}\n`;
+  await serializeMetadataWrite(normalizedMetadataPath, async () => {
+    const tempPath = `${normalizedMetadataPath}.tmp-${randomUUID()}`;
+    try {
+      await fs.writeFile(tempPath, serializedMetadata, 'utf8');
+      await fs.rename(tempPath, normalizedMetadataPath);
+    } catch (error: unknown) {
+      await fs.rm(tempPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+}
+
+function serializeMetadataWrite(metadataPath: string, writer: () => Promise<void>): Promise<void> {
+  const activeWrite = metadataWriteQueueByPath.get(metadataPath) ?? Promise.resolve();
+  const queuedWrite = activeWrite.catch(() => undefined).then(writer);
+  metadataWriteQueueByPath.set(metadataPath, queuedWrite);
+
+  return queuedWrite.finally(() => {
+    if (metadataWriteQueueByPath.get(metadataPath) === queuedWrite) {
+      metadataWriteQueueByPath.delete(metadataPath);
+    }
+  });
 }
 
 export async function listGameVersions(gamesRootPath: string): Promise<GameVersion[]> {
