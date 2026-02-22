@@ -115,18 +115,6 @@ function createStarterBlueprints(): Blueprint[] {
       const impulse = getTouchImpulse(input.touches);
       thing.velocityX = clampVelocity(thing.velocityX + impulse.x * PLAYER_IMPULSE);
       thing.velocityY = clampVelocity(thing.velocityY + impulse.y * PLAYER_IMPULSE);
-
-      if (impulse.x !== 0 || impulse.y !== 0) {
-        game.spawnParticle({
-          position: centerOfThing(thing),
-          velocity: {
-            x: -impulse.x * 0.75,
-            y: -impulse.y * 0.75
-          },
-          color: '#38bdf8',
-          size: 4
-        });
-      }
     },
     update: (thing, game) => {
       spawnFireRain(game, nextRainRandom);
