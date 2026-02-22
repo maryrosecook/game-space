@@ -25,6 +25,9 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+const ideaBuildIconMarkup = document.body.dataset.ideaBuildIcon ?? '';
+const ideaDeleteIconMarkup = document.body.dataset.ideaDeleteIcon ?? '';
+
 function applyGenerateState(isGenerating) {
   generateButton.classList.toggle('ideas-generate-button--generating', isGenerating);
   generateButton.setAttribute('aria-busy', isGenerating ? 'true' : 'false');
@@ -67,21 +70,10 @@ function renderIdeas(ideas) {
         <div class="idea-actions">
           ${builtBadge}
           <button class="idea-action-button" type="button" data-action="build" data-idea-index="${index}" aria-label="Build from idea">
-            <svg class="idea-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M4.5 16.5c-1.5 1.26-3 5.5-2 6.5s5.24-.5 6.5-2c1.5-1.8 1.5-4.5 0-6-1.5-1.5-4.2-1.5-6 0z"></path>
-              <path d="m12 15-3-3a9 9 0 0 1 3-8l4 4a9 9 0 0 1-8 3z"></path>
-              <path d="M16 8h5"></path>
-              <path d="M19 5v6"></path>
-            </svg>
+            ${ideaBuildIconMarkup}
           </button>
           <button class="idea-action-button idea-action-button--danger" type="button" data-action="delete" data-idea-index="${index}" aria-label="Delete idea">
-            <svg class="idea-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M3 6h18"></path>
-              <path d="M8 6V4h8v2"></path>
-              <path d="M19 6l-1 14H6L5 6"></path>
-              <path d="M10 11v6"></path>
-              <path d="M14 11v6"></path>
-            </svg>
+            ${ideaDeleteIconMarkup}
           </button>
         </div>
       </li>`;
