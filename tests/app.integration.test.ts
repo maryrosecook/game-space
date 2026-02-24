@@ -23,6 +23,8 @@ const TEST_ADMIN_PASSWORD = 'correct horse battery staple';
 const TEST_ADMIN_PASSWORD_HASH =
   'scrypt$ASNFZ4mrze8BI0VniavN7w==$M+OVA7qtmUR3CHE87sPzm7h2MpJU1PXNk9qSpl2YPwHyaL8eByBbvuCTXEVTUVc/mwL9EhXgQ14qdOIyRUXu1Q==';
 const TEST_ADMIN_SESSION_SECRET = 'session-secret-for-tests-must-be-long';
+const TEST_PNG_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aQ0QAAAAASUVORK5CYII=';
 
 const originalPasswordHash = process.env.GAME_SPACE_ADMIN_PASSWORD_HASH;
 const originalSessionSecret = process.env.GAME_SPACE_ADMIN_SESSION_SECRET;
@@ -34,6 +36,7 @@ const originalCodegenClaudeThinking = process.env.CODEGEN_CLAUDE_THINKING;
 type CapturedRun = {
   prompt: string;
   cwd: string;
+  imagePaths: string[];
 };
 
 class CapturingRunner implements CodexRunner {
@@ -45,8 +48,11 @@ class CapturingRunner implements CodexRunner {
   }
 
   async run(prompt: string, cwd: string, options?: CodexRunOptions): Promise<CodexRunResult> {
-    void options;
-    this.calls.push({ prompt, cwd });
+    this.calls.push({
+      prompt,
+      cwd,
+      imagePaths: Array.isArray(options?.imagePaths) ? [...options.imagePaths] : []
+    });
     return {
       sessionId: this.sessionId,
       success: true,
@@ -242,7 +248,8 @@ async function postPromptAsAdmin(
   authSession: AuthSession,
   sourceVersionId: string,
   prompt: string,
-  csrfToken: string = authSession.csrfToken
+  csrfToken: string = authSession.csrfToken,
+  annotationPngDataUrl: string | null = null
 ): Promise<request.Response> {
   return request(app)
     .post(`/api/games/${encodeURIComponent(sourceVersionId)}/prompts`)
@@ -251,7 +258,7 @@ async function postPromptAsAdmin(
     .set('Cookie', authSession.cookieHeader)
     .set('X-CSRF-Token', csrfToken)
     .set('Content-Type', 'application/json')
-    .send({ prompt });
+    .send({ prompt, annotationPngDataUrl });
 }
 
 async function readMetadata(metadataPath: string): Promise<StoredMetadata> {
@@ -1620,6 +1627,142 @@ describe('express app integration', () => {
     const forkMetadata = await readMetadata(forkMetadataPath);
     expect(forkMetadata.codexSessionId).toBe(emittedSessionId);
     expect(forkMetadata.codexSessionStatus).toBe('created');
+  });
+
+
+  it('passes annotation image as codex attachment when provided', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-prompt-annotation-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'source',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
+    await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
+
+    const codexRunner = new CapturingRunner();
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath,
+      codexRunner
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await postPromptAsAdmin(
+      app,
+      authSession,
+      'source',
+      'add a jump arc',
+      authSession.csrfToken,
+      TEST_PNG_DATA_URL
+    );
+
+    expect(response.status).toBe(202);
+    expect(codexRunner.calls).toHaveLength(1);
+    expect(codexRunner.calls[0]?.prompt).toBe(
+      'BASE PROMPT\n\nadd a jump arc\n\n[annotation_overlay_png_attached]\nUse the attached annotation PNG as visual context for this prompt.'
+    );
+    expect(codexRunner.calls[0]?.prompt).not.toContain('data:image/png;base64');
+    expect(codexRunner.calls[0]?.imagePaths).toHaveLength(1);
+
+    const forkId = response.body.forkId as string;
+    const expectedPrefix = path.join(gamesRootPath, forkId, '.annotation-overlay-');
+    expect(codexRunner.calls[0]?.imagePaths[0]?.startsWith(expectedPrefix)).toBe(true);
+    expect(codexRunner.calls[0]?.imagePaths[0]?.endsWith('.png')).toBe(true);
+  });
+
+  it('passes annotation image as attachment when provider is claude', async () => {
+    process.env.CODEGEN_PROVIDER = 'claude';
+
+    const tempDirectoryPath = await createTempDirectory('game-space-app-prompt-annotation-claude-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'source',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
+    await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
+
+    const codexRunner = new CapturingRunner();
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath,
+      codexRunner
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await postPromptAsAdmin(
+      app,
+      authSession,
+      'source',
+      'add a jump arc',
+      authSession.csrfToken,
+      TEST_PNG_DATA_URL
+    );
+
+    expect(response.status).toBe(202);
+    expect(codexRunner.calls).toHaveLength(1);
+    expect(codexRunner.calls[0]?.prompt).toBe(
+      'BASE PROMPT\n\nadd a jump arc\n\n[annotation_overlay_png_attached]\nUse the attached annotation PNG as visual context for this prompt.'
+    );
+    expect(codexRunner.calls[0]?.prompt).not.toContain('data:image/png;base64');
+    expect(codexRunner.calls[0]?.imagePaths).toHaveLength(1);
+
+    const forkId = response.body.forkId as string;
+    const expectedPrefix = path.join(gamesRootPath, forkId, '.annotation-overlay-');
+    expect(codexRunner.calls[0]?.imagePaths[0]?.startsWith(expectedPrefix)).toBe(true);
+    expect(codexRunner.calls[0]?.imagePaths[0]?.endsWith('.png')).toBe(true);
+  });
+
+  it('rejects invalid annotation payloads', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-prompt-invalid-annotation-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'source',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const codexRunner = new CapturingRunner();
+    const app = createApp({
+      gamesRootPath,
+      codexRunner
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await postPromptAsAdmin(
+      app,
+      authSession,
+      'source',
+      'add a jump arc',
+      authSession.csrfToken,
+      'data:image/png;base64,not-valid-base64'
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: 'Annotation pixels must be a PNG data URL (data:image/png;base64,...)'
+    });
+    expect(codexRunner.calls).toHaveLength(0);
   });
 
   it('returns idea generation status in ideas api responses', async () => {

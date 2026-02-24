@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 
 import { isObjectRecord } from './fsUtils';
 import { readCodegenConfigFromEnv, type CodegenConfig } from './codegenConfig';
@@ -13,6 +14,7 @@ export type CodexRunResult = {
 
 export type CodexRunOptions = {
   onSessionId?: (sessionId: string) => void;
+  imagePaths?: readonly string[];
 };
 
 export interface CodexRunner {
@@ -115,8 +117,8 @@ function drainStdoutLines(
 export class SpawnCodexRunner implements CodexRunner {
   async run(prompt: string, cwd: string, options: CodexRunOptions = {}): Promise<CodexRunResult> {
     return new Promise<CodexRunResult>((resolve, reject) => {
-      const { onSessionId } = options;
-      const childProcess = spawn('codex', ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', '-'], {
+      const { onSessionId, imagePaths = [] } = options;
+      const childProcess = spawn('codex', buildCodexExecArgs(imagePaths), {
         cwd,
         stdio: ['pipe', 'pipe', 'pipe']
       });
@@ -180,7 +182,84 @@ type SpawnClaudeRunnerOptions = {
   thinking: string;
 };
 
-function buildClaudeRunnerArgs(model: string, thinking: string, sessionId: string): string[] {
+type ClaudeImageContentBlock = {
+  type: 'image';
+  source: {
+    type: 'base64';
+    media_type: string;
+    data: string;
+  };
+};
+
+type ClaudeTextContentBlock = {
+  type: 'text';
+  text: string;
+};
+
+type ClaudeUserInputLine = {
+  type: 'user';
+  session_id: string;
+  message: {
+    role: 'user';
+    content: readonly (ClaudeImageContentBlock | ClaudeTextContentBlock)[];
+  };
+  parent_tool_use_id: null;
+};
+
+function mediaTypeForImagePath(imagePath: string): string {
+  const fileExtension = path.extname(imagePath).toLowerCase();
+  switch (fileExtension) {
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.gif':
+      return 'image/gif';
+    case '.webp':
+      return 'image/webp';
+    default:
+      throw new Error(
+        `Claude annotation images must use png, jpg, jpeg, gif, or webp extensions. Received: ${imagePath}`
+      );
+  }
+}
+
+async function buildClaudeImageContentBlock(imagePath: string): Promise<ClaudeImageContentBlock> {
+  const imageBytes = await fs.readFile(imagePath);
+  return {
+    type: 'image',
+    source: {
+      type: 'base64',
+      media_type: mediaTypeForImagePath(imagePath),
+      data: imageBytes.toString('base64')
+    }
+  };
+}
+
+export async function buildClaudeStreamJsonUserInput(
+  prompt: string,
+  imagePaths: readonly string[]
+): Promise<string> {
+  const imageContent = await Promise.all(imagePaths.map((imagePath) => buildClaudeImageContentBlock(imagePath)));
+  const line: ClaudeUserInputLine = {
+    type: 'user',
+    session_id: '',
+    message: {
+      role: 'user',
+      content: [...imageContent, { type: 'text', text: prompt }]
+    },
+    parent_tool_use_id: null
+  };
+  return `${JSON.stringify(line)}\n`;
+}
+
+function buildClaudeRunnerArgs(
+  model: string,
+  thinking: string,
+  sessionId: string,
+  useStreamJsonInput: boolean
+): string[] {
   const args: string[] = [
     '--verbose',
     '--print',
@@ -192,6 +271,10 @@ function buildClaudeRunnerArgs(model: string, thinking: string, sessionId: strin
     '--session-id',
     sessionId
   ];
+
+  if (useStreamJsonInput) {
+    args.push('--input-format', 'stream-json');
+  }
 
   if (thinking.trim().length > 0) {
     args.push(
@@ -213,11 +296,21 @@ export class SpawnClaudeRunner implements CodexRunner {
   }
 
   async run(prompt: string, cwd: string, options: CodexRunOptions = {}): Promise<CodexRunResult> {
+    const { onSessionId, imagePaths = [] } = options;
+    const useStreamJsonInput = imagePaths.length > 0;
+    const promptInput = useStreamJsonInput
+      ? await buildClaudeStreamJsonUserInput(prompt, imagePaths)
+      : prompt;
+
     return new Promise<CodexRunResult>((resolve, reject) => {
-      const { onSessionId } = options;
       const generatedSessionId = randomUUID();
       notifySessionId(onSessionId, generatedSessionId);
-      const args = buildClaudeRunnerArgs(this.model, this.thinking, generatedSessionId);
+      const args = buildClaudeRunnerArgs(
+        this.model,
+        this.thinking,
+        generatedSessionId,
+        useStreamJsonInput
+      );
       const childProcess = spawn('claude', args, {
         cwd,
         stdio: ['pipe', 'pipe', 'pipe']
@@ -272,7 +365,7 @@ export class SpawnClaudeRunner implements CodexRunner {
         });
       });
 
-      childProcess.stdin.end(prompt);
+      childProcess.stdin.end(promptInput);
     });
   }
 }
@@ -306,11 +399,27 @@ export class SpawnCodegenRunner implements CodexRunner {
   }
 }
 
-export function composeCodexPrompt(buildPrompt: string, userPrompt: string): string {
+export function composeCodexPrompt(
+  buildPrompt: string,
+  userPrompt: string,
+  annotationPngDataUrl: string | null = null
+): string {
   const normalizedBuildPrompt = buildPrompt.trimEnd();
-  return `${normalizedBuildPrompt}\n\n${userPrompt}`;
+  const normalizedAnnotation =
+    typeof annotationPngDataUrl === 'string' ? annotationPngDataUrl.trim() : '';
+
+  if (normalizedAnnotation.length === 0) {
+    return `${normalizedBuildPrompt}\n\n${userPrompt}`;
+  }
+
+  return `${normalizedBuildPrompt}\n\n${userPrompt}\n\n[annotation_overlay_png_data_url]\n${normalizedAnnotation}`;
 }
 
 export async function readBuildPromptFile(buildPromptPath: string): Promise<string> {
   return fs.readFile(buildPromptPath, 'utf8');
+}
+
+export function buildCodexExecArgs(imagePaths: readonly string[] = []): string[] {
+  const imageArgs = imagePaths.flatMap((imagePath) => ['--image', imagePath]);
+  return ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', ...imageArgs, '-'];
 }

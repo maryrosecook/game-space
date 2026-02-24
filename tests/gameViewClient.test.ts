@@ -7,6 +7,11 @@ import { describe, expect, it } from 'vitest';
 type TestEvent = {
   key?: string;
   data?: unknown;
+  button?: number;
+  pointerId?: number;
+  pointerType?: string;
+  clientX?: number;
+  clientY?: number;
   preventDefault: () => void;
 };
 
@@ -31,6 +36,13 @@ type TranscriptRenderCall = {
   messages: unknown;
   options: { autoScrollToBottom?: boolean } | undefined;
 };
+
+type CanvasOperation =
+  | { type: 'beginPath' }
+  | { type: 'moveTo'; x: number; y: number }
+  | { type: 'lineTo'; x: number; y: number }
+  | { type: 'stroke' }
+  | { type: 'clearRect'; x: number; y: number; width: number; height: number };
 
 class TestEventTarget {
   private readonly listeners = new Map<string, EventListener[]>();
@@ -202,6 +214,93 @@ class TestRTCPeerConnection {
   }
 }
 
+
+class TestCanvasRenderingContext2D {
+  public readonly operations: CanvasOperation[] = [];
+  public lineCapValue = '';
+  public lineJoinValue = '';
+  public strokeStyleValue = '';
+  public lineWidthValue = 0;
+
+  setTransform(...args: number[]): void {
+    void args;
+  }
+
+  beginPath(): void {
+    this.operations.push({ type: 'beginPath' });
+  }
+
+  moveTo(x: number, y: number): void {
+    this.operations.push({ type: 'moveTo', x, y });
+  }
+
+  lineTo(x: number, y: number): void {
+    this.operations.push({ type: 'lineTo', x, y });
+  }
+
+  stroke(): void {
+    this.operations.push({ type: 'stroke' });
+  }
+
+  clearRect(x: number, y: number, width: number, height: number): void {
+    this.operations.push({ type: 'clearRect', x, y, width, height });
+  }
+
+  set lineCap(value: string) {
+    this.lineCapValue = value;
+  }
+
+  set lineJoin(value: string) {
+    this.lineJoinValue = value;
+  }
+
+  set strokeStyle(value: string) {
+    this.strokeStyleValue = value;
+  }
+
+  set lineWidth(value: number) {
+    this.lineWidthValue = value;
+  }
+}
+
+class TestHTMLCanvasElement extends TestHTMLElement {
+  public width = 0;
+  public height = 0;
+  public clientWidth = 360;
+  public clientHeight = 640;
+  private readonly context = new TestCanvasRenderingContext2D();
+  private readonly capturedPointerIds = new Set<number>();
+
+  getContext(kind: string): TestCanvasRenderingContext2D | null {
+    if (kind !== '2d') {
+      return null;
+    }
+
+    return this.context;
+  }
+
+  toDataURL(type?: string): string {
+    void type;
+    return 'data:image/png;base64,test-canvas';
+  }
+
+  getBoundingClientRect(): { left: number; top: number } {
+    return { left: 0, top: 0 };
+  }
+
+  setPointerCapture(pointerId: number): void {
+    this.capturedPointerIds.add(pointerId);
+  }
+
+  hasPointerCapture(pointerId: number): boolean {
+    return this.capturedPointerIds.has(pointerId);
+  }
+
+  releasePointerCapture(pointerId: number): void {
+    this.capturedPointerIds.delete(pointerId);
+  }
+}
+
 class TestBodyElement extends TestHTMLElement {
   public readonly dataset: { versionId?: string; csrfToken?: string; gameFavorited?: string; codegenProvider?: string };
 
@@ -244,6 +343,7 @@ type GameViewHarness = {
   promptInput: TestHTMLInputElement;
   promptPanel: TestHTMLElement;
   promptOverlay: TestHTMLElement;
+  promptDrawingCanvas: TestHTMLCanvasElement;
   renderTranscriptCalls: TranscriptRenderCall[];
   getScrollToBottomCalls: () => number;
   intervalCallbacks: Array<() => void>;
@@ -263,6 +363,11 @@ function createEvent(overrides: Partial<TestEvent> = {}): TestEvent {
   return {
     key: overrides.key,
     data: overrides.data,
+    button: overrides.button,
+    pointerId: overrides.pointerId,
+    pointerType: overrides.pointerType,
+    clientX: overrides.clientX,
+    clientY: overrides.clientY,
     preventDefault: overrides.preventDefault ?? (() => {})
   };
 }
@@ -296,6 +401,7 @@ async function runGameViewScript(
   const codexTranscript = new TestHTMLElement();
   const promptOverlay = new TestHTMLElement();
   const gameSessionView = new TestHTMLElement();
+  const promptDrawingCanvas = new TestHTMLCanvasElement();
 
   const document = new TestDocument('source-version', csrfToken, gameFavorited, codegenProvider);
   document.registerElement('prompt-panel', promptPanel);
@@ -308,6 +414,7 @@ async function runGameViewScript(
   document.registerElement('game-codex-toggle', codexToggle);
   document.registerElement('game-codex-transcript', codexTranscript);
   document.registerElement('prompt-overlay', promptOverlay);
+  document.registerElement('prompt-drawing-canvas', promptDrawingCanvas);
   document.registerElement('game-codex-session-view', gameSessionView);
 
   const fetchCalls: FetchCall[] = [];
@@ -387,6 +494,7 @@ async function runGameViewScript(
     HTMLElement: TestHTMLElement,
     HTMLFormElement: TestHTMLFormElement,
     HTMLInputElement: TestHTMLInputElement,
+    HTMLCanvasElement: TestHTMLCanvasElement,
     navigator,
     RTCPeerConnection: TestRTCPeerConnection,
     createCodexTranscriptPresenter(_sessionView: unknown, options?: { transcriptTitle?: string }) {
@@ -426,6 +534,7 @@ async function runGameViewScript(
     promptInput,
     promptPanel,
     promptOverlay,
+    promptDrawingCanvas,
     renderTranscriptCalls,
     getScrollToBottomCalls: () => scrollToBottomCalls,
     intervalCallbacks,
@@ -458,7 +567,7 @@ describe('game view prompt submit client', () => {
           'Content-Type': 'application/json',
           'X-CSRF-Token': 'csrf-token-123'
         },
-        body: JSON.stringify({ prompt: 'darken the ball' })
+        body: JSON.stringify({ prompt: 'darken the ball', annotationPngDataUrl: null })
       }
     });
     expect(harness.assignCalls).toEqual(['/game/pebble-iris-dawn']);
@@ -489,7 +598,7 @@ describe('game view prompt submit client', () => {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ prompt: 'darken the ball' })
+      body: JSON.stringify({ prompt: 'darken the ball', annotationPngDataUrl: null })
     });
   });
 
@@ -698,6 +807,153 @@ describe('game view prompt submit client', () => {
     expect(peerConnection?.remoteDescription).toEqual({ type: 'answer', sdp: 'fake-answer-sdp' });
   });
 
+  it('enables annotation drawing during recording and includes annotation PNG in prompt submit', async () => {
+    const harness = await runGameViewScript(async (url) => {
+      if (url === '/api/transcribe') {
+        return {
+          ok: true,
+          async json() {
+            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
+          }
+        };
+      }
+
+      if (url === 'https://api.openai.com/v1/realtime/calls') {
+        return {
+          ok: true,
+          async text() {
+            return 'fake-answer-sdp';
+          }
+        };
+      }
+
+      if (url === '/api/games/source-version/prompts') {
+        return {
+          ok: true,
+          async json() {
+            return { forkId: 'voice-fork' };
+          }
+        };
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(true);
+    expect(harness.promptDrawingCanvas.getAttribute('aria-hidden')).toBe('false');
+
+    const drawingContext = harness.promptDrawingCanvas.getContext('2d');
+    if (!drawingContext) {
+      throw new Error('drawing context missing from test harness');
+    }
+
+    harness.promptDrawingCanvas.dispatchEvent(
+      'pointerdown',
+      createEvent({ pointerId: 12, pointerType: 'mouse', button: 0, clientX: 25, clientY: 35 })
+    );
+    harness.promptDrawingCanvas.dispatchEvent(
+      'pointermove',
+      createEvent({ pointerId: 12, pointerType: 'mouse', button: 0, clientX: 70, clientY: 96 })
+    );
+    harness.promptDrawingCanvas.dispatchEvent(
+      'pointerup',
+      createEvent({ pointerId: 12, pointerType: 'mouse', button: 0, clientX: 70, clientY: 96 })
+    );
+
+    const peerConnection = harness.getPeerConnection();
+    peerConnection?.dataChannel.dispatchEvent(
+      'message',
+      createEvent({
+        data: JSON.stringify({
+          type: 'conversation.item.input_audio_transcription.completed',
+          transcript: 'make the paddle bigger'
+        })
+      })
+    );
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    expect(drawingContext.strokeStyleValue).toBe('rgba(128, 128, 128, 0.5)');
+    expect(drawingContext.operations).toContainEqual({ type: 'moveTo', x: 25, y: 35 });
+    expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 25, y: 35 });
+    expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 70, y: 96 });
+    expect(drawingContext.operations).toContainEqual({ type: 'stroke' });
+    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(false);
+    expect(harness.promptDrawingCanvas.getAttribute('aria-hidden')).toBe('true');
+
+    expect(harness.fetchCalls[2]).toEqual({
+      url: '/api/games/source-version/prompts',
+      init: {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': 'csrf-token-123'
+        },
+        body: JSON.stringify({
+          prompt: 'make the paddle bigger',
+          annotationPngDataUrl: 'data:image/png;base64,test-canvas'
+        })
+      }
+    });
+  });
+
+  it('draws from touch pointer events while recording', async () => {
+    const harness = await runGameViewScript(async (url) => {
+      if (url === '/api/transcribe') {
+        return {
+          ok: true,
+          async json() {
+            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
+          }
+        };
+      }
+
+      if (url === 'https://api.openai.com/v1/realtime/calls') {
+        return {
+          ok: true,
+          async text() {
+            return 'fake-answer-sdp';
+          }
+        };
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    const drawingContext = harness.promptDrawingCanvas.getContext('2d');
+    if (!drawingContext) {
+      throw new Error('drawing context missing from test harness');
+    }
+
+    harness.promptDrawingCanvas.dispatchEvent(
+      'pointerdown',
+      createEvent({ pointerId: 3, pointerType: 'touch', clientX: 11, clientY: 17 })
+    );
+    harness.promptDrawingCanvas.dispatchEvent(
+      'pointermove',
+      createEvent({ pointerId: 3, pointerType: 'touch', clientX: 38, clientY: 61 })
+    );
+    harness.promptDrawingCanvas.dispatchEvent(
+      'pointerup',
+      createEvent({ pointerId: 3, pointerType: 'touch', clientX: 38, clientY: 61 })
+    );
+
+    expect(drawingContext.operations).toContainEqual({ type: 'moveTo', x: 11, y: 17 });
+    expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 11, y: 17 });
+    expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 38, y: 61 });
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(false);
+  });
+
   it('does not retry a fallback endpoint when realtime calls returns 400', async () => {
     const harness = await runGameViewScript(async (url) => {
       if (url === '/api/transcribe') {
@@ -841,7 +1097,7 @@ describe('game view prompt submit client', () => {
           'Content-Type': 'application/json',
           'X-CSRF-Token': 'csrf-token-123'
         },
-        body: JSON.stringify({ prompt: 'make the paddle bigger' })
+        body: JSON.stringify({ prompt: 'make the paddle bigger', annotationPngDataUrl: null })
       }
     });
     expect(harness.assignCalls).toEqual(['/game/voice-fork']);

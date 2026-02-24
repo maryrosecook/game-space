@@ -4,6 +4,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildClaudeStreamJsonUserInput,
+  buildCodexExecArgs,
   composeCodexPrompt,
   parseSessionIdFromCodexEventLine,
   readBuildPromptFile
@@ -11,12 +13,81 @@ import {
 import { createTempDirectory } from './testHelpers';
 
 describe('composeCodexPrompt', () => {
+  it('builds codex exec args without images', () => {
+    expect(buildCodexExecArgs()).toEqual(['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', '-']);
+  });
+
+  it('builds codex exec args with image attachments', () => {
+    expect(buildCodexExecArgs(['/tmp/annotation-a.png', '/tmp/annotation-b.png'])).toEqual([
+      'exec',
+      '--json',
+      '--dangerously-bypass-approvals-and-sandbox',
+      '--image',
+      '/tmp/annotation-a.png',
+      '--image',
+      '/tmp/annotation-b.png',
+      '-'
+    ]);
+  });
+
+  it('builds claude stream-json user input with image attachments', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-claude-input-');
+    const imagePath = path.join(tempDirectoryPath, 'annotation.png');
+    const encodedImage =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aQ0QAAAAASUVORK5CYII=';
+    await fs.writeFile(imagePath, Buffer.from(encodedImage, 'base64'));
+
+    const serializedInput = await buildClaudeStreamJsonUserInput('Explain this annotation', [imagePath]);
+
+    expect(JSON.parse(serializedInput.trim())).toEqual({
+      type: 'user',
+      session_id: '',
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: encodedImage
+            }
+          },
+          {
+            type: 'text',
+            text: 'Explain this annotation'
+          }
+        ]
+      },
+      parent_tool_use_id: null
+    });
+  });
+
+  it('rejects unsupported claude image attachment extensions', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-claude-input-ext-');
+    const imagePath = path.join(tempDirectoryPath, 'annotation.bmp');
+    await fs.writeFile(imagePath, 'not-a-supported-image', 'utf8');
+
+    await expect(buildClaudeStreamJsonUserInput('Explain this annotation', [imagePath])).rejects.toThrow(
+      'Claude annotation images must use png, jpg, jpeg, gif, or webp extensions'
+    );
+  });
+
   it('prepends build prompt and preserves arbitrary user text', () => {
     const buildPrompt = 'Line A\nLine B\n';
     const userPrompt = 'Keep "quotes"\nline-2\n$HOME `raw`';
 
     const composed = composeCodexPrompt(buildPrompt, userPrompt);
     expect(composed).toBe('Line A\nLine B\n\nKeep "quotes"\nline-2\n$HOME `raw`');
+  });
+
+  it('appends annotation pixels when provided', () => {
+    const buildPrompt = 'Line A\nLine B\n';
+    const userPrompt = 'add portals';
+    const annotation = 'data:image/png;base64,abc123';
+
+    const composed = composeCodexPrompt(buildPrompt, userPrompt, annotation);
+    expect(composed).toBe('Line A\nLine B\n\nadd portals\n\n[annotation_overlay_png_data_url]\ndata:image/png;base64,abc123');
   });
 
   it('loads prompt template bytes from disk unchanged', async () => {
@@ -35,8 +106,8 @@ describe('composeCodexPrompt', () => {
     expect(buildPromptText).toContain('Do not read, depend on, or modify files outside the current directory.');
     expect(buildPromptText).toContain('startGame');
     expect(buildPromptText).toContain('dist/game.js');
-    expect(buildPromptText).toContain('typecheck');
-    expect(buildPromptText).toContain('typescript');
+    expect(buildPromptText).toContain('You must not run linting commands.');
+    expect(buildPromptText).toContain('You must not run tests.');
   });
 
   it('extracts session id from legacy session_meta events', () => {
