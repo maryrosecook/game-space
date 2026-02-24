@@ -249,7 +249,8 @@ async function postPromptAsAdmin(
   sourceVersionId: string,
   prompt: string,
   csrfToken: string = authSession.csrfToken,
-  annotationPngDataUrl: string | null = null
+  annotationPngDataUrl: string | null = null,
+  gameScreenshotPngDataUrl: string | null = null
 ): Promise<request.Response> {
   return request(app)
     .post(`/api/games/${encodeURIComponent(sourceVersionId)}/prompts`)
@@ -258,7 +259,7 @@ async function postPromptAsAdmin(
     .set('Cookie', authSession.cookieHeader)
     .set('X-CSRF-Token', csrfToken)
     .set('Content-Type', 'application/json')
-    .send({ prompt, annotationPngDataUrl });
+    .send({ prompt, annotationPngDataUrl, gameScreenshotPngDataUrl });
 }
 
 async function readMetadata(metadataPath: string): Promise<StoredMetadata> {
@@ -1667,7 +1668,7 @@ describe('express app integration', () => {
     expect(response.status).toBe(202);
     expect(codexRunner.calls).toHaveLength(1);
     expect(codexRunner.calls[0]?.prompt).toBe(
-      'BASE PROMPT\n\nadd a jump arc\n\n[annotation_overlay_png_attached]\nUse the attached annotation PNG as visual context for this prompt.'
+      'BASE PROMPT\n\nadd a jump arc\n\n[visual_context_png_attached]\nUse the attached annotation PNG as visual context for this prompt.'
     );
     expect(codexRunner.calls[0]?.prompt).not.toContain('data:image/png;base64');
     expect(codexRunner.calls[0]?.imagePaths).toHaveLength(1);
@@ -1717,7 +1718,7 @@ describe('express app integration', () => {
     expect(response.status).toBe(202);
     expect(codexRunner.calls).toHaveLength(1);
     expect(codexRunner.calls[0]?.prompt).toBe(
-      'BASE PROMPT\n\nadd a jump arc\n\n[annotation_overlay_png_attached]\nUse the attached annotation PNG as visual context for this prompt.'
+      'BASE PROMPT\n\nadd a jump arc\n\n[visual_context_png_attached]\nUse the attached annotation PNG as visual context for this prompt.'
     );
     expect(codexRunner.calls[0]?.prompt).not.toContain('data:image/png;base64');
     expect(codexRunner.calls[0]?.imagePaths).toHaveLength(1);

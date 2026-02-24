@@ -10,6 +10,7 @@ const codexToggle = document.getElementById('game-codex-toggle');
 const deleteButton = document.getElementById('game-tab-delete');
 const promptOverlay = document.getElementById('prompt-overlay');
 const promptDrawingCanvas = document.getElementById('prompt-drawing-canvas');
+const gameCanvas = document.getElementById('game-canvas');
 const codexTranscript = document.getElementById('game-codex-transcript');
 const gameSessionView = document.getElementById('game-codex-session-view');
 
@@ -66,6 +67,7 @@ const overlayWordDrainIntervalMs = 100;
 let annotationPointerId = null;
 let annotationStrokeInProgress = false;
 let annotationHasInk = false;
+let recordingStartGameScreenshotPngDataUrl = null;
 
 
 function drawingContext() {
@@ -198,6 +200,76 @@ function readAnnotationPngDataUrl() {
   }
 
   return promptDrawingCanvas.toDataURL('image/png');
+}
+
+function captureGameScreenshotPngDataUrl() {
+  if (!(gameCanvas instanceof HTMLCanvasElement) || typeof gameCanvas.toDataURL !== 'function') {
+    return null;
+  }
+
+  try {
+    return gameCanvas.toDataURL('image/png');
+  } catch {
+    return null;
+  }
+}
+
+function loadDataUrlImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    if (typeof dataUrl !== 'string' || dataUrl.trim().length === 0) {
+      reject(new Error('Image data URL missing'));
+      return;
+    }
+
+    const image = new Image();
+    image.addEventListener('load', () => resolve(image), { once: true });
+    image.addEventListener('error', () => reject(new Error('Image data URL failed to load')), { once: true });
+    image.src = dataUrl;
+  });
+}
+
+async function composePromptScreenshotPngDataUrl(baseGameScreenshotPngDataUrl = null) {
+  const gameScreenshotPngDataUrl =
+    typeof baseGameScreenshotPngDataUrl === 'string' && baseGameScreenshotPngDataUrl.trim().length > 0
+      ? baseGameScreenshotPngDataUrl
+      : captureGameScreenshotPngDataUrl();
+  if (!gameScreenshotPngDataUrl) {
+    return null;
+  }
+
+  const annotationPngDataUrl = readAnnotationPngDataUrl();
+  if (!annotationPngDataUrl) {
+    return gameScreenshotPngDataUrl;
+  }
+
+  if (typeof document.createElement !== 'function') {
+    return gameScreenshotPngDataUrl;
+  }
+
+  const compositeCanvas = document.createElement('canvas');
+  if (!(compositeCanvas instanceof HTMLCanvasElement)) {
+    return gameScreenshotPngDataUrl;
+  }
+
+  const compositeContext = compositeCanvas.getContext('2d');
+  if (!compositeContext || typeof compositeContext.drawImage !== 'function') {
+    return gameScreenshotPngDataUrl;
+  }
+
+  try {
+    const [gameImage, annotationImage] = await Promise.all([
+      loadDataUrlImage(gameScreenshotPngDataUrl),
+      loadDataUrlImage(annotationPngDataUrl)
+    ]);
+    compositeCanvas.width = Math.max(1, gameImage.width);
+    compositeCanvas.height = Math.max(1, gameImage.height);
+    compositeContext.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height);
+    compositeContext.drawImage(gameImage, 0, 0, compositeCanvas.width, compositeCanvas.height);
+    compositeContext.drawImage(annotationImage, 0, 0, compositeCanvas.width, compositeCanvas.height);
+    return compositeCanvas.toDataURL('image/png');
+  } catch {
+    return gameScreenshotPngDataUrl;
+  }
 }
 
 function applyFavoriteState() {
@@ -518,6 +590,7 @@ async function startRealtimeRecording() {
   completedTranscriptionSegments = [];
   clearTranscriptionDisplayBuffer();
   clearDrawingCanvas();
+  recordingStartGameScreenshotPngDataUrl = captureGameScreenshotPngDataUrl();
   setAnnotationEnabled(false);
 
   let peerConnection = null;
@@ -596,8 +669,9 @@ async function stopRealtimeRecording() {
 
     const transcribedPrompt = completedTranscriptionSegments.join(' ').trim();
     const annotationPngDataUrl = readAnnotationPngDataUrl();
+    const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl(recordingStartGameScreenshotPngDataUrl);
     if (!editPanelOpen && versionId && transcribedPrompt.length > 0) {
-      await submitPrompt(transcribedPrompt, annotationPngDataUrl);
+      await submitPrompt(transcribedPrompt, annotationPngDataUrl, gameScreenshotPngDataUrl);
       completedTranscriptionSegments = [];
       clearTranscriptionDisplayBuffer();
     }
@@ -605,6 +679,7 @@ async function stopRealtimeRecording() {
     logRealtimeTranscription('stopped');
     logRealtimeTranscription('final transcribed text', promptInput.value);
     recordingInProgress = false;
+    recordingStartGameScreenshotPngDataUrl = null;
     setAnnotationEnabled(false);
     closeRealtimeConnection();
     transcriptionInFlight = false;
@@ -845,7 +920,7 @@ function startTranscriptPolling() {
   );
 }
 
-async function submitPrompt(prompt, annotationPngDataUrl = null) {
+async function submitPrompt(prompt, annotationPngDataUrl = null, gameScreenshotPngDataUrl = null) {
   const headers = {
     'Content-Type': 'application/json'
   };
@@ -859,7 +934,8 @@ async function submitPrompt(prompt, annotationPngDataUrl = null) {
     headers,
     body: JSON.stringify({
       prompt,
-      annotationPngDataUrl: typeof annotationPngDataUrl === 'string' ? annotationPngDataUrl : null
+      annotationPngDataUrl: typeof annotationPngDataUrl === 'string' ? annotationPngDataUrl : null,
+      gameScreenshotPngDataUrl: typeof gameScreenshotPngDataUrl === 'string' ? gameScreenshotPngDataUrl : null
     })
   });
 
@@ -895,7 +971,11 @@ promptForm.addEventListener('submit', (event) => {
     return;
   }
 
-  void submitPrompt(prompt).catch(() => {
+  void (async () => {
+    const annotationPngDataUrl = readAnnotationPngDataUrl();
+    const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl();
+    await submitPrompt(prompt, annotationPngDataUrl, gameScreenshotPngDataUrl);
+  })().catch(() => {
     // Keep prompt submit non-blocking if networking or payload parsing fails.
   });
 

@@ -42,7 +42,8 @@ type CanvasOperation =
   | { type: 'moveTo'; x: number; y: number }
   | { type: 'lineTo'; x: number; y: number }
   | { type: 'stroke' }
-  | { type: 'clearRect'; x: number; y: number; width: number; height: number };
+  | { type: 'clearRect'; x: number; y: number; width: number; height: number }
+  | { type: 'drawImage'; width: number; height: number };
 
 class TestEventTarget {
   private readonly listeners = new Map<string, EventListener[]>();
@@ -248,6 +249,13 @@ class TestCanvasRenderingContext2D {
     this.operations.push({ type: 'clearRect', x, y, width, height });
   }
 
+  drawImage(image: { width?: number; height?: number }, x: number, y: number, width: number, height: number): void {
+    void image;
+    void x;
+    void y;
+    this.operations.push({ type: 'drawImage', width, height });
+  }
+
   set lineCap(value: string) {
     this.lineCapValue = value;
   }
@@ -328,6 +336,14 @@ class TestDocument extends TestEventTarget {
   getElementById(id: string): unknown {
     return this.elements.get(id) ?? null;
   }
+
+  createElement(tagName: string): unknown {
+    if (tagName === 'canvas') {
+      return new TestHTMLCanvasElement();
+    }
+
+    return null;
+  }
 }
 
 type GameViewHarness = {
@@ -346,6 +362,7 @@ type GameViewHarness = {
   promptPanel: TestHTMLElement;
   promptOverlay: TestHTMLElement;
   promptDrawingCanvas: TestHTMLCanvasElement;
+  gameCanvas: TestHTMLCanvasElement;
   renderTranscriptCalls: TranscriptRenderCall[];
   getScrollToBottomCalls: () => number;
   intervalCallbacks: Array<() => void>;
@@ -404,6 +421,7 @@ async function runGameViewScript(
   const promptOverlay = new TestHTMLElement();
   const gameSessionView = new TestHTMLElement();
   const promptDrawingCanvas = new TestHTMLCanvasElement();
+  const gameCanvas = new TestHTMLCanvasElement();
 
   const document = new TestDocument('source-version', csrfToken, gameFavorited, codegenProvider);
   document.registerElement('prompt-panel', promptPanel);
@@ -417,6 +435,7 @@ async function runGameViewScript(
   document.registerElement('game-codex-transcript', codexTranscript);
   document.registerElement('prompt-overlay', promptOverlay);
   document.registerElement('prompt-drawing-canvas', promptDrawingCanvas);
+  document.registerElement('game-canvas', gameCanvas);
   document.registerElement('game-codex-session-view', gameSessionView);
 
   const fetchCalls: FetchCall[] = [];
@@ -437,6 +456,16 @@ async function runGameViewScript(
         getUserMediaCalls += 1;
         return mediaStream;
       }
+    }
+  };
+
+  const Image = class extends TestEventTarget {
+    public width = 360;
+    public height = 640;
+
+    set src(value: string) {
+      void value;
+      this.dispatchEvent('load', createEvent());
     }
   };
 
@@ -481,6 +510,7 @@ async function runGameViewScript(
     .replace(/\nstartTranscriptPolling\(\);\s*$/, startTranscriptPolling ? '\nstartTranscriptPolling();\n' : '\n');
 
   const context = {
+    Image,
     document,
     window,
     fetch(url: string, init?: Record<string, unknown>): Promise<FetchResponse> {
@@ -537,6 +567,7 @@ async function runGameViewScript(
     promptPanel,
     promptOverlay,
     promptDrawingCanvas,
+    gameCanvas,
     renderTranscriptCalls,
     getScrollToBottomCalls: () => scrollToBottomCalls,
     intervalCallbacks,
@@ -569,7 +600,7 @@ describe('game view prompt submit client', () => {
           'Content-Type': 'application/json',
           'X-CSRF-Token': 'csrf-token-123'
         },
-        body: JSON.stringify({ prompt: 'darken the ball', annotationPngDataUrl: null })
+        body: JSON.stringify({ prompt: 'darken the ball', annotationPngDataUrl: null, gameScreenshotPngDataUrl: 'data:image/png;base64,test-canvas' })
       }
     });
     expect(harness.assignCalls).toEqual(['/game/pebble-iris-dawn']);
@@ -600,7 +631,7 @@ describe('game view prompt submit client', () => {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ prompt: 'darken the ball', annotationPngDataUrl: null })
+      body: JSON.stringify({ prompt: 'darken the ball', annotationPngDataUrl: null, gameScreenshotPngDataUrl: 'data:image/png;base64,test-canvas' })
     });
   });
 
@@ -897,7 +928,8 @@ describe('game view prompt submit client', () => {
         },
         body: JSON.stringify({
           prompt: 'make the paddle bigger',
-          annotationPngDataUrl: 'data:image/png;base64,test-canvas'
+          annotationPngDataUrl: 'data:image/png;base64,test-canvas',
+          gameScreenshotPngDataUrl: 'data:image/png;base64,test-canvas'
         })
       }
     });
@@ -1103,7 +1135,7 @@ describe('game view prompt submit client', () => {
           'Content-Type': 'application/json',
           'X-CSRF-Token': 'csrf-token-123'
         },
-        body: JSON.stringify({ prompt: 'make the paddle bigger', annotationPngDataUrl: null })
+        body: JSON.stringify({ prompt: 'make the paddle bigger', annotationPngDataUrl: null, gameScreenshotPngDataUrl: 'data:image/png;base64,test-canvas' })
       }
     });
     expect(harness.assignCalls).toEqual(['/game/voice-fork']);

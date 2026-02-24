@@ -85,8 +85,10 @@ type AppOptions = {
 const TRANSCRIPTION_MODEL_UNAVAILABLE_PATTERN =
   /model_not_found|does not have access to model/i;
 const ANNOTATION_PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+const GAME_SCREENSHOT_PNG_DATA_URL_PREFIX = "data:image/png;base64,";
 const ANNOTATION_PNG_BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 const MAX_ANNOTATION_PNG_BYTES = 1024 * 1024;
+const MAX_GAME_SCREENSHOT_PNG_BYTES = 3 * 1024 * 1024;
 const IDEAS_STARTER_VERSION_ID = "starter";
 
 function defaultLogger(message: string, error: unknown): void {
@@ -127,13 +129,33 @@ type PromptSubmitResult = {
 };
 
 function decodeAnnotationPngDataUrl(annotationPngDataUrl: string): Buffer | null {
-  const normalizedValue = annotationPngDataUrl.trim();
-  if (!normalizedValue.startsWith(ANNOTATION_PNG_DATA_URL_PREFIX)) {
+  return decodePngDataUrl(
+    annotationPngDataUrl,
+    ANNOTATION_PNG_DATA_URL_PREFIX,
+    MAX_ANNOTATION_PNG_BYTES,
+  );
+}
+
+function decodeGameScreenshotPngDataUrl(gameScreenshotPngDataUrl: string): Buffer | null {
+  return decodePngDataUrl(
+    gameScreenshotPngDataUrl,
+    GAME_SCREENSHOT_PNG_DATA_URL_PREFIX,
+    MAX_GAME_SCREENSHOT_PNG_BYTES,
+  );
+}
+
+function decodePngDataUrl(
+  pngDataUrl: string,
+  dataUrlPrefix: string,
+  maxBytes: number,
+): Buffer | null {
+  const normalizedValue = pngDataUrl.trim();
+  if (!normalizedValue.startsWith(dataUrlPrefix)) {
     return null;
   }
 
   const encodedPayload = normalizedValue
-    .slice(ANNOTATION_PNG_DATA_URL_PREFIX.length)
+    .slice(dataUrlPrefix.length)
     .replace(/\s+/g, "");
   if (
     encodedPayload.length === 0 ||
@@ -144,10 +166,7 @@ function decodeAnnotationPngDataUrl(annotationPngDataUrl: string): Buffer | null
   }
 
   const decodedPayload = Buffer.from(encodedPayload, "base64");
-  if (
-    decodedPayload.length === 0 ||
-    decodedPayload.length > MAX_ANNOTATION_PNG_BYTES
-  ) {
+  if (decodedPayload.length === 0 || decodedPayload.length > maxBytes) {
     return null;
   }
 
@@ -162,12 +181,30 @@ function decodeAnnotationPngDataUrl(annotationPngDataUrl: string): Buffer | null
   return decodedPayload;
 }
 
-function composePromptWithAttachedAnnotation(
+function composePromptWithAttachedVisualContext(
   buildPrompt: string,
   userPrompt: string,
+  options: {
+    hasAnnotationAttachment: boolean;
+    hasGameScreenshotAttachment: boolean;
+  },
 ): string {
   const basePrompt = composeCodexPrompt(buildPrompt, userPrompt, null);
-  return `${basePrompt}\n\n[annotation_overlay_png_attached]\nUse the attached annotation PNG as visual context for this prompt.`;
+  const instructions: string[] = [];
+
+  if (options.hasGameScreenshotAttachment) {
+    instructions.push("Use the attached game screenshot PNG as visual context for this prompt.");
+  }
+
+  if (options.hasAnnotationAttachment) {
+    instructions.push("Use the attached annotation PNG as visual context for this prompt.");
+  }
+
+  if (instructions.length === 0) {
+    return basePrompt;
+  }
+
+  return `${basePrompt}\n\n[visual_context_png_attached]\n${instructions.join("\n")}`;
 }
 
 async function submitPromptForVersion(options: {
@@ -178,6 +215,8 @@ async function submitPromptForVersion(options: {
   promptInput: string;
   annotationPngDataUrl?: string | null;
   annotationPngBytes?: Buffer | null;
+  gameScreenshotPngDataUrl?: string | null;
+  gameScreenshotPngBytes?: Buffer | null;
   codexRunner: CodexRunner;
   logError: ErrorLogger;
 }): Promise<PromptSubmitResult> {
@@ -189,6 +228,8 @@ async function submitPromptForVersion(options: {
     promptInput,
     annotationPngDataUrl,
     annotationPngBytes,
+    gameScreenshotPngDataUrl,
+    gameScreenshotPngBytes,
     codexRunner,
     logError,
   } = options;
@@ -204,16 +245,30 @@ async function submitPromptForVersion(options: {
   const shouldAttachAnnotationImage =
     annotationPngBytes instanceof Buffer &&
     (codegenProvider === "codex" || codegenProvider === "claude");
+  const shouldAttachGameScreenshotImage =
+    gameScreenshotPngBytes instanceof Buffer &&
+    (codegenProvider === "codex" || codegenProvider === "claude");
   const promptForRunner =
-    shouldAttachAnnotationImage
-      ? composePromptWithAttachedAnnotation(buildPrompt, promptInput)
-      : composeCodexPrompt(buildPrompt, promptInput, annotationPngDataUrl ?? null);
-  const annotationImagePath =
-    shouldAttachAnnotationImage
-      ? path.join(forkDirectoryPath, `.annotation-overlay-${randomUUID()}.png`)
-      : null;
-  if (annotationImagePath && annotationPngBytes) {
+    shouldAttachAnnotationImage || shouldAttachGameScreenshotImage
+      ? composePromptWithAttachedVisualContext(buildPrompt, promptInput, {
+          hasAnnotationAttachment: shouldAttachAnnotationImage,
+          hasGameScreenshotAttachment: shouldAttachGameScreenshotImage,
+        })
+      : composeCodexPrompt(buildPrompt, promptInput, annotationPngDataUrl ?? gameScreenshotPngDataUrl ?? null);
+  const imagePaths: string[] = [];
+  if (shouldAttachGameScreenshotImage && gameScreenshotPngBytes) {
+    const gameScreenshotImagePath = path.join(
+      forkDirectoryPath,
+      `.game-screenshot-${randomUUID()}.png`,
+    );
+    await fs.writeFile(gameScreenshotImagePath, gameScreenshotPngBytes);
+    imagePaths.push(gameScreenshotImagePath);
+  }
+
+  if (shouldAttachAnnotationImage && annotationPngBytes) {
+    const annotationImagePath = path.join(forkDirectoryPath, `.annotation-overlay-${randomUUID()}.png`);
     await fs.writeFile(annotationImagePath, annotationPngBytes);
+    imagePaths.push(annotationImagePath);
   }
 
   const forkMetadataPath = path.join(forkDirectoryPath, "metadata.json");
@@ -270,7 +325,7 @@ async function submitPromptForVersion(options: {
     onSessionId: (sessionId: string) => {
       persistSessionIdInBackground(sessionId);
     },
-    imagePaths: annotationImagePath ? [annotationImagePath] : undefined,
+    imagePaths: imagePaths.length > 0 ? imagePaths : undefined,
   };
 
   await persistSessionStatus("created");
@@ -310,13 +365,15 @@ async function submitPromptForVersion(options: {
       logError(`codex exec failed for ${forkedMetadata.id}`, error);
     })
     .finally(() => {
-      if (!annotationImagePath) {
+      if (imagePaths.length === 0) {
         return;
       }
 
-      void fs.rm(annotationImagePath, { force: true }).catch((error: unknown) => {
-        logError(`Failed to clean annotation image for ${forkedMetadata.id}`, error);
-      });
+      for (const imagePath of imagePaths) {
+        void fs.rm(imagePath, { force: true }).catch((error: unknown) => {
+          logError(`Failed to clean visual context image for ${forkedMetadata.id}`, error);
+        });
+      }
     });
 
   return {
@@ -1048,6 +1105,31 @@ export function createApp(options: AppOptions = {}): express.Express {
           return;
         }
 
+        const gameScreenshotPngDataUrlInput = request.body?.gameScreenshotPngDataUrl;
+        if (
+          gameScreenshotPngDataUrlInput !== undefined &&
+          gameScreenshotPngDataUrlInput !== null &&
+          typeof gameScreenshotPngDataUrlInput !== "string"
+        ) {
+          response.status(400).json({ error: "Game screenshot must be a string when provided" });
+          return;
+        }
+
+        const gameScreenshotPngDataUrl =
+          typeof gameScreenshotPngDataUrlInput === "string" && gameScreenshotPngDataUrlInput.trim().length > 0
+            ? gameScreenshotPngDataUrlInput.trim()
+            : null;
+        const gameScreenshotPngBytes =
+          gameScreenshotPngDataUrl !== null
+            ? decodeGameScreenshotPngDataUrl(gameScreenshotPngDataUrl)
+            : null;
+        if (gameScreenshotPngDataUrl !== null && gameScreenshotPngBytes === null) {
+          response
+            .status(400)
+            .json({ error: "Game screenshot must be a PNG data URL (data:image/png;base64,...)" });
+          return;
+        }
+
         const submitResult = await submitPromptForVersion({
           gamesRootPath,
           buildPromptPath,
@@ -1056,6 +1138,8 @@ export function createApp(options: AppOptions = {}): express.Express {
           promptInput,
           annotationPngDataUrl,
           annotationPngBytes,
+          gameScreenshotPngDataUrl,
+          gameScreenshotPngBytes,
           codexRunner,
           logError,
         });
