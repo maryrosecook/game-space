@@ -123,6 +123,10 @@ function updatePromptOverlay() {
   promptOverlay.textContent = shouldShowOverlay ? overlayText : '';
   promptOverlay.classList.toggle('prompt-overlay--visible', shouldShowOverlay);
   promptOverlay.setAttribute('aria-hidden', shouldShowOverlay ? 'false' : 'true');
+
+  if (shouldShowOverlay) {
+    promptOverlay.scrollTop = promptOverlay.scrollHeight;
+  }
 }
 
 function appendCompletedTranscriptSegment(transcriptSegment) {
