@@ -188,22 +188,21 @@ body {
   z-index: 10;
   pointer-events: none;
   display: none;
-  align-items: flex-end;
-  justify-content: center;
   padding: 20px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   color: #ffffff;
-  text-align: center;
+  text-align: left;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: clamp(1.7rem, 5vw, 3.6rem);
+  font-size: clamp(1.36rem, 4vw, 2.88rem);
   font-weight: 800;
   line-height: 1.15;
   text-shadow: 0 3px 12px rgba(0, 0, 0, 0.75);
 }
 
 .prompt-overlay--visible {
-  display: flex;
+  display: block;
 }
 
 
