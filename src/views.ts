@@ -359,7 +359,8 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         ${renderLucideIcon('chevron-left', 'game-view-icon', 22)}
       </a>
       ${isAdmin
-        ? `<div class="game-tool-tabs">
+        ? `<div class="game-toolbar-main">
+      <div class="game-tool-tabs">
         <button
           id="game-tab-edit"
           class="game-view-tab game-view-tab--edit"
@@ -378,7 +379,9 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         >
           ${renderLucideIcon('mic', 'game-view-icon')}
         </button>
-      </div>`
+      </div>
+      <div id="prompt-overlay" class="prompt-overlay" aria-hidden="true" aria-live="polite"></div>
+    </div>`
         : ''}
     </nav>`;
 
@@ -459,7 +462,6 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
     <main class="game-layout${isAdmin ? '' : ' game-layout--public'}">
       <section class="game-stage">
         <div class="game-render-area">
-          ${isAdmin ? '<div id="prompt-overlay" class="prompt-overlay" aria-hidden="true"></div>' : ''}
           ${isAdmin ? '<canvas id="prompt-drawing-canvas" class="prompt-drawing-canvas" aria-hidden="true"></canvas>' : ''}
           <canvas id="game-canvas" aria-label="Game canvas"></canvas>
         </div>
