@@ -13,6 +13,12 @@ It is explicitly fine to change anything in this starter to meet your game imple
 
 Treat the current structure as a strong starting point, not a constraint.
 
+## Build output (`dist/`)
+
+`dist/` is generated build output.
+Do not edit files in `dist/` directly; make changes in `src/` and rebuild.
+Keep `dist/` gitignored.
+
 ## File map
 
 - `src/main.ts` - Starter game bootstrap and sample game data source/camera wiring.
