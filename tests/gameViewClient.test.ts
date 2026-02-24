@@ -646,12 +646,12 @@ describe('game view prompt submit client', () => {
         return {
           ok: true,
           async json() {
-            return { clientSecret: 'ephemeral-secret' };
+            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-transcribe' };
           }
         };
       }
 
-      if (url === 'https://api.openai.com/v1/realtime?intent=transcription') {
+      if (url === 'https://api.openai.com/v1/realtime?model=gpt-realtime-transcribe') {
         return {
           ok: true,
           async text() {
@@ -678,7 +678,7 @@ describe('game view prompt submit client', () => {
       }
     });
     expect(harness.fetchCalls[1]).toEqual({
-      url: 'https://api.openai.com/v1/realtime?intent=transcription',
+      url: 'https://api.openai.com/v1/realtime?model=gpt-realtime-transcribe',
       init: {
         method: 'POST',
         headers: {
@@ -729,12 +729,12 @@ describe('game view prompt submit client', () => {
         return {
           ok: true,
           async json() {
-            return { clientSecret: 'ephemeral-secret' };
+            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-transcribe' };
           }
         };
       }
 
-      if (url === 'https://api.openai.com/v1/realtime?intent=transcription') {
+      if (url === 'https://api.openai.com/v1/realtime?model=gpt-realtime-transcribe') {
         return {
           ok: true,
           async text() {
