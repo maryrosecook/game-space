@@ -1,0 +1,2 @@
+# One Playwright selector per line. These selectors trigger video capture in PR Feature Videos.
+tests/e2e/homepage.spec.ts
