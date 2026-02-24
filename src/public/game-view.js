@@ -9,6 +9,7 @@ const recordButton = document.getElementById('prompt-record-button');
 const codexToggle = document.getElementById('game-codex-toggle');
 const deleteButton = document.getElementById('game-tab-delete');
 const promptOverlay = document.getElementById('prompt-overlay');
+const promptDrawingCanvas = document.getElementById('prompt-drawing-canvas');
 const codexTranscript = document.getElementById('game-codex-transcript');
 const gameSessionView = document.getElementById('game-codex-session-view');
 
@@ -26,7 +27,8 @@ if (
   !(codexToggle instanceof HTMLButtonElement) ||
   !(deleteButton instanceof HTMLButtonElement) ||
   !(codexTranscript instanceof HTMLElement) ||
-  !(gameSessionView instanceof HTMLElement)
+  !(gameSessionView instanceof HTMLElement) ||
+  !(promptDrawingCanvas instanceof HTMLCanvasElement)
 ) {
   throw new Error('Game view controls missing from page');
 }
@@ -55,6 +57,130 @@ let realtimePeerConnection = null;
 let realtimeDataChannel = null;
 let realtimeAudioStream = null;
 let completedTranscriptionSegments = [];
+let annotationPointerId = null;
+let annotationStrokeInProgress = false;
+let annotationHasInk = false;
+
+
+function drawingContext() {
+  const context = promptDrawingCanvas.getContext('2d');
+  if (!context) {
+    return null;
+  }
+
+  return context;
+}
+
+function resizeDrawingCanvas() {
+  const width = Math.max(1, Math.round(promptDrawingCanvas.clientWidth));
+  const height = Math.max(1, Math.round(promptDrawingCanvas.clientHeight));
+  const nextDevicePixelRatio = typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 0
+    ? window.devicePixelRatio
+    : 1;
+  const nextWidth = Math.round(width * nextDevicePixelRatio);
+  const nextHeight = Math.round(height * nextDevicePixelRatio);
+
+  if (promptDrawingCanvas.width === nextWidth && promptDrawingCanvas.height === nextHeight) {
+    return;
+  }
+
+  promptDrawingCanvas.width = nextWidth;
+  promptDrawingCanvas.height = nextHeight;
+
+  const context = drawingContext();
+  if (!context) {
+    return;
+  }
+
+  context.setTransform(nextDevicePixelRatio, 0, 0, nextDevicePixelRatio, 0, 0);
+  context.lineCap = 'round';
+  context.lineJoin = 'round';
+  context.strokeStyle = '#ff4d6d';
+  context.lineWidth = 4;
+}
+
+function clearDrawingCanvas() {
+  resizeDrawingCanvas();
+  const context = drawingContext();
+  if (!context) {
+    return;
+  }
+
+  context.clearRect(0, 0, promptDrawingCanvas.width, promptDrawingCanvas.height);
+  annotationHasInk = false;
+}
+
+function setAnnotationEnabled(enabled) {
+  promptDrawingCanvas.classList.toggle('prompt-drawing-canvas--active', enabled);
+  promptDrawingCanvas.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+  if (!enabled) {
+    annotationPointerId = null;
+    annotationStrokeInProgress = false;
+  }
+}
+
+function pointerCoordinates(event) {
+  const rect = promptDrawingCanvas.getBoundingClientRect();
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
+  };
+}
+
+function beginAnnotationStroke(event) {
+  if (!recordingInProgress || event.button !== 0) {
+    return;
+  }
+
+  const context = drawingContext();
+  if (!context) {
+    return;
+  }
+
+  annotationPointerId = event.pointerId;
+  annotationStrokeInProgress = true;
+  const point = pointerCoordinates(event);
+  context.beginPath();
+  context.moveTo(point.x, point.y);
+  annotationHasInk = true;
+  promptDrawingCanvas.setPointerCapture(event.pointerId);
+}
+
+function extendAnnotationStroke(event) {
+  if (!annotationStrokeInProgress || annotationPointerId !== event.pointerId) {
+    return;
+  }
+
+  const context = drawingContext();
+  if (!context) {
+    return;
+  }
+
+  const point = pointerCoordinates(event);
+  context.lineTo(point.x, point.y);
+  context.stroke();
+}
+
+function endAnnotationStroke(event) {
+  if (annotationPointerId !== event.pointerId) {
+    return;
+  }
+
+  if (promptDrawingCanvas.hasPointerCapture(event.pointerId)) {
+    promptDrawingCanvas.releasePointerCapture(event.pointerId);
+  }
+
+  annotationPointerId = null;
+  annotationStrokeInProgress = false;
+}
+
+function readAnnotationPngDataUrl() {
+  if (!annotationHasInk) {
+    return null;
+  }
+
+  return promptDrawingCanvas.toDataURL('image/png');
+}
 
 function applyFavoriteState() {
   favoriteButton.classList.toggle('game-view-icon-tab--active', gameFavorited);
@@ -291,6 +417,8 @@ async function startRealtimeRecording() {
   updateRecordButtonVisualState();
   completedTranscriptionSegments = [];
   updatePromptOverlay();
+  clearDrawingCanvas();
+  setAnnotationEnabled(false);
 
   let peerConnection = null;
   let dataChannel = null;
@@ -351,6 +479,8 @@ async function startRealtimeRecording() {
       stopAudioStream(stream);
     }
 
+    clearDrawingCanvas();
+    setAnnotationEnabled(false);
     return;
   } finally {
     transcriptionInFlight = false;
@@ -380,8 +510,9 @@ async function stopRealtimeRecording() {
     });
 
     const transcribedPrompt = completedTranscriptionSegments.join(' ').trim();
+    const annotationPngDataUrl = readAnnotationPngDataUrl();
     if (!editPanelOpen && versionId && transcribedPrompt.length > 0) {
-      await submitPrompt(transcribedPrompt);
+      await submitPrompt(transcribedPrompt, annotationPngDataUrl);
       completedTranscriptionSegments = [];
       updatePromptOverlay();
     }
@@ -389,6 +520,7 @@ async function stopRealtimeRecording() {
     logRealtimeTranscription('stopped');
     logRealtimeTranscription('final transcribed text', promptInput.value);
     recordingInProgress = false;
+    setAnnotationEnabled(false);
     closeRealtimeConnection();
     transcriptionInFlight = false;
     updateRecordButtonVisualState();
@@ -628,7 +760,7 @@ function startTranscriptPolling() {
   );
 }
 
-async function submitPrompt(prompt) {
+async function submitPrompt(prompt, annotationPngDataUrl = null) {
   const headers = {
     'Content-Type': 'application/json'
   };
@@ -640,7 +772,10 @@ async function submitPrompt(prompt) {
   const response = await fetch(`/api/games/${encodeURIComponent(versionId)}/prompts`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ prompt })
+    body: JSON.stringify({
+      prompt,
+      annotationPngDataUrl: typeof annotationPngDataUrl === 'string' ? annotationPngDataUrl : null
+    })
   });
 
   if (!response.ok) {
@@ -683,6 +818,8 @@ promptForm.addEventListener('submit', (event) => {
   resizePromptInput();
   completedTranscriptionSegments = [];
   updatePromptOverlay();
+  clearDrawingCanvas();
+  setAnnotationEnabled(false);
   focusPromptInput();
 });
 
@@ -718,6 +855,7 @@ promptInput.addEventListener('keydown', (event) => {
 
 window.addEventListener('resize', () => {
   resizePromptInput();
+  resizeDrawingCanvas();
 });
 
 window.addEventListener(
@@ -727,6 +865,26 @@ window.addEventListener(
   },
   { once: true }
 );
+
+
+resizeDrawingCanvas();
+setAnnotationEnabled(false);
+
+promptDrawingCanvas.addEventListener('pointerdown', (event) => {
+  beginAnnotationStroke(event);
+});
+
+promptDrawingCanvas.addEventListener('pointermove', (event) => {
+  extendAnnotationStroke(event);
+});
+
+promptDrawingCanvas.addEventListener('pointerup', (event) => {
+  endAnnotationStroke(event);
+});
+
+promptDrawingCanvas.addEventListener('pointercancel', (event) => {
+  endAnnotationStroke(event);
+});
 
 applyEyeState('stopped');
 

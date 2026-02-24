@@ -460,6 +460,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
       <section class="game-stage">
         <div class="game-render-area">
           ${isAdmin ? '<div id="prompt-overlay" class="prompt-overlay" aria-hidden="true"></div>' : ''}
+          ${isAdmin ? '<canvas id="prompt-drawing-canvas" class="prompt-drawing-canvas" aria-hidden="true"></canvas>' : ''}
           <canvas id="game-canvas" aria-label="Game canvas"></canvas>
         </div>
       </section>

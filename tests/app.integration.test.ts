@@ -242,7 +242,8 @@ async function postPromptAsAdmin(
   authSession: AuthSession,
   sourceVersionId: string,
   prompt: string,
-  csrfToken: string = authSession.csrfToken
+  csrfToken: string = authSession.csrfToken,
+  annotationPngDataUrl: string | null = null
 ): Promise<request.Response> {
   return request(app)
     .post(`/api/games/${encodeURIComponent(sourceVersionId)}/prompts`)
@@ -251,7 +252,7 @@ async function postPromptAsAdmin(
     .set('Cookie', authSession.cookieHeader)
     .set('X-CSRF-Token', csrfToken)
     .set('Content-Type', 'application/json')
-    .send({ prompt });
+    .send({ prompt, annotationPngDataUrl });
 }
 
 async function readMetadata(metadataPath: string): Promise<StoredMetadata> {
@@ -1614,6 +1615,49 @@ describe('express app integration', () => {
     const forkMetadata = await readMetadata(forkMetadataPath);
     expect(forkMetadata.codexSessionId).toBe(emittedSessionId);
     expect(forkMetadata.codexSessionStatus).toBe('created');
+  });
+
+
+  it('includes annotation pixels in the codegen prompt when provided', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-prompt-annotation-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'source',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
+    await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
+
+    const codexRunner = new CapturingRunner();
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath,
+      codexRunner
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const annotationPngDataUrl = 'data:image/png;base64,abc123';
+    const response = await postPromptAsAdmin(
+      app,
+      authSession,
+      'source',
+      'add a jump arc',
+      authSession.csrfToken,
+      annotationPngDataUrl
+    );
+
+    expect(response.status).toBe(202);
+    expect(codexRunner.calls).toHaveLength(1);
+    expect(codexRunner.calls[0]?.prompt).toBe(
+      'BASE PROMPT\n\nadd a jump arc\n\n[annotation_overlay_png_data_url]\ndata:image/png;base64,abc123'
+    );
   });
 
   it('returns idea generation status in ideas api responses', async () => {

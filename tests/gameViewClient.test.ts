@@ -7,6 +7,10 @@ import { describe, expect, it } from 'vitest';
 type TestEvent = {
   key?: string;
   data?: unknown;
+  button?: number;
+  pointerId?: number;
+  clientX?: number;
+  clientY?: number;
   preventDefault: () => void;
 };
 
@@ -200,6 +204,75 @@ class TestRTCPeerConnection {
   }
 }
 
+
+class TestCanvasRenderingContext2D {
+  setTransform(...args: number[]): void {
+    void args;
+  }
+
+  beginPath(): void {}
+
+  moveTo(...args: number[]): void {
+    void args;
+  }
+
+  lineTo(...args: number[]): void {
+    void args;
+  }
+
+  stroke(): void {}
+
+  clearRect(...args: number[]): void {
+    void args;
+  }
+
+  set lineCap(_value: string) {}
+
+  set lineJoin(_value: string) {}
+
+  set strokeStyle(_value: string) {}
+
+  set lineWidth(_value: number) {}
+}
+
+class TestHTMLCanvasElement extends TestHTMLElement {
+  public width = 0;
+  public height = 0;
+  public clientWidth = 360;
+  public clientHeight = 640;
+  private readonly context = new TestCanvasRenderingContext2D();
+
+  getContext(kind: string): TestCanvasRenderingContext2D | null {
+    if (kind !== '2d') {
+      return null;
+    }
+
+    return this.context;
+  }
+
+  toDataURL(type?: string): string {
+    void type;
+    return 'data:image/png;base64,test-canvas';
+  }
+
+  getBoundingClientRect(): { left: number; top: number } {
+    return { left: 0, top: 0 };
+  }
+
+  setPointerCapture(pointerId: number): void {
+    void pointerId;
+  }
+
+  hasPointerCapture(pointerId: number): boolean {
+    void pointerId;
+    return false;
+  }
+
+  releasePointerCapture(pointerId: number): void {
+    void pointerId;
+  }
+}
+
 class TestBodyElement extends TestHTMLElement {
   public readonly dataset: { versionId?: string; csrfToken?: string; gameFavorited?: string; codegenProvider?: string };
 
@@ -242,6 +315,7 @@ type GameViewHarness = {
   promptInput: TestHTMLInputElement;
   promptPanel: TestHTMLElement;
   promptOverlay: TestHTMLElement;
+  promptDrawingCanvas: TestHTMLCanvasElement;
   renderTranscriptCalls: TranscriptRenderCall[];
   getScrollToBottomCalls: () => number;
   intervalCallbacks: Array<() => void>;
@@ -261,6 +335,10 @@ function createEvent(overrides: Partial<TestEvent> = {}): TestEvent {
   return {
     key: overrides.key,
     data: overrides.data,
+    button: overrides.button,
+    pointerId: overrides.pointerId,
+    clientX: overrides.clientX,
+    clientY: overrides.clientY,
     preventDefault: overrides.preventDefault ?? (() => {})
   };
 }
@@ -294,6 +372,7 @@ async function runGameViewScript(
   const codexTranscript = new TestHTMLElement();
   const promptOverlay = new TestHTMLElement();
   const gameSessionView = new TestHTMLElement();
+  const promptDrawingCanvas = new TestHTMLCanvasElement();
 
   const document = new TestDocument('source-version', csrfToken, gameFavorited, codegenProvider);
   document.registerElement('prompt-panel', promptPanel);
@@ -306,6 +385,7 @@ async function runGameViewScript(
   document.registerElement('game-codex-toggle', codexToggle);
   document.registerElement('game-codex-transcript', codexTranscript);
   document.registerElement('prompt-overlay', promptOverlay);
+  document.registerElement('prompt-drawing-canvas', promptDrawingCanvas);
   document.registerElement('game-codex-session-view', gameSessionView);
 
   const fetchCalls: FetchCall[] = [];
@@ -385,6 +465,7 @@ async function runGameViewScript(
     HTMLElement: TestHTMLElement,
     HTMLFormElement: TestHTMLFormElement,
     HTMLInputElement: TestHTMLInputElement,
+    HTMLCanvasElement: TestHTMLCanvasElement,
     navigator,
     RTCPeerConnection: TestRTCPeerConnection,
     createCodexTranscriptPresenter(_sessionView: unknown, options?: { transcriptTitle?: string }) {
@@ -424,6 +505,7 @@ async function runGameViewScript(
     promptInput,
     promptPanel,
     promptOverlay,
+    promptDrawingCanvas,
     renderTranscriptCalls,
     getScrollToBottomCalls: () => scrollToBottomCalls,
     intervalCallbacks,
@@ -456,7 +538,7 @@ describe('game view prompt submit client', () => {
           'Content-Type': 'application/json',
           'X-CSRF-Token': 'csrf-token-123'
         },
-        body: JSON.stringify({ prompt: 'darken the ball' })
+        body: JSON.stringify({ prompt: 'darken the ball', annotationPngDataUrl: null })
       }
     });
     expect(harness.assignCalls).toEqual(['/game/pebble-iris-dawn']);
@@ -487,7 +569,7 @@ describe('game view prompt submit client', () => {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ prompt: 'darken the ball' })
+      body: JSON.stringify({ prompt: 'darken the ball', annotationPngDataUrl: null })
     });
   });
 
@@ -787,7 +869,7 @@ describe('game view prompt submit client', () => {
           'Content-Type': 'application/json',
           'X-CSRF-Token': 'csrf-token-123'
         },
-        body: JSON.stringify({ prompt: 'make the paddle bigger' })
+        body: JSON.stringify({ prompt: 'make the paddle bigger', annotationPngDataUrl: null })
       }
     });
     expect(harness.assignCalls).toEqual(['/game/voice-fork']);

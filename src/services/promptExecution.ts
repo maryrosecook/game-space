@@ -306,9 +306,20 @@ export class SpawnCodegenRunner implements CodexRunner {
   }
 }
 
-export function composeCodexPrompt(buildPrompt: string, userPrompt: string): string {
+export function composeCodexPrompt(
+  buildPrompt: string,
+  userPrompt: string,
+  annotationPngDataUrl: string | null = null
+): string {
   const normalizedBuildPrompt = buildPrompt.trimEnd();
-  return `${normalizedBuildPrompt}\n\n${userPrompt}`;
+  const normalizedAnnotation =
+    typeof annotationPngDataUrl === 'string' ? annotationPngDataUrl.trim() : '';
+
+  if (normalizedAnnotation.length === 0) {
+    return `${normalizedBuildPrompt}\n\n${userPrompt}`;
+  }
+
+  return `${normalizedBuildPrompt}\n\n${userPrompt}\n\n[annotation_overlay_png_data_url]\n${normalizedAnnotation}`;
 }
 
 export async function readBuildPromptFile(buildPromptPath: string): Promise<string> {

@@ -126,10 +126,11 @@ async function submitPromptForVersion(options: {
   buildPromptPath: string;
   versionId: string;
   promptInput: string;
+  annotationPngDataUrl?: string | null;
   codexRunner: CodexRunner;
   logError: ErrorLogger;
 }): Promise<PromptSubmitResult> {
-  const { gamesRootPath, buildPromptPath, versionId, promptInput, codexRunner, logError } = options;
+  const { gamesRootPath, buildPromptPath, versionId, promptInput, annotationPngDataUrl, codexRunner, logError } = options;
 
   const forkedMetadata = await createForkedGameVersion({
     gamesRootPath,
@@ -138,7 +139,7 @@ async function submitPromptForVersion(options: {
   });
 
   const buildPrompt = await readBuildPromptFile(buildPromptPath);
-  const fullPrompt = composeCodexPrompt(buildPrompt, promptInput);
+  const fullPrompt = composeCodexPrompt(buildPrompt, promptInput, annotationPngDataUrl ?? null);
   const forkDirectoryPath = path.join(gamesRootPath, forkedMetadata.id);
   const forkMetadataPath = path.join(forkDirectoryPath, "metadata.json");
   let lastPersistedSessionId: string | null = null;
@@ -936,11 +937,27 @@ export function createApp(options: AppOptions = {}): express.Express {
           return;
         }
 
+        const annotationPngDataUrlInput = request.body?.annotationPngDataUrl;
+        if (
+          annotationPngDataUrlInput !== undefined &&
+          annotationPngDataUrlInput !== null &&
+          typeof annotationPngDataUrlInput !== "string"
+        ) {
+          response.status(400).json({ error: "Annotation pixels must be a string when provided" });
+          return;
+        }
+
+        const annotationPngDataUrl =
+          typeof annotationPngDataUrlInput === "string" && annotationPngDataUrlInput.trim().length > 0
+            ? annotationPngDataUrlInput.trim()
+            : null;
+
         const submitResult = await submitPromptForVersion({
           gamesRootPath,
           buildPromptPath,
           versionId,
           promptInput,
+          annotationPngDataUrl,
           codexRunner,
           logError,
         });

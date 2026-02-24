@@ -19,6 +19,16 @@ describe('composeCodexPrompt', () => {
     expect(composed).toBe('Line A\nLine B\n\nKeep "quotes"\nline-2\n$HOME `raw`');
   });
 
+
+  it('appends annotation pixels when provided', () => {
+    const buildPrompt = 'Line A\nLine B\n';
+    const userPrompt = 'add portals';
+    const annotation = 'data:image/png;base64,abc123';
+
+    const composed = composeCodexPrompt(buildPrompt, userPrompt, annotation);
+    expect(composed).toBe('Line A\nLine B\n\nadd portals\n\n[annotation_overlay_png_data_url]\ndata:image/png;base64,abc123');
+  });
+
   it('loads prompt template bytes from disk unchanged', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-prompt-');
     const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
