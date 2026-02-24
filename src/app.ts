@@ -201,12 +201,15 @@ async function submitPromptForVersion(options: {
 
   const buildPrompt = await readBuildPromptFile(buildPromptPath);
   const forkDirectoryPath = path.join(gamesRootPath, forkedMetadata.id);
+  const shouldAttachAnnotationImage =
+    annotationPngBytes instanceof Buffer &&
+    (codegenProvider === "codex" || codegenProvider === "claude");
   const promptForRunner =
-    codegenProvider === "codex" && annotationPngBytes
+    shouldAttachAnnotationImage
       ? composePromptWithAttachedAnnotation(buildPrompt, promptInput)
       : composeCodexPrompt(buildPrompt, promptInput, annotationPngDataUrl ?? null);
   const annotationImagePath =
-    codegenProvider === "codex" && annotationPngBytes
+    shouldAttachAnnotationImage
       ? path.join(forkDirectoryPath, `.annotation-overlay-${randomUUID()}.png`)
       : null;
   if (annotationImagePath && annotationPngBytes) {

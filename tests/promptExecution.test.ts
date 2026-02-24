@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildClaudeStreamJsonUserInput,
   buildCodexExecArgs,
   composeCodexPrompt,
   parseSessionIdFromCodexEventLine,
@@ -29,6 +30,49 @@ describe('composeCodexPrompt', () => {
     ]);
   });
 
+  it('builds claude stream-json user input with image attachments', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-claude-input-');
+    const imagePath = path.join(tempDirectoryPath, 'annotation.png');
+    const encodedImage =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aQ0QAAAAASUVORK5CYII=';
+    await fs.writeFile(imagePath, Buffer.from(encodedImage, 'base64'));
+
+    const serializedInput = await buildClaudeStreamJsonUserInput('Explain this annotation', [imagePath]);
+
+    expect(JSON.parse(serializedInput.trim())).toEqual({
+      type: 'user',
+      session_id: '',
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: encodedImage
+            }
+          },
+          {
+            type: 'text',
+            text: 'Explain this annotation'
+          }
+        ]
+      },
+      parent_tool_use_id: null
+    });
+  });
+
+  it('rejects unsupported claude image attachment extensions', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-claude-input-ext-');
+    const imagePath = path.join(tempDirectoryPath, 'annotation.bmp');
+    await fs.writeFile(imagePath, 'not-a-supported-image', 'utf8');
+
+    await expect(buildClaudeStreamJsonUserInput('Explain this annotation', [imagePath])).rejects.toThrow(
+      'Claude annotation images must use png, jpg, jpeg, gif, or webp extensions'
+    );
+  });
+
   it('prepends build prompt and preserves arbitrary user text', () => {
     const buildPrompt = 'Line A\nLine B\n';
     const userPrompt = 'Keep "quotes"\nline-2\n$HOME `raw`';
@@ -36,7 +80,6 @@ describe('composeCodexPrompt', () => {
     const composed = composeCodexPrompt(buildPrompt, userPrompt);
     expect(composed).toBe('Line A\nLine B\n\nKeep "quotes"\nline-2\n$HOME `raw`');
   });
-
 
   it('appends annotation pixels when provided', () => {
     const buildPrompt = 'Line A\nLine B\n';

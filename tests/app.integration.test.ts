@@ -1672,7 +1672,7 @@ describe('express app integration', () => {
     expect(codexRunner.calls[0]?.imagePaths[0]?.endsWith('.png')).toBe(true);
   });
 
-  it('falls back to inline annotation payload when provider is claude', async () => {
+  it('passes annotation image as attachment when provider is claude', async () => {
     process.env.CODEGEN_PROVIDER = 'claude';
 
     const tempDirectoryPath = await createTempDirectory('game-space-app-prompt-annotation-claude-');
@@ -1711,9 +1711,15 @@ describe('express app integration', () => {
     expect(response.status).toBe(202);
     expect(codexRunner.calls).toHaveLength(1);
     expect(codexRunner.calls[0]?.prompt).toBe(
-      `BASE PROMPT\n\nadd a jump arc\n\n[annotation_overlay_png_data_url]\n${TEST_PNG_DATA_URL}`
+      'BASE PROMPT\n\nadd a jump arc\n\n[annotation_overlay_png_attached]\nUse the attached annotation PNG as visual context for this prompt.'
     );
-    expect(codexRunner.calls[0]?.imagePaths).toEqual([]);
+    expect(codexRunner.calls[0]?.prompt).not.toContain('data:image/png;base64');
+    expect(codexRunner.calls[0]?.imagePaths).toHaveLength(1);
+
+    const forkId = response.body.forkId as string;
+    const expectedPrefix = path.join(gamesRootPath, forkId, '.annotation-overlay-');
+    expect(codexRunner.calls[0]?.imagePaths[0]?.startsWith(expectedPrefix)).toBe(true);
+    expect(codexRunner.calls[0]?.imagePaths[0]?.endsWith('.png')).toBe(true);
   });
 
   it('rejects invalid annotation payloads', async () => {
