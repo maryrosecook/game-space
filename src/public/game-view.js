@@ -43,6 +43,8 @@ const transcriptPresenter = createCodexTranscriptPresenter(gameSessionView, {
 });
 const transcriptPollIntervalMs = 2000;
 const generatingClassName = 'game-view-tab--generating';
+const annotationStrokeColor = 'rgba(128, 128, 128, 0.5)';
+const annotationStrokeWidth = 4;
 let transcriptStatusKey = '';
 let transcriptSignature = '';
 let transcriptRequestInFlight = false;
@@ -95,8 +97,8 @@ function resizeDrawingCanvas() {
   context.setTransform(nextDevicePixelRatio, 0, 0, nextDevicePixelRatio, 0, 0);
   context.lineCap = 'round';
   context.lineJoin = 'round';
-  context.strokeStyle = '#ff4d6d';
-  context.lineWidth = 4;
+  context.strokeStyle = annotationStrokeColor;
+  context.lineWidth = annotationStrokeWidth;
 }
 
 function clearDrawingCanvas() {
@@ -121,19 +123,29 @@ function setAnnotationEnabled(enabled) {
 
 function pointerCoordinates(event) {
   const rect = promptDrawingCanvas.getBoundingClientRect();
+  const clientX = typeof event.clientX === 'number' ? event.clientX : 0;
+  const clientY = typeof event.clientY === 'number' ? event.clientY : 0;
   return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top
+    x: clientX - rect.left,
+    y: clientY - rect.top
   };
 }
 
+function isPrimaryAnnotationPointer(event) {
+  if (event.pointerType === 'mouse') {
+    return event.button === 0;
+  }
+
+  return true;
+}
+
 function beginAnnotationStroke(event) {
-  if (!recordingInProgress || event.button !== 0) {
+  if (!recordingInProgress || annotationStrokeInProgress || !isPrimaryAnnotationPointer(event)) {
     return;
   }
 
   const context = drawingContext();
-  if (!context) {
+  if (!context || typeof event.pointerId !== 'number') {
     return;
   }
 
@@ -142,6 +154,8 @@ function beginAnnotationStroke(event) {
   const point = pointerCoordinates(event);
   context.beginPath();
   context.moveTo(point.x, point.y);
+  context.lineTo(point.x, point.y);
+  context.stroke();
   annotationHasInk = true;
   promptDrawingCanvas.setPointerCapture(event.pointerId);
 }
@@ -474,6 +488,7 @@ async function startRealtimeRecording() {
     realtimeDataChannel = dataChannel;
     realtimeAudioStream = stream;
     recordingInProgress = true;
+    setAnnotationEnabled(true);
     logRealtimeTranscription('started');
   } catch {
     if (dataChannel && typeof dataChannel.close === 'function') {

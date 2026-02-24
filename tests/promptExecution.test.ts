@@ -45,8 +45,8 @@ describe('composeCodexPrompt', () => {
     expect(buildPromptText).toContain('Do not read, depend on, or modify files outside the current directory.');
     expect(buildPromptText).toContain('startGame');
     expect(buildPromptText).toContain('dist/game.js');
-    expect(buildPromptText).toContain('typecheck');
-    expect(buildPromptText).toContain('typescript');
+    expect(buildPromptText).toContain('You must not run linting commands.');
+    expect(buildPromptText).toContain('You must not run tests.');
   });
 
   it('extracts session id from legacy session_meta events', () => {
