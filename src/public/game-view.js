@@ -219,6 +219,24 @@ async function requestRealtimeClientSecret() {
   };
 }
 
+async function requestRealtimeAnswerSdp(realtimeSession, offerSdp) {
+  const requestBody = typeof offerSdp === 'string' ? offerSdp : '';
+  const response = await fetch('https://api.openai.com/v1/realtime/calls', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${realtimeSession.clientSecret}`,
+      'Content-Type': 'application/sdp'
+    },
+    body: requestBody
+  });
+
+  if (!response.ok) {
+    throw new Error('Realtime transcription SDP exchange failed');
+  }
+
+  return response.text();
+}
+
 async function toggleFavorite() {
   if (!versionId || favoriteRequestInFlight || deleteRequestInFlight) {
     return;
@@ -318,22 +336,7 @@ async function startRealtimeRecording() {
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
 
-    const realtimeUrl = `https://api.openai.com/v1/realtime?model=${encodeURIComponent(realtimeSession.model)}`;
-
-    const response = await fetch(realtimeUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${realtimeSession.clientSecret}`,
-        'Content-Type': 'application/sdp'
-      },
-      body: typeof offer.sdp === 'string' ? offer.sdp : ''
-    });
-
-    if (!response.ok) {
-      throw new Error('Realtime transcription SDP exchange failed');
-    }
-
-    const answerSdp = await response.text();
+    const answerSdp = await requestRealtimeAnswerSdp(realtimeSession, offer.sdp);
     await peerConnection.setRemoteDescription({
       type: 'answer',
       sdp: answerSdp

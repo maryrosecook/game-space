@@ -32,7 +32,7 @@ Top three features:
     - `promptExecution.ts` - Build-prompt loading, prompt composition, and provider-specific non-interactive runners (`codex exec --json` and `claude --print --output-format stream-json`) behind the existing `CodexRunner` interface.
     - `codexSessions.ts` - Session-file lookup plus JSONL parsing/normalization for Codex and Claude transcript entries, including user/assistant text, Codex task lifecycle events, and Claude tool call/result events.
     - `codexTurnInfo.ts` - Per-worktree runtime-state tracker that scans latest matching session JSONL by worktree cwd metadata (`session_meta.payload.cwd` or top-level `cwd`), reads append-only bytes, and derives `eyeState` from task lifecycle events (with message-balance fallback).
-    - `openaiTranscription.ts` - OpenAI Realtime transcription session factory (`/v1/realtime/transcription_sessions`) that returns ephemeral client secrets for browser WebRTC transcription.
+    - `openaiTranscription.ts` - OpenAI Realtime client-secret factory (`/v1/realtime/client_secrets`) that configures `gpt-realtime-1.5` sessions with input transcription enabled and returns ephemeral browser tokens.
     - `gameBuildPipeline.ts` - Per-game dependency install/build and source-path-to-version mapping.
     - `devLiveReload.ts` - Per-version reload-token pathing/writes used by the dev watch loop.
 - `scripts/` - Local automation entrypoints.
@@ -64,7 +64,7 @@ Top three features:
 - Game page flow: `GET /game/:versionId` validates availability, renders `renderGameView()` in admin/public mode, and only injects prompt/transcript UI plus CSRF/favorite data attributes for authenticated admins; opening the transcript panel scrolls to the newest visible transcript entry.
 - Favorite toggle flow: `POST /api/games/:versionId/favorite` requires admin + CSRF, flips the `favorite` boolean in `metadata.json`, and returns the new state for `src/public/game-view.js` to reflect in the star button.
 - Prompt fork flow: `POST /api/games/:versionId/prompts` requires admin + CSRF, forks via `createForkedGameVersion()` (prompt-derived three-word base plus random 10-character lowercase alphanumeric suffix), persists the submitted user prompt in the new fork's `metadata.json`, sets lifecycle state to `created`, composes full prompt, launches the provider-selected runner (`codex` or `claude`) behind `CodexRunner`, persists `codexSessionId` as soon as observed, and transitions lifecycle to `stopped` or `error` when the run settles.
-- Realtime voice transcription flow: `POST /api/transcribe` (admin + CSRF) mints an OpenAI Realtime transcription session and returns a short-lived `clientSecret`; `src/public/game-view.js` then exchanges SDP with `https://api.openai.com/v1/realtime?intent=transcription`, streams mic audio over WebRTC, and applies `conversation.item.input_audio_transcription.completed` text to the prompt input.
+- Realtime voice transcription flow: `POST /api/transcribe` (admin + CSRF) mints an OpenAI Realtime client secret configured for `gpt-realtime-1.5` and returns a short-lived `clientSecret` plus model; `src/public/game-view.js` then exchanges SDP with `https://api.openai.com/v1/realtime/calls`, streams mic audio over WebRTC, and applies `conversation.item.input_audio_transcription.completed` text to the prompt input.
 - Codex transcript/runtime flow: `/codex` and `/api/codex-sessions/:versionId` require admin; transcript API resolves metadata, derives runtime `eyeState` via `getCodexTurnInfo()` (task lifecycle for Codex logs, message-balance fallback for Claude logs), reads session JSONL from both `~/.codex/sessions` and `~/.claude/projects`, and returns normalized transcript entries plus lifecycle/runtime state, which clients render anchored at the newest entry.
 - Static/runtime serving flow: `/games/*` first passes `requireRuntimeGameAssetPathMiddleware()` so only runtime-safe `dist` assets are public; sensitive or dev files (including `dist/reload-token.txt`) return `404`.
 - Dev reload flow: when `GAME_SPACE_DEV_LIVE_RELOAD=1`, `scripts/dev.ts` rewrites per-version `dist/reload-token.txt`; browser polling uses `/api/dev/reload-token/:versionId` instead of direct `/games` file access.
@@ -95,7 +95,7 @@ Top three features:
 - Execution isolation: each version owns its own source, dependencies, and built bundle under `games/<version-id>/`.
 - Admin auth model: iron-session sealed, `HttpOnly`, `Secure`, `SameSite=Strict` session cookie with fixed 3-day TTL; unauthorized protected-route requests return `404`.
 - CSRF model: same-origin enforcement plus double-submit token (cookie + hidden form field or `X-CSRF-Token` header).
-- Realtime voice transcription model: browser never receives `OPENAI_API_KEY`; server mints short-lived client secrets via OpenAI Realtime transcription sessions using `gpt-4o-transcribe`, and the client streams mic audio directly to OpenAI over WebRTC.
+- Realtime voice transcription model: browser never receives `OPENAI_API_KEY`; server mints short-lived client secrets via OpenAI Realtime client-secrets API using `gpt-realtime-1.5` sessions with `gpt-4o-transcribe` input transcription enabled, and the client streams mic audio directly to OpenAI over WebRTC via `/v1/realtime/calls`.
 - Codegen provider model: `RuntimeCodegenConfigStore` loads env defaults once and keeps a mutable in-memory `provider` setting that `/auth/provider` can update; `SpawnCodegenRunner` reads this setting at run-time and dispatches to either Codex or Claude CLI while preserving the `CodexRunner` API contract.
 - Prompt safety model: user prompt text is never shell-interpolated; provider runners pass full prompt bytes through stdin (`codex exec --json --dangerously-bypass-approvals-and-sandbox -` or `claude --print --output-format stream-json --dangerously-skip-permissions`).
 - Creation prompt persistence model: newly forked game versions persist the submitted creation prompt as `metadata.json.prompt`; existing metadata is not backfilled.
@@ -128,7 +128,7 @@ Top three features:
   - `/games` runtime allowlist allow/deny behavior and dev reload-token API route.
   - Prompt fork/session lifecycle persistence flow and transcript parsing behavior across Codex + Claude JSONL formats.
   - Metadata persistence safety for multiline/quoted/Unicode prompt text and concurrent metadata writes.
-  - Realtime transcription session creation route behavior (`200`, `502`, `503`) and game-page client WebRTC transcription wiring.
+  - Realtime transcription session creation route behavior (`200`, `502`, `503`) and game-page client WebRTC transcription wiring through `/v1/realtime/calls`.
   - Game page client behavior for CSRF header inclusion, admin/public UI states, favorite-star toggling, transcript auto-scroll wiring on panel open and polling updates, and Edit-tab generating spinner class toggling for both Codex and Claude generation states.
   - `/codex` client behavior, including transcript render auto-scroll request on initial load.
   - Repo automation workflow integrity checks, including YAML parse validation for `.github/workflows/pr-feature-videos.yml`.

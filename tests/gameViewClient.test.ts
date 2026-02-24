@@ -646,12 +646,12 @@ describe('game view prompt submit client', () => {
         return {
           ok: true,
           async json() {
-            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-transcribe' };
+            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
           }
         };
       }
 
-      if (url === 'https://api.openai.com/v1/realtime?model=gpt-realtime-transcribe') {
+      if (url === 'https://api.openai.com/v1/realtime/calls') {
         return {
           ok: true,
           async text() {
@@ -678,7 +678,7 @@ describe('game view prompt submit client', () => {
       }
     });
     expect(harness.fetchCalls[1]).toEqual({
-      url: 'https://api.openai.com/v1/realtime?model=gpt-realtime-transcribe',
+      url: 'https://api.openai.com/v1/realtime/calls',
       init: {
         method: 'POST',
         headers: {
@@ -696,6 +696,53 @@ describe('game view prompt submit client', () => {
     expect(peerConnection?.remoteDescription).toEqual({ type: 'answer', sdp: 'fake-answer-sdp' });
   });
 
+  it('does not retry a fallback endpoint when realtime calls returns 400', async () => {
+    const harness = await runGameViewScript(async (url) => {
+      if (url === '/api/transcribe') {
+        return {
+          ok: true,
+          async json() {
+            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
+          }
+        };
+      }
+
+      if (url === 'https://api.openai.com/v1/realtime/calls') {
+        return {
+          ok: false,
+          status: 400,
+          async text() {
+            return 'invalid request';
+          }
+        };
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    expect(harness.fetchCalls).toHaveLength(2);
+    expect(harness.fetchCalls[1]).toEqual({
+      url: 'https://api.openai.com/v1/realtime/calls',
+      init: {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ephemeral-secret',
+          'Content-Type': 'application/sdp'
+        },
+        body: 'fake-offer-sdp'
+      }
+    });
+
+    const peerConnection = harness.getPeerConnection();
+    expect(peerConnection?.remoteDescription).toBeNull();
+    expect(peerConnection?.closed).toBe(true);
+    expect(harness.mediaTrack.stopped).toBe(true);
+    expect(harness.recordButton.classList.contains('game-view-icon-tab--recording')).toBe(false);
+  });
+
   it('logs transcribe endpoint errors and does not start recording', async () => {
     const harness = await runGameViewScript(async (url) => {
       if (url === '/api/transcribe') {
@@ -703,7 +750,7 @@ describe('game view prompt submit client', () => {
           ok: false,
           status: 503,
           async json() {
-            return { error: 'OpenAI transcription model gpt-4o-transcribe is unavailable for this API key' };
+            return { error: 'OpenAI realtime model gpt-realtime-1.5 is unavailable for this API key' };
           }
         };
       }
@@ -719,7 +766,7 @@ describe('game view prompt submit client', () => {
     expect(harness.recordButton.classList.contains('game-view-icon-tab--recording')).toBe(false);
     expect(harness.consoleLogs).toContainEqual([
       '[realtime-transcription] session request failed',
-      'status 503: OpenAI transcription model gpt-4o-transcribe is unavailable for this API key'
+      'status 503: OpenAI realtime model gpt-realtime-1.5 is unavailable for this API key'
     ]);
   });
 
@@ -729,12 +776,12 @@ describe('game view prompt submit client', () => {
         return {
           ok: true,
           async json() {
-            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-transcribe' };
+            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
           }
         };
       }
 
-      if (url === 'https://api.openai.com/v1/realtime?model=gpt-realtime-transcribe') {
+      if (url === 'https://api.openai.com/v1/realtime/calls') {
         return {
           ok: true,
           async text() {

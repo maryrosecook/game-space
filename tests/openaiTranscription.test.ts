@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  DEFAULT_TRANSCRIPTION_MODEL,
+  DEFAULT_INPUT_TRANSCRIPTION_MODEL,
+  DEFAULT_REALTIME_MODEL,
   OpenAiRealtimeTranscriptionSessionFactory
 } from '../src/services/openaiTranscription';
 
@@ -25,20 +26,18 @@ describe('OpenAiRealtimeTranscriptionSessionFactory', () => {
     vi.unstubAllGlobals();
   });
 
-  it('creates a realtime transcription session with default model', async () => {
+  it('creates a realtime client secret with the latest realtime model', async () => {
     const fetchMock = vi.fn<
       (
         url: string,
         init?: RequestInit
-      ) => Promise<{ ok: boolean; json: () => Promise<{ client_secret: { value: string; expires_at: number } }> }>
+      ) => Promise<{ ok: boolean; json: () => Promise<{ value: string; expires_at: number }> }>
     >(async () => ({
       ok: true,
       async json() {
         return {
-          client_secret: {
-            value: 'ephemeral-secret',
-            expires_at: 1_737_000_000
-          }
+          value: 'ephemeral-secret',
+          expires_at: 1_737_000_000
         };
       }
     }));
@@ -51,11 +50,11 @@ describe('OpenAiRealtimeTranscriptionSessionFactory', () => {
     expect(session).toEqual({
       clientSecret: 'ephemeral-secret',
       expiresAt: 1_737_000_000,
-      model: DEFAULT_TRANSCRIPTION_MODEL
+      model: DEFAULT_REALTIME_MODEL
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] ?? [];
-    expect(requestUrl).toBe('https://api.openai.com/v1/realtime/transcription_sessions');
+    expect(requestUrl).toBe('https://api.openai.com/v1/realtime/client_secrets');
     expect(requestInit).toMatchObject({
       method: 'POST',
       headers: {
@@ -63,23 +62,35 @@ describe('OpenAiRealtimeTranscriptionSessionFactory', () => {
         'Content-Type': 'application/json'
       }
     });
-    expect(requestInit?.body).toBe(JSON.stringify({ input_audio_transcription: { model: DEFAULT_TRANSCRIPTION_MODEL } }));
+    expect(requestInit?.body).toBe(
+      JSON.stringify({
+        session: {
+          type: 'realtime',
+          model: DEFAULT_REALTIME_MODEL,
+          audio: {
+            input: {
+              transcription: {
+                model: DEFAULT_INPUT_TRANSCRIPTION_MODEL
+              }
+            }
+          }
+        }
+      })
+    );
   });
 
-  it('ignores OPENAI_TRANSCRIBE_MODEL and always uses gpt-4o-transcribe', async () => {
+  it('ignores OPENAI_TRANSCRIBE_MODEL and always uses the latest realtime model', async () => {
     process.env.OPENAI_TRANSCRIBE_MODEL = 'gpt-4o-mini-transcribe';
     const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<{ ok: boolean; json: () => Promise<unknown> }>>(
       async () => ({
         ok: true,
         async json() {
           return {
-            input_audio_transcription: {
-              model: 'gpt-4o-mini-transcribe'
+            session: {
+              model: 'gpt-realtime-1.0'
             },
-            client_secret: {
-              value: 'ephemeral-secret',
-              expires_at: 1_737_000_000
-            }
+            value: 'ephemeral-secret',
+            expires_at: 1_737_000_000
           };
         }
       })
@@ -90,7 +101,21 @@ describe('OpenAiRealtimeTranscriptionSessionFactory', () => {
     await sessionFactory.createSession();
 
     const requestInit = fetchMock.mock.calls[0]?.[1];
-    expect(requestInit?.body).toBe(JSON.stringify({ input_audio_transcription: { model: DEFAULT_TRANSCRIPTION_MODEL } }));
+    expect(requestInit?.body).toBe(
+      JSON.stringify({
+        session: {
+          type: 'realtime',
+          model: DEFAULT_REALTIME_MODEL,
+          audio: {
+            input: {
+              transcription: {
+                model: DEFAULT_INPUT_TRANSCRIPTION_MODEL
+              }
+            }
+          }
+        }
+      })
+    );
   });
 
   it('throws when API key is missing', () => {
@@ -99,7 +124,7 @@ describe('OpenAiRealtimeTranscriptionSessionFactory', () => {
     );
   });
 
-  it('throws when payload does not include a client secret', async () => {
+  it('throws when payload does not include a client secret value', async () => {
     const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<{ ok: boolean; json: () => Promise<unknown> }>>(
       async () => ({
         ok: true,
@@ -112,7 +137,7 @@ describe('OpenAiRealtimeTranscriptionSessionFactory', () => {
 
     const sessionFactory = new OpenAiRealtimeTranscriptionSessionFactory({ apiKey: 'test-key' });
     await expect(sessionFactory.createSession()).rejects.toThrow(
-      'OpenAI realtime transcription payload missing client secret'
+      'OpenAI realtime client secret payload missing value'
     );
   });
 });
