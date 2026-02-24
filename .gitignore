@@ -8,3 +8,4 @@ games/*
 games/starter/dist/
 games/starter/node_modules/
 .env
+.DS_Store
