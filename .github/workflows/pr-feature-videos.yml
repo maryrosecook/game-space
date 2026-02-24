@@ -68,6 +68,8 @@ jobs:
         if: steps.selectors.outputs.enabled == 'true'
         env:
           PLAYWRIGHT_CAPTURE_VIDEO: '1'
+          GAME_SPACE_ADMIN_PASSWORD_HASH: 'scrypt$ASNFZ4mrze8BI0VniavN7w==$M+OVA7qtmUR3CHE87sPzm7h2MpJU1PXNk9qSpl2YPwHyaL8eByBbvuCTXEVTUVc/mwL9EhXgQ14qdOIyRUXu1Q=='
+          GAME_SPACE_ADMIN_SESSION_SECRET: 'ci-feature-video-session-secret-value-32'
           SELECTOR_BLOCK: ${{ steps.selectors.outputs.selector_block }}
         run: |
           set -euo pipefail
