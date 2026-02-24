@@ -59,6 +59,10 @@ let realtimePeerConnection = null;
 let realtimeDataChannel = null;
 let realtimeAudioStream = null;
 let completedTranscriptionSegments = [];
+const pendingOverlayWords = [];
+let displayedOverlayWords = [];
+let overlayWordDrainIntervalId = null;
+const overlayWordDrainIntervalMs = 100;
 let annotationPointerId = null;
 let annotationStrokeInProgress = false;
 let annotationHasInk = false;
@@ -253,7 +257,7 @@ function closeRealtimeConnection() {
 }
 
 function updatePromptOverlay() {
-  const overlayText = completedTranscriptionSegments.join(' ').trim();
+  const overlayText = displayedOverlayWords.join(' ').trim();
   const shouldShowOverlay = !editPanelOpen && overlayText.length > 0;
 
   if (!(promptOverlay instanceof HTMLElement)) {
@@ -265,8 +269,59 @@ function updatePromptOverlay() {
   promptOverlay.setAttribute('aria-hidden', shouldShowOverlay ? 'false' : 'true');
 
   if (shouldShowOverlay) {
-    promptOverlay.scrollTop = promptOverlay.scrollHeight;
+    window.requestAnimationFrame(() => {
+      promptOverlay.scrollLeft = promptOverlay.scrollWidth;
+    });
   }
+}
+
+function enqueueOverlayWords(transcriptSegment) {
+  const words = transcriptSegment.split(/\s+/).map((word) => word.trim()).filter((word) => word.length > 0);
+  if (words.length === 0) {
+    return;
+  }
+
+  pendingOverlayWords.push(...words);
+  drainOverlayWord();
+}
+
+function drainOverlayWord() {
+  if (pendingOverlayWords.length === 0) {
+    return;
+  }
+
+  const nextWord = pendingOverlayWords.shift();
+  if (typeof nextWord !== 'string' || nextWord.length === 0) {
+    return;
+  }
+
+  displayedOverlayWords.push(nextWord);
+  updatePromptOverlay();
+}
+
+function ensureOverlayWordDrainLoop() {
+  if (typeof overlayWordDrainIntervalId === 'number') {
+    return;
+  }
+
+  overlayWordDrainIntervalId = window.setInterval(() => {
+    drainOverlayWord();
+  }, overlayWordDrainIntervalMs);
+}
+
+function clearOverlayWordDrainLoop() {
+  if (typeof overlayWordDrainIntervalId !== 'number') {
+    return;
+  }
+
+  window.clearInterval(overlayWordDrainIntervalId);
+  overlayWordDrainIntervalId = null;
+}
+
+function clearTranscriptionDisplayBuffer() {
+  pendingOverlayWords.length = 0;
+  displayedOverlayWords = [];
+  updatePromptOverlay();
 }
 
 function appendCompletedTranscriptSegment(transcriptSegment) {
@@ -276,6 +331,7 @@ function appendCompletedTranscriptSegment(transcriptSegment) {
   }
 
   completedTranscriptionSegments.push(normalizedSegment);
+  enqueueOverlayWords(normalizedSegment);
 
   if (editPanelOpen) {
     promptInput.value = completedTranscriptionSegments.join(' ').trim();
@@ -458,8 +514,9 @@ async function startRealtimeRecording() {
 
   transcriptionInFlight = true;
   updateRecordButtonVisualState();
+  ensureOverlayWordDrainLoop();
   completedTranscriptionSegments = [];
-  updatePromptOverlay();
+  clearTranscriptionDisplayBuffer();
   clearDrawingCanvas();
   setAnnotationEnabled(false);
 
@@ -542,7 +599,7 @@ async function stopRealtimeRecording() {
     if (!editPanelOpen && versionId && transcribedPrompt.length > 0) {
       await submitPrompt(transcribedPrompt, annotationPngDataUrl);
       completedTranscriptionSegments = [];
-      updatePromptOverlay();
+      clearTranscriptionDisplayBuffer();
     }
   } finally {
     logRealtimeTranscription('stopped');
@@ -845,7 +902,7 @@ promptForm.addEventListener('submit', (event) => {
   promptInput.value = '';
   resizePromptInput();
   completedTranscriptionSegments = [];
-  updatePromptOverlay();
+  clearTranscriptionDisplayBuffer();
   clearDrawingCanvas();
   setAnnotationEnabled(false);
   focusPromptInput();
@@ -890,6 +947,7 @@ window.addEventListener(
   'beforeunload',
   () => {
     closeRealtimeConnection();
+    clearOverlayWordDrainLoop();
   },
   { once: true }
 );

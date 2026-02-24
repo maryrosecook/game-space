@@ -107,6 +107,8 @@ class TestHTMLElement extends TestEventTarget {
   public textContent: string | null = null;
   public scrollTop = 0;
   public scrollHeight = 0;
+  public scrollLeft = 0;
+  public scrollWidth = 0;
 
   setAttribute(name: string, value: string): void {
     this.attributes.set(name, value);
@@ -1065,7 +1067,7 @@ describe('game view prompt submit client', () => {
 
     const peerConnection = harness.getPeerConnection();
     expect(peerConnection).not.toBeNull();
-    harness.promptOverlay.scrollHeight = 480;
+    harness.promptOverlay.scrollWidth = 480;
     peerConnection?.dataChannel.dispatchEvent(
       'message',
       createEvent({
@@ -1075,10 +1077,14 @@ describe('game view prompt submit client', () => {
         })
       })
     );
+    expect(harness.promptOverlay.textContent).toBe('make');
+    harness.intervalCallbacks[0]?.();
+    harness.intervalCallbacks[0]?.();
+    harness.intervalCallbacks[0]?.();
     expect(harness.promptOverlay.textContent).toBe('make the paddle bigger');
     expect(harness.promptOverlay.classList.contains('prompt-overlay--visible')).toBe(true);
     expect(harness.promptOverlay.getAttribute('aria-hidden')).toBe('false');
-    expect(harness.promptOverlay.scrollTop).toBe(480);
+    expect(harness.promptOverlay.scrollLeft).toBe(480);
 
     harness.recordButton.dispatchEvent('click', createEvent());
     await flushAsyncOperations();

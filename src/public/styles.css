@@ -183,26 +183,34 @@ body {
 }
 
 .prompt-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 46px;
+  border-radius: 14px;
+  border: 1px solid rgba(144, 180, 255, 0.24);
+  background: rgba(3, 9, 26, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(8, 14, 36, 0.35);
   pointer-events: none;
   display: none;
-  padding: 20px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  color: #ffffff;
+  align-items: center;
+  padding: 0 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  color: rgba(227, 237, 255, 0.95);
   text-align: left;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: clamp(1.36rem, 4vw, 2.88rem);
-  font-weight: 800;
-  line-height: 1.15;
-  text-shadow: 0 3px 12px rgba(0, 0, 0, 0.75);
+  white-space: nowrap;
+  font-size: clamp(0.86rem, 1.35vw, 1rem);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+
+.prompt-overlay::-webkit-scrollbar {
+  display: none;
 }
 
 .prompt-overlay--visible {
-  display: block;
+  display: inline-flex;
 }
 
 
@@ -391,12 +399,21 @@ body {
   outline-offset: 1px;
 }
 
+.game-toolbar-main {
+  min-width: 0;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .game-tool-tabs {
   justify-self: start;
   align-self: center;
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  flex: 0 0 auto;
 }
 
 .game-view-tab {
