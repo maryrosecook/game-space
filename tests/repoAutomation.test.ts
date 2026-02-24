@@ -82,6 +82,24 @@ describe('repo automation configuration', () => {
     expect(workflow).toContain('pm2 restart game-space');
   });
 
+
+  it('pr feature video workflow injects required admin env for e2e web server startup', async () => {
+    const workflow = await readRepoFile('.github/workflows/pr-feature-videos.yml');
+
+    expect(workflow).toContain("PLAYWRIGHT_CAPTURE_VIDEO: '1'");
+    expect(workflow).toContain("GAME_SPACE_ADMIN_PASSWORD_HASH:");
+    expect(workflow).toContain("GAME_SPACE_ADMIN_SESSION_SECRET:");
+  });
+
+  it('pull request template nudges authors to request feature videos for user-visible changes', async () => {
+    const template = await readRepoFile('.github/pull_request_template.md');
+
+    expect(template).toContain('## Feature video request');
+    expect(template).toContain('changes user-visible behavior');
+    expect(template).toContain('<!-- video-tests:start -->');
+    expect(template).toContain('<!-- video-tests:end -->');
+  });
+
   it('pr feature video workflow remains valid yaml after script updates', () => {
     const workflowPath = path.join(process.cwd(), '.github/workflows/pr-feature-videos.yml');
 

@@ -56,7 +56,7 @@ import {
   renderIdeasView,
 } from "./views";
 import {
-  DEFAULT_TRANSCRIPTION_MODEL,
+  DEFAULT_REALTIME_MODEL,
   OpenAiRealtimeTranscriptionSessionFactory,
   type OpenAiRealtimeTranscriptionSessionCreator,
 } from "./services/openaiTranscription";
@@ -821,7 +821,7 @@ export function createApp(options: AppOptions = {}): express.Express {
             TRANSCRIPTION_MODEL_UNAVAILABLE_PATTERN.test(error.message)
           ) {
             response.status(503).json({
-              error: `OpenAI transcription model ${DEFAULT_TRANSCRIPTION_MODEL} is unavailable for this API key`,
+              error: `OpenAI realtime model ${DEFAULT_REALTIME_MODEL} is unavailable for this API key`,
             });
             return;
           }

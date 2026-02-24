@@ -1,5 +1,6 @@
-const OPENAI_REALTIME_TRANSCRIPTION_SESSIONS_URL = 'https://api.openai.com/v1/realtime/transcription_sessions';
-export const DEFAULT_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe';
+const OPENAI_REALTIME_CLIENT_SECRETS_URL = 'https://api.openai.com/v1/realtime/client_secrets';
+export const DEFAULT_REALTIME_MODEL = 'gpt-realtime-1.5';
+export const DEFAULT_INPUT_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe';
 
 type JsonObject = Record<string, unknown>;
 
@@ -26,13 +27,8 @@ function readFiniteNumber(value: unknown): number | null {
 }
 
 function readClientSecret(payload: JsonObject): { value: string; expiresAt: number } | null {
-  const clientSecretValue = payload.client_secret;
-  if (!isJsonObject(clientSecretValue)) {
-    return null;
-  }
-
-  const value = readString(clientSecretValue.value);
-  const expiresAt = readFiniteNumber(clientSecretValue.expires_at);
+  const value = readString(payload.value);
+  const expiresAt = readFiniteNumber(payload.expires_at);
   if (!value || expiresAt === null) {
     return null;
   }
@@ -54,25 +50,33 @@ export class OpenAiRealtimeTranscriptionSessionFactory implements OpenAiRealtime
   }
 
   async createSession(): Promise<RealtimeTranscriptionSession> {
-    return this.createSessionWithModel(DEFAULT_TRANSCRIPTION_MODEL);
+    return this.createSessionWithModel(DEFAULT_REALTIME_MODEL);
   }
 
   private async createSessionWithModel(model: string): Promise<RealtimeTranscriptionSession> {
-    const response = await fetch(OPENAI_REALTIME_TRANSCRIPTION_SESSIONS_URL, {
+    const response = await fetch(OPENAI_REALTIME_CLIENT_SECRETS_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        input_audio_transcription: {
-          model
+        session: {
+          type: 'realtime',
+          model,
+          audio: {
+            input: {
+              transcription: {
+                model: DEFAULT_INPUT_TRANSCRIPTION_MODEL
+              }
+            }
+          }
         }
       })
     });
 
     if (!response.ok) {
-      let errorMessage = `OpenAI realtime transcription session failed with status ${response.status}`;
+      let errorMessage = `OpenAI realtime client secret request failed with status ${response.status}`;
       try {
         const responseText = await response.text();
         if (responseText.length > 0) {
@@ -92,7 +96,7 @@ export class OpenAiRealtimeTranscriptionSessionFactory implements OpenAiRealtime
 
     const clientSecret = readClientSecret(payload);
     if (!clientSecret) {
-      throw new Error('OpenAI realtime transcription payload missing client secret');
+      throw new Error('OpenAI realtime client secret payload missing value');
     }
 
     return {

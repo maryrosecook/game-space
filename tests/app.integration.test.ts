@@ -82,7 +82,7 @@ class CapturingRealtimeTranscriptionSessionCreator implements OpenAiRealtimeTran
     session: RealtimeTranscriptionSession = {
       clientSecret: 'ephemeral-token',
       expiresAt: 1_737_000_000,
-      model: 'gpt-4o-transcribe'
+      model: 'gpt-realtime-1.5'
     }
   ) {
     this.session = session;
@@ -707,7 +707,7 @@ describe('express app integration', () => {
     const sessionCreator = new CapturingRealtimeTranscriptionSessionCreator({
       clientSecret: 'realtime-token',
       expiresAt: 1_737_000_321,
-      model: 'gpt-4o-transcribe'
+      model: 'gpt-realtime-1.5'
     });
 
     const app = createApp({
@@ -731,7 +731,7 @@ describe('express app integration', () => {
     expect(response.body).toEqual({
       clientSecret: 'realtime-token',
       expiresAt: 1_737_000_321,
-      model: 'gpt-4o-transcribe'
+      model: 'gpt-realtime-1.5'
     });
     expect(sessionCreator.calls).toBe(1);
   });
@@ -800,7 +800,7 @@ describe('express app integration', () => {
     expect(response.body).toEqual({ error: 'OpenAI realtime transcription session request failed' });
   });
 
-  it('returns 503 when gpt-4o-transcribe is unavailable for the API key', async () => {
+  it('returns 503 when gpt-realtime-1.5 is unavailable for the API key', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-app-transcribe-model-unavailable-');
     await createGameFixture({
       gamesRootPath: path.join(tempDirectoryPath, 'games'),
@@ -830,7 +830,7 @@ describe('express app integration', () => {
       .set('X-CSRF-Token', authSession.csrfToken)
       .expect(503);
 
-    expect(response.body).toEqual({ error: 'OpenAI transcription model gpt-4o-transcribe is unavailable for this API key' });
+    expect(response.body).toEqual({ error: 'OpenAI realtime model gpt-realtime-1.5 is unavailable for this API key' });
   });
 
   it('returns 404 for protected routes when unauthenticated', async () => {
