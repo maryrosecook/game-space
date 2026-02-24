@@ -1,4 +1,5 @@
 import express from "express";
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -38,6 +39,7 @@ import {
   isCodegenProvider,
   RuntimeCodegenConfigStore,
   type CodegenConfig,
+  type CodegenProvider,
 } from "./services/codegenConfig";
 import {
   gameDirectoryPath,
@@ -82,6 +84,9 @@ type AppOptions = {
 
 const TRANSCRIPTION_MODEL_UNAVAILABLE_PATTERN =
   /model_not_found|does not have access to model/i;
+const ANNOTATION_PNG_DATA_URL_PREFIX = "data:image/png;base64,";
+const ANNOTATION_PNG_BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
+const MAX_ANNOTATION_PNG_BYTES = 1024 * 1024;
 const IDEAS_STARTER_VERSION_ID = "starter";
 
 function defaultLogger(message: string, error: unknown): void {
@@ -121,16 +126,72 @@ type PromptSubmitResult = {
   forkId: string;
 };
 
+function decodeAnnotationPngDataUrl(annotationPngDataUrl: string): Buffer | null {
+  const normalizedValue = annotationPngDataUrl.trim();
+  if (!normalizedValue.startsWith(ANNOTATION_PNG_DATA_URL_PREFIX)) {
+    return null;
+  }
+
+  const encodedPayload = normalizedValue
+    .slice(ANNOTATION_PNG_DATA_URL_PREFIX.length)
+    .replace(/\s+/g, "");
+  if (
+    encodedPayload.length === 0 ||
+    encodedPayload.length % 4 !== 0 ||
+    !ANNOTATION_PNG_BASE64_PATTERN.test(encodedPayload)
+  ) {
+    return null;
+  }
+
+  const decodedPayload = Buffer.from(encodedPayload, "base64");
+  if (
+    decodedPayload.length === 0 ||
+    decodedPayload.length > MAX_ANNOTATION_PNG_BYTES
+  ) {
+    return null;
+  }
+
+  const normalizedEncodedPayload = encodedPayload.replace(/=+$/, "");
+  const roundTripEncodedPayload = decodedPayload
+    .toString("base64")
+    .replace(/=+$/, "");
+  if (normalizedEncodedPayload !== roundTripEncodedPayload) {
+    return null;
+  }
+
+  return decodedPayload;
+}
+
+function composePromptWithAttachedAnnotation(
+  buildPrompt: string,
+  userPrompt: string,
+): string {
+  const basePrompt = composeCodexPrompt(buildPrompt, userPrompt, null);
+  return `${basePrompt}\n\n[annotation_overlay_png_attached]\nUse the attached annotation PNG as visual context for this prompt.`;
+}
+
 async function submitPromptForVersion(options: {
   gamesRootPath: string;
   buildPromptPath: string;
+  codegenProvider: CodegenProvider;
   versionId: string;
   promptInput: string;
   annotationPngDataUrl?: string | null;
+  annotationPngBytes?: Buffer | null;
   codexRunner: CodexRunner;
   logError: ErrorLogger;
 }): Promise<PromptSubmitResult> {
-  const { gamesRootPath, buildPromptPath, versionId, promptInput, annotationPngDataUrl, codexRunner, logError } = options;
+  const {
+    gamesRootPath,
+    buildPromptPath,
+    codegenProvider,
+    versionId,
+    promptInput,
+    annotationPngDataUrl,
+    annotationPngBytes,
+    codexRunner,
+    logError,
+  } = options;
 
   const forkedMetadata = await createForkedGameVersion({
     gamesRootPath,
@@ -139,8 +200,19 @@ async function submitPromptForVersion(options: {
   });
 
   const buildPrompt = await readBuildPromptFile(buildPromptPath);
-  const fullPrompt = composeCodexPrompt(buildPrompt, promptInput, annotationPngDataUrl ?? null);
   const forkDirectoryPath = path.join(gamesRootPath, forkedMetadata.id);
+  const promptForRunner =
+    codegenProvider === "codex" && annotationPngBytes
+      ? composePromptWithAttachedAnnotation(buildPrompt, promptInput)
+      : composeCodexPrompt(buildPrompt, promptInput, annotationPngDataUrl ?? null);
+  const annotationImagePath =
+    codegenProvider === "codex" && annotationPngBytes
+      ? path.join(forkDirectoryPath, `.annotation-overlay-${randomUUID()}.png`)
+      : null;
+  if (annotationImagePath && annotationPngBytes) {
+    await fs.writeFile(annotationImagePath, annotationPngBytes);
+  }
+
   const forkMetadataPath = path.join(forkDirectoryPath, "metadata.json");
   let lastPersistedSessionId: string | null = null;
   let lastPersistedSessionStatus = resolveCodexSessionStatus(
@@ -195,12 +267,13 @@ async function submitPromptForVersion(options: {
     onSessionId: (sessionId: string) => {
       persistSessionIdInBackground(sessionId);
     },
+    imagePaths: annotationImagePath ? [annotationImagePath] : undefined,
   };
 
   await persistSessionStatus("created");
 
   void codexRunner
-    .run(fullPrompt, forkDirectoryPath, runOptions)
+    .run(promptForRunner, forkDirectoryPath, runOptions)
     .then(async (runResult) => {
       try {
         await persistSessionId(runResult.sessionId);
@@ -232,6 +305,15 @@ async function submitPromptForVersion(options: {
         logError(`Failed to store codex session status for ${forkedMetadata.id}`, statusError);
       });
       logError(`codex exec failed for ${forkedMetadata.id}`, error);
+    })
+    .finally(() => {
+      if (!annotationImagePath) {
+        return;
+      }
+
+      void fs.rm(annotationImagePath, { force: true }).catch((error: unknown) => {
+        logError(`Failed to clean annotation image for ${forkedMetadata.id}`, error);
+      });
     });
 
   return {
@@ -570,6 +652,7 @@ export function createApp(options: AppOptions = {}): express.Express {
         const submitResult = await submitPromptForVersion({
           gamesRootPath,
           buildPromptPath,
+          codegenProvider: codegenConfigStore.read().provider,
           versionId,
           promptInput: idea.prompt,
           codexRunner,
@@ -951,13 +1034,25 @@ export function createApp(options: AppOptions = {}): express.Express {
           typeof annotationPngDataUrlInput === "string" && annotationPngDataUrlInput.trim().length > 0
             ? annotationPngDataUrlInput.trim()
             : null;
+        const annotationPngBytes =
+          annotationPngDataUrl !== null
+            ? decodeAnnotationPngDataUrl(annotationPngDataUrl)
+            : null;
+        if (annotationPngDataUrl !== null && annotationPngBytes === null) {
+          response
+            .status(400)
+            .json({ error: "Annotation pixels must be a PNG data URL (data:image/png;base64,...)" });
+          return;
+        }
 
         const submitResult = await submitPromptForVersion({
           gamesRootPath,
           buildPromptPath,
+          codegenProvider: codegenConfigStore.read().provider,
           versionId,
           promptInput,
           annotationPngDataUrl,
+          annotationPngBytes,
           codexRunner,
           logError,
         });

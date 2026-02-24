@@ -13,6 +13,7 @@ export type CodexRunResult = {
 
 export type CodexRunOptions = {
   onSessionId?: (sessionId: string) => void;
+  imagePaths?: readonly string[];
 };
 
 export interface CodexRunner {
@@ -115,8 +116,8 @@ function drainStdoutLines(
 export class SpawnCodexRunner implements CodexRunner {
   async run(prompt: string, cwd: string, options: CodexRunOptions = {}): Promise<CodexRunResult> {
     return new Promise<CodexRunResult>((resolve, reject) => {
-      const { onSessionId } = options;
-      const childProcess = spawn('codex', ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', '-'], {
+      const { onSessionId, imagePaths = [] } = options;
+      const childProcess = spawn('codex', buildCodexExecArgs(imagePaths), {
         cwd,
         stdio: ['pipe', 'pipe', 'pipe']
       });
@@ -324,4 +325,9 @@ export function composeCodexPrompt(
 
 export async function readBuildPromptFile(buildPromptPath: string): Promise<string> {
   return fs.readFile(buildPromptPath, 'utf8');
+}
+
+export function buildCodexExecArgs(imagePaths: readonly string[] = []): string[] {
+  const imageArgs = imagePaths.flatMap((imagePath) => ['--image', imagePath]);
+  return ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', ...imageArgs, '-'];
 }

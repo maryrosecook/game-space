@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildCodexExecArgs,
   composeCodexPrompt,
   parseSessionIdFromCodexEventLine,
   readBuildPromptFile
@@ -11,6 +12,23 @@ import {
 import { createTempDirectory } from './testHelpers';
 
 describe('composeCodexPrompt', () => {
+  it('builds codex exec args without images', () => {
+    expect(buildCodexExecArgs()).toEqual(['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', '-']);
+  });
+
+  it('builds codex exec args with image attachments', () => {
+    expect(buildCodexExecArgs(['/tmp/annotation-a.png', '/tmp/annotation-b.png'])).toEqual([
+      'exec',
+      '--json',
+      '--dangerously-bypass-approvals-and-sandbox',
+      '--image',
+      '/tmp/annotation-a.png',
+      '--image',
+      '/tmp/annotation-b.png',
+      '-'
+    ]);
+  });
+
   it('prepends build prompt and preserves arbitrary user text', () => {
     const buildPrompt = 'Line A\nLine B\n';
     const userPrompt = 'Keep "quotes"\nline-2\n$HOME `raw`';
