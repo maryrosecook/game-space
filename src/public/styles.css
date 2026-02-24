@@ -187,9 +187,7 @@ body {
   min-width: 0;
   height: 46px;
   border-radius: 14px;
-  border: 1px solid rgba(144, 180, 255, 0.24);
   background: rgba(3, 9, 26, 0.72);
-  box-shadow: inset 0 0 0 1px rgba(8, 14, 36, 0.35);
   pointer-events: none;
   display: none;
   align-items: center;
