@@ -449,6 +449,12 @@ describe('express app integration', () => {
     expect(css.text).toContain('.game-view-icon-tab');
     expect(css.text).toContain('border: 0;');
     expect(css.text).toContain('background: transparent;');
+    expect(css.text).toContain('.prompt-overlay {');
+    expect(css.text).toContain('overflow-y: auto;');
+    expect(css.text).toContain('text-align: left;');
+    expect(css.text).toContain('font-size: clamp(1.36rem, 4vw, 2.88rem);');
+    expect(css.text).toContain('.prompt-overlay--visible {');
+    expect(css.text).toContain('display: block;');
     expect(css.text).toContain('.game-view-tab--generating .game-view-tab-spinner');
     expect(css.text).toContain('display: inline-block;');
     expect(css.text).not.toContain('game-tab-spinner-flash');
