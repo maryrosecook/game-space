@@ -112,7 +112,7 @@ Top three features:
 - Static serving model: Express serves shared `src/public/*`; `/games/*` is runtime-allowlisted and blocks metadata/source/config/dev artifacts.
 - Dev live-reload model: token file stays on disk under each game `dist/`, but browser access is routed through `/api/dev/reload-token/:versionId` in dev mode.
 - Deployment model: GitHub Actions deploys `main` to DigitalOcean over SSH using repository secrets and PM2 process management.
-- PR video model: Playwright videos are opt-in per PR update; selectors come from PR metadata/template block (or `.github/video-tests.txt`), and workflow comments are edited in place.
+- PR video model: Playwright videos are opt-in per PR update; selectors come from the PR body `video-tests` marker block, and workflow comments are edited in place.
 - Codex validation model: repo-level agent instructions require `npm run typecheck` and `npm run lint` to run sequentially (typecheck first, then lint) to reduce memory pressure.
 
 # Testing
@@ -138,12 +138,12 @@ Top three features:
 - End-to-end automation flow:
   - Baseline E2E run (no recording): `npm run test:e2e`.
   - Video run (opt-in only): `npm run test:e2e:video` or set `PLAYWRIGHT_CAPTURE_VIDEO=1`.
-  - For new user-visible features, add or update at least one Playwright E2E test covering the feature path.
+  - For every change, add or update at least one Playwright E2E test unless the change is clearly not demonstrable end-to-end.
   - In PRs, request feature video generation only when needed by adding target selectors inside the PR template block:
     - `<!-- video-tests:start -->`
     - `<selector per line>`
     - `<!-- video-tests:end -->`
-  - On later commits to the same PR, keep that selector block current; the workflow reruns on `synchronize` and updates the existing “Feature Video Artifacts” comment instead of posting duplicates.
+  - On later commits to the same PR, keep that selector block current; the workflow reruns on `synchronize` and updates the existing “Feature Video Artifacts” comment in place.
 - End-to-end/manual flow:
   - Run `npm run dev`.
   - Verify logged-out behavior: `/` shows only favorited game tiles, direct `/game/:versionId` URLs still load, and `/codex`, prompt API, and favorite toggle API are unavailable.

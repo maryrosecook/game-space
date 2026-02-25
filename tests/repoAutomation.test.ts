@@ -91,13 +91,31 @@ describe('repo automation configuration', () => {
     expect(workflow).toContain("GAME_SPACE_ADMIN_SESSION_SECRET:");
   });
 
+  it('pr feature video workflow resolves selectors from PR body markers only', async () => {
+    const workflow = await readRepoFile('.github/workflows/pr-feature-videos.yml');
+
+    expect(workflow).toContain('MARKER_CONTENT');
+    expect(workflow).toContain('github.event.pull_request.body');
+    expect(workflow).toContain('<!-- video-tests:start -->');
+    expect(workflow).toContain('<!-- video-tests:end -->');
+    expect(workflow).not.toContain('.github/video-tests.txt');
+  });
+
   it('pull request template nudges authors to request feature videos for user-visible changes', async () => {
     const template = await readRepoFile('.github/pull_request_template.md');
 
     expect(template).toContain('## Feature video request');
     expect(template).toContain('changes user-visible behavior');
+    expect(template).toContain('at least one end-to-end test for each change');
     expect(template).toContain('<!-- video-tests:start -->');
     expect(template).toContain('<!-- video-tests:end -->');
+  });
+
+  it('repo instructions require at least one e2e test per change unless non-demonstrable', async () => {
+    const instructions = await readRepoFile('AGENTS.md');
+
+    expect(instructions).toContain('at least one end-to-end test');
+    expect(instructions).toContain('clearly not demonstrable with an end-to-end test');
   });
 
   it('pr feature video workflow remains valid yaml after script updates', () => {

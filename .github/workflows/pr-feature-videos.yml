@@ -31,13 +31,7 @@ jobs:
           set -euo pipefail
 
           MARKER_CONTENT="$(printf '%s' "${PR_BODY:-}" | sed -n '/<!-- video-tests:start -->/,/<!-- video-tests:end -->/p' | sed '1d;$d')"
-
-          FILE_CONTENT=''
-          if [ -f .github/video-tests.txt ]; then
-            FILE_CONTENT="$(cat .github/video-tests.txt)"
-          fi
-
-          SELECTORS="$(printf '%s\n%s\n' "$MARKER_CONTENT" "$FILE_CONTENT" | sed 's/#.*$//' | sed '/^\s*$/d' | awk '{$1=$1; print}')"
+          SELECTORS="$(printf '%s\n' "$MARKER_CONTENT" | sed 's/#.*$//' | sed '/^\s*$/d' | awk '{$1=$1; print}')"
 
           if [ -z "$SELECTORS" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
@@ -139,7 +133,7 @@ jobs:
                   'To request videos, add selectors between:',
                   '- `<!-- video-tests:start -->`',
                   '- `<!-- video-tests:end -->`',
-                  'in the PR body (or commit `.github/video-tests.txt`).'
+                  'in the PR body.'
                 ].join('\n');
 
             if (existing) {
