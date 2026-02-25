@@ -8,14 +8,14 @@ type ActiveTouch = {
   clientY: number;
 };
 
-type InputBounds = {
+export type InputBounds = {
   left: number;
   top: number;
   width: number;
   height: number;
 };
 
-type InputEventType =
+type BrowserInputEventType =
   | 'pointerdown'
   | 'pointermove'
   | 'pointerup'
@@ -25,22 +25,118 @@ type InputEventType =
   | 'mouseup'
   | 'mouseleave';
 
-type InputSurface = {
+export type InputSurface = {
   style: {
     touchAction: string;
   };
-  addEventListener: (type: InputEventType, listener: EventListener) => void;
-  removeEventListener: (type: InputEventType, listener: EventListener) => void;
+  addEventListener: (type: BrowserInputEventType, listener: EventListener) => void;
+  removeEventListener: (type: BrowserInputEventType, listener: EventListener) => void;
   getBoundingClientRect: () => InputBounds;
 };
+
+export type SyntheticInputAction = 'down' | 'move' | 'up' | 'cancel';
+export type SyntheticInputSource = 'touch' | 'mouse' | 'both';
+
+export type SyntheticInputEvent = {
+  action: SyntheticInputAction;
+  pointerId: number;
+  clientX: number;
+  clientY: number;
+  source: SyntheticInputSource;
+};
+
+export interface StarterInputManager {
+  attach(target: InputSurface): void;
+  detach(): void;
+  consumeFrame(canvas: InputSurface): TouchInputFrame;
+}
 
 const TAP_DISTANCE_THRESHOLD_PX = 16;
 const MOUSE_TOUCH_ID = -1;
 
-export class InputManager {
-  private target: InputSurface | null = null;
-  private activeTouches = new Map<number, ActiveTouch>();
+class InputFrameState {
+  private readonly activeTouches = new Map<number, ActiveTouch>();
   private tapCount = 0;
+
+  startInput(id: number, clientX: number, clientY: number): void {
+    this.activeTouches.set(id, {
+      id,
+      startX: clientX,
+      startY: clientY,
+      clientX,
+      clientY
+    });
+  }
+
+  moveInput(id: number, clientX: number, clientY: number): boolean {
+    const active = this.activeTouches.get(id);
+    if (!active) {
+      return false;
+    }
+
+    active.clientX = clientX;
+    active.clientY = clientY;
+    return true;
+  }
+
+  endInput(id: number, clientX: number, clientY: number, shouldCountTap: boolean): boolean {
+    const active = this.activeTouches.get(id);
+    this.activeTouches.delete(id);
+
+    if (!active) {
+      return false;
+    }
+
+    if (shouldCountTap) {
+      const deltaX = clientX - active.startX;
+      const deltaY = clientY - active.startY;
+      const travelDistance = Math.hypot(deltaX, deltaY);
+      if (travelDistance <= TAP_DISTANCE_THRESHOLD_PX) {
+        this.tapCount += 1;
+      }
+    }
+
+    return true;
+  }
+
+  consumeFrame(canvas: InputSurface): TouchInputFrame {
+    const touches = this.collectTouches(canvas);
+    const frame: TouchInputFrame = {
+      touches,
+      tapCount: this.tapCount
+    };
+    this.tapCount = 0;
+    return frame;
+  }
+
+  reset(): void {
+    this.activeTouches.clear();
+    this.tapCount = 0;
+  }
+
+  private collectTouches(canvas: InputSurface): TouchPoint[] {
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+
+    const touches = Array.from(this.activeTouches.values(), (touch): TouchPoint => {
+      return {
+        id: touch.id,
+        clientX: touch.clientX,
+        clientY: touch.clientY,
+        normalizedX: clampNormalized(((touch.clientX - rect.left) / width) * 2 - 1),
+        normalizedY: clampNormalized(((touch.clientY - rect.top) / height) * 2 - 1)
+      };
+    });
+
+    touches.sort((left, right) => left.id - right.id);
+    return touches;
+  }
+}
+
+export class BrowserInputManager implements StarterInputManager {
+  private target: InputSurface | null = null;
+  private readonly state = new InputFrameState();
 
   private readonly handlePointerDown: EventListener = (event) => {
     const payload = readTouchPointerPayload(event);
@@ -48,7 +144,7 @@ export class InputManager {
       return;
     }
 
-    this.startInput(payload.id, payload.clientX, payload.clientY);
+    this.state.startInput(payload.id, payload.clientX, payload.clientY);
     event.preventDefault();
   };
 
@@ -58,7 +154,7 @@ export class InputManager {
       return;
     }
 
-    if (!this.moveInput(payload.id, payload.clientX, payload.clientY)) {
+    if (!this.state.moveInput(payload.id, payload.clientX, payload.clientY)) {
       return;
     }
     event.preventDefault();
@@ -71,7 +167,7 @@ export class InputManager {
     }
 
     const shouldCountTap = event.type === 'pointerup';
-    this.endInput(payload.id, payload.clientX, payload.clientY, shouldCountTap);
+    this.state.endInput(payload.id, payload.clientX, payload.clientY, shouldCountTap);
     event.preventDefault();
   };
 
@@ -81,7 +177,7 @@ export class InputManager {
       return;
     }
 
-    this.startInput(MOUSE_TOUCH_ID, payload.clientX, payload.clientY);
+    this.state.startInput(MOUSE_TOUCH_ID, payload.clientX, payload.clientY);
     event.preventDefault();
   };
 
@@ -91,7 +187,7 @@ export class InputManager {
       return;
     }
 
-    if (!this.moveInput(MOUSE_TOUCH_ID, payload.clientX, payload.clientY)) {
+    if (!this.state.moveInput(MOUSE_TOUCH_ID, payload.clientX, payload.clientY)) {
       return;
     }
     event.preventDefault();
@@ -103,7 +199,7 @@ export class InputManager {
       return;
     }
 
-    if (!this.endInput(MOUSE_TOUCH_ID, payload.clientX, payload.clientY, true)) {
+    if (!this.state.endInput(MOUSE_TOUCH_ID, payload.clientX, payload.clientY, true)) {
       return;
     }
     event.preventDefault();
@@ -115,7 +211,7 @@ export class InputManager {
       return;
     }
 
-    if (!this.endInput(MOUSE_TOUCH_ID, payload.clientX, payload.clientY, false)) {
+    if (!this.state.endInput(MOUSE_TOUCH_ID, payload.clientX, payload.clientY, false)) {
       return;
     }
     event.preventDefault();
@@ -153,85 +249,53 @@ export class InputManager {
     this.target.removeEventListener('mouseup', this.handleMouseUp);
     this.target.removeEventListener('mouseleave', this.handleMouseLeave);
     this.target = null;
-    this.activeTouches.clear();
-    this.tapCount = 0;
+    this.state.reset();
   }
 
   consumeFrame(canvas: InputSurface): TouchInputFrame {
-    const touches = this.collectTouches(canvas);
-    const frame: TouchInputFrame = {
-      touches,
-      tapCount: this.tapCount
-    };
-    this.tapCount = 0;
-    return frame;
-  }
-
-  private startInput(id: number, clientX: number, clientY: number): void {
-    this.activeTouches.set(id, {
-      id,
-      startX: clientX,
-      startY: clientY,
-      clientX,
-      clientY
-    });
-  }
-
-  private moveInput(id: number, clientX: number, clientY: number): boolean {
-    const active = this.activeTouches.get(id);
-    if (!active) {
-      return false;
-    }
-
-    active.clientX = clientX;
-    active.clientY = clientY;
-    return true;
-  }
-
-  private endInput(
-    id: number,
-    clientX: number,
-    clientY: number,
-    shouldCountTap: boolean
-  ): boolean {
-    const active = this.activeTouches.get(id);
-    this.activeTouches.delete(id);
-
-    if (!active) {
-      return false;
-    }
-
-    if (shouldCountTap) {
-      const deltaX = clientX - active.startX;
-      const deltaY = clientY - active.startY;
-      const travelDistance = Math.hypot(deltaX, deltaY);
-      if (travelDistance <= TAP_DISTANCE_THRESHOLD_PX) {
-        this.tapCount += 1;
-      }
-    }
-
-    return true;
-  }
-
-  private collectTouches(canvas: InputSurface): TouchPoint[] {
-    const rect = canvas.getBoundingClientRect();
-    const width = Math.max(1, rect.width);
-    const height = Math.max(1, rect.height);
-
-    const touches = Array.from(this.activeTouches.values(), (touch): TouchPoint => {
-      return {
-        id: touch.id,
-        clientX: touch.clientX,
-        clientY: touch.clientY,
-        normalizedX: clampNormalized(((touch.clientX - rect.left) / width) * 2 - 1),
-        normalizedY: clampNormalized(((touch.clientY - rect.top) / height) * 2 - 1)
-      };
-    });
-
-    touches.sort((left, right) => left.id - right.id);
-    return touches;
+    return this.state.consumeFrame(canvas);
   }
 }
+
+export class HeadlessInputManager implements StarterInputManager {
+  private target: InputSurface | null = null;
+  private readonly state = new InputFrameState();
+
+  attach(target: InputSurface): void {
+    this.target = target;
+    this.target.style.touchAction = 'none';
+  }
+
+  detach(): void {
+    this.target = null;
+    this.state.reset();
+  }
+
+  consumeFrame(canvas: InputSurface): TouchInputFrame {
+    return this.state.consumeFrame(canvas);
+  }
+
+  applySyntheticEvent(event: SyntheticInputEvent): void {
+    if (event.source === 'both') {
+      // Deduped intentionally as one logical pointer mutation.
+    }
+
+    if (event.action === 'down') {
+      this.state.startInput(event.pointerId, event.clientX, event.clientY);
+      return;
+    }
+
+    if (event.action === 'move') {
+      this.state.moveInput(event.pointerId, event.clientX, event.clientY);
+      return;
+    }
+
+    const shouldCountTap = event.action === 'up';
+    this.state.endInput(event.pointerId, event.clientX, event.clientY, shouldCountTap);
+  }
+}
+
+export { BrowserInputManager as InputManager };
 
 function clampNormalized(value: number): number {
   return Math.max(-1, Math.min(1, value));

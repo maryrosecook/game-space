@@ -106,8 +106,16 @@ describe('composeCodexPrompt', () => {
     expect(buildPromptText).toContain('Do not read, depend on, or modify files outside the current directory.');
     expect(buildPromptText).toContain('startGame');
     expect(buildPromptText).toContain('dist/game.js');
+    expect(buildPromptText).toContain('fixed viewport of `360x640`');
+    expect(buildPromptText).toContain('`maxFrames=120` and `maxSnaps=1`');
+    expect(buildPromptText).toContain("npm run headless -- --json '<protocol-json>'");
+    expect(buildPromptText).toContain('"snap": "validation_check"');
+    expect(buildPromptText).not.toContain('"v": 1');
+    expect(buildPromptText).not.toContain('"game":');
+    expect(buildPromptText).not.toContain('"viewport":');
+    expect(buildPromptText).not.toContain('"limits":');
     expect(buildPromptText).toContain('You must not run linting commands.');
-    expect(buildPromptText).toContain('You must not run tests.');
+    expect(buildPromptText).toContain('You must not run tests except the headless tests.');
   });
 
   it('extracts session id from legacy session_meta events', () => {
