@@ -5,7 +5,7 @@ Local-first game version browser and editor where every version is playable, for
 Top three features:
 - Filesystem-backed version catalog rendered as responsive homepage tiles (`Fountain`), with hyphen-normalized labels and favorite highlighting; logged-out users see only favorites while direct non-favorite game URLs still load.
 - Cookie-authenticated admin workflow (`/auth`) that unlocks prompt execution and transcript access, including runtime switching between Codex and Claude codegen providers, while keeping public gameplay (`/` and `/game/:versionId`) available without login.
-- Admin game controls on `/game/:versionId` include prompt editing with a Lucide `rocket` icon on the `Build` action, icon-only transcript/favorite/delete controls with consistent sizing, and favorite persistence to each game's `metadata.json`; Lucide SVG nodes are sourced from the installed `lucide` npm package.
+- Starter now supports deterministic headless runs (Playwright + SwiftShader flags) driven by a bounded JSON action protocol (`run` / `input` / `snap`) with PNG capture output via a local CLI workflow (`npm run headless`).
 
 # Repo structure
 
@@ -43,7 +43,16 @@ Top three features:
   - `pr-feature-videos.yml` - PR-scoped, opt-in Playwright video workflow that records selected E2E specs and upserts one PR comment with artifact links.
 - `.github/pull_request_template.md` - PR template with `video-tests` selector block for requesting feature-video runs.
 - `games/` - Versioned game sandboxes (one runtime/build boundary per version).
-  - `starter/` - Minimal touch-and-mouse WebGL starter powered by `src/engine/*` (`engine.ts`, `input.ts`, `blueprints.ts`, `particles.ts`, `physics.ts`, `render.ts`, `types.ts`) plus sample wiring in `src/main.ts`; intentionally omits GUI/editor features and ships local `typecheck` support via `tsc --noEmit`.
+  - `starter/` - Minimal touch-and-mouse WebGL starter with browser/headless adapters and local headless tooling.
+    - `src/main.ts` - Starter bootstrap plus `createStarterEngine()` adapter-injection entrypoint.
+    - `src/engine/frameScheduler.ts` - Browser RAF and deterministic headless frame schedulers.
+    - `src/engine/input.ts` - Browser and headless input managers that emit the same touch-frame shape.
+    - `src/headless/protocol.ts` - Protocol types, guard rails, and parser/validator.
+    - `src/headless/executor.ts` - Sequential step executor (`run`/`input`/`snap`) with runtime limit enforcement.
+    - `src/headless/runner.ts` - Playwright orchestration, harness bundling, and PNG file persistence.
+    - `src/headless/cli.ts` - Starter-local CLI (`--smoke`, `--script`, `--json`, or stdin JSON via `--stdin` / piped input) for headless runs.
+    - `package.json` - Starter-local scripts (`headless`, `headless:install`, `headless:smoke`, `headless:run`) and dev dependencies.
+    - `snapshots/` - Timestamped output directories for headless captures (gitignored).
   - `v1-bounce/` - Initial bouncing-ball WebGL game implementation.
   - `d0cf7658-3371-4f01-99e2-ca90fc1899cf/` - Forked bouncing-ball variant.
 - `tests/` - Vitest unit/integration coverage for app routes and core services, plus Playwright E2E specs under `tests/e2e/`.
@@ -55,7 +64,6 @@ Top three features:
 - `conductor.json` - Conductor workspace startup config (`npm install`, `npm run dev`).
 - `package.json` - NPM scripts and dependencies.
 - `game-build-prompt.md` - Prompt prelude prepended to user prompt text before Codex execution.
-- `game-plan.md` - Product requirements and milestones.
 
 # Most important code paths
 
@@ -68,6 +76,7 @@ Top three features:
 - Codex transcript/runtime flow: `/codex` and `/api/codex-sessions/:versionId` require admin; transcript API resolves metadata, derives runtime `eyeState` via `getCodexTurnInfo()` (task lifecycle for Codex logs, message-balance fallback for Claude logs), reads session JSONL from both `~/.codex/sessions` and `~/.claude/projects`, and returns normalized transcript entries plus lifecycle/runtime state, which clients render anchored at the newest entry.
 - Static/runtime serving flow: `/games/*` first passes `requireRuntimeGameAssetPathMiddleware()` so only runtime-safe `dist` assets are public; sensitive or dev files (including `dist/reload-token.txt`) return `404`.
 - Dev reload flow: when `GAME_SPACE_DEV_LIVE_RELOAD=1`, `scripts/dev.ts` rewrites per-version `dist/reload-token.txt`; browser polling uses `/api/dev/reload-token/:versionId` instead of direct `/games` file access.
+- Starter headless flow: `games/starter/src/headless/cli.ts` parses a steps-only protocol (`--smoke`, `--script`, `--json`, or stdin JSON), infers the game ID from cwd, and `parseStarterHeadlessProtocol()` enforces fixed headless constraints before launch; `runStarterHeadless()` launches Chromium with SwiftShader-friendly flags, bundles/loads `browserHarness.ts`, then `executeStarterHeadlessProtocol()` applies deterministic steps through `HeadlessFrameScheduler` and `HeadlessInputManager`, and `persistCaptures()` writes ordered PNGs under `games/starter/snapshots/<timestamp>/`.
 
 # Data stores
 
@@ -78,6 +87,9 @@ Top three features:
     - `dist/game.js` - Built runtime bundle served to clients.
     - `dist/reload-token.txt` - Dev-only rebuild token (read through `/api/dev/reload-token/:versionId` when dev live reload is enabled).
     - `node_modules/` - Per-version installed dependencies.
+- `games/starter/snapshots/` - Starter headless capture output (timestamped directories, gitignored).
+  - `<timestamp>/`
+    - `<index>-<label>.png` - Snapshot captured at a deterministic frame.
 - `~/.codex/sessions/` - External local Codex store used for transcript/runtime-state lookup.
   - `YYYY/MM/DD/rollout-...-<session-id>.jsonl` - Session event log parsed for `session_meta` cwd matching, task lifecycle events, and user/assistant message turns.
 - `~/.claude/projects/` - External local Claude Code store used for transcript/runtime-state lookup when provider is Claude.
@@ -105,7 +117,9 @@ Top three features:
 - Runtime-state derivation model: `codexTurnInfo.ts` keeps an in-memory tracker per worktree (`sessionPath`, append offset, partial-line buffer, task lifecycle counters, user/assistant counters, latest assistant metadata), scans for the newest matching JSONL by worktree cwd metadata (`session_meta.payload.cwd` for Codex or top-level `cwd` for Claude), and sets `eyeState` to `generating` while `task_started` count exceeds terminal task events (`task_complete` and related terminal markers); otherwise `idle`. For logs without task markers, it falls back to user/assistant message balance. When no tracker is active, lifecycle state maps fallback runtime state.
 - Transcript scroll model: `createCodexTranscriptPresenter()` exposes `scrollToBottom()`; game transcript panel-open events and transcript re-renders use it (via `autoScrollToBottom`) so admins land on the newest message when opening the panel and during polling updates.
 - Voice overlay layout model: `prompt-overlay` covers the full game viewport, renders transcript text top-left with reduced size, and `updatePromptOverlay()` keeps the container scrolled to `scrollHeight` while visible so newest transcript text stays in view.
-- Starter game base model: `games/starter/src/engine/engine.ts` runs lifecycle/tick phases (`initialize`, `loadGame`, `loadCamera`, `startLoop`, `tick`, handler phases, resize, camera/runtime updates); `input.ts` normalizes touch pointer and desktop mouse down/move/up/cancel-equivalent events into a shared touch-frame input model; `blueprints.ts` handles blueprint lookup/thing creation/handler execution; `particles.ts` provides lightweight particle storage/stepping; `physics.ts` exposes a no-op pluggable physics hook for future collision engines; and `render.ts` provides a WebGL skeleton that draws rectangles/circles/triangles in shader space with no bitmap/image path. `games/starter/src/main.ts` wires a single night-blue bouncing ball, uses static camera bounds, and emits fire-colored rain particles just above the viewport top, rendered in the foreground over gameplay actors. `games/starter/package.json` includes `typecheck: tsc --noEmit` with local `typescript` dev tooling so starter forks can run type checks immediately. `games/starter/dist/` is treated as generated build output; source changes should happen in `games/starter/src/`.
+- Starter game base model: `games/starter/src/engine/engine.ts` runs lifecycle/tick phases with adapter injection points for input and frame scheduling. Browser gameplay defaults to `BrowserInputManager` + `BrowserRafScheduler`; headless runs inject `HeadlessInputManager` + `HeadlessFrameScheduler` while leaving game/blueprint logic unchanged.
+- Starter headless protocol model: `protocol.ts` validates steps-only action tapes and enforces fixed runtime constraints (`viewport=360x640@dpr1`, `MAX_TOTAL_FRAMES=120`, `MAX_SNAPSHOTS=1`, `MAX_STEPS=64`, `MAX_INPUT_EVENTS=128`, and runtime ceiling) before launching Chromium.
+- Starter headless orchestration model: `runner.ts` bundles `browserHarness.ts` via esbuild at runtime, boots a canvas in Playwright, executes sequential steps through `executor.ts`, captures only `snap` frames, and persists PNG outputs with stable ordered filenames. `browserHarness.ts` creates WebGL with `preserveDrawingBuffer: true` and calls `gl.finish()` before `toDataURL('image/png')` so captures contain rendered pixels rather than cleared buffers.
 - Favorites model: each game version can be marked favorite in `metadata.json`; the homepage filters to favorites for logged-out users, while authenticated admins can toggle favorite state from the game-page star control.
 - Icon model: server-rendered controls serialize official Lucide icon nodes imported from the `lucide` npm package; ideas rerenders reuse these server-provided SVG strings from `data-idea-build-icon` / `data-idea-delete-icon` so client updates stay in sync with package-backed icons.
 - Tile-color model: `tileColor.ts` generates random `#RRGGBB` colors that satisfy a minimum 4.5:1 contrast ratio with white text (fallback `#1D3557`), and forks/seeded versions persist this value in `metadata.json`.
@@ -121,6 +135,9 @@ Top three features:
 - Run lint: `npm run lint`
 - Run type checking and lint sequentially (never in parallel) to avoid memory overload.
 - Run tests: `npm run test`
+- Run starter-local typecheck (includes `src/headless/*`): `npm --prefix games/starter run typecheck`
+- Run starter headless custom protocol JSON directly: `cat /path/to/protocol.json | npm --prefix games/starter run headless`
+- Run starter headless smoke scenario: `npm --prefix games/starter run headless:smoke`
 - Coverage focus:
   - Auth login/logout cookies, fixed TTL, CSRF checks, and brute-force backoff behavior.
   - Protected-route gating for `/codex`, transcript API, prompt API, and favorite toggle API.
@@ -135,6 +152,7 @@ Top three features:
   - `/codex` client behavior, including transcript render auto-scroll request on initial load.
   - Repo automation workflow integrity checks, including YAML parse validation for `.github/workflows/pr-feature-videos.yml`.
   - Source-level runtime assertions cover bouncing games and starter runtime behavior in `tests/gameRuntimeSource.test.ts`; the starter engine still has no dedicated engine-unit-test module.
+  - Starter headless coverage includes protocol validation/guard rails (`tests/starterHeadlessProtocol.test.ts`), deterministic step execution + runtime ceiling (`tests/starterHeadlessExecutor.test.ts`), and adapter behavior for deterministic scheduler and synthetic input (`tests/starterHeadlessAdapters.test.ts`).
 - End-to-end automation flow:
   - Baseline E2E run (no recording): `npm run test:e2e`.
   - Video run (opt-in only): `npm run test:e2e:video` or set `PLAYWRIGHT_CAPTURE_VIDEO=1`.

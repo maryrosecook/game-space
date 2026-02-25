@@ -17,9 +17,22 @@ The host page will load and run your game with this fixed contract:
 - The host provides a `<canvas id="game-canvas">` and calls `startGame(canvas)`.
 - Your game must run fully client-side in the browser.
 - Read `[pwd]/README.md` for more details on the available game engine API.
+- The headless runner always uses a fixed viewport of `360x640` at `dpr=1`.
+- The headless runner always enforces `maxFrames=120` and `maxSnaps=1`.
+- Validate you've achieved the prompt by running the game headless with `npm run headless -- --json '<protocol-json>'`.
+- Illustrative protocol JSON:
+
+```json
+{
+  "steps": [
+    { "run": 20 },
+    { "snap": "validation_check" }
+  ]
+}
+```
 
 ## Forbidden work
 
 - You must not run linting commands.
 - You must not write test files or test code.
-- You must not run tests.
+- You must not run tests except the headless tests.

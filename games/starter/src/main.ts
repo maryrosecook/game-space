@@ -1,8 +1,11 @@
 import {
   GameEngine,
+  GameEngineDependencies,
   GameEngineDataSource,
   LoadedGame
 } from './engine/engine';
+import { BrowserRafScheduler } from './engine/frameScheduler';
+import { BrowserInputManager } from './engine/input';
 import {
   Blueprint,
   GameContext,
@@ -27,9 +30,7 @@ export function startGame(canvas: HTMLCanvasElement): void {
     activeEngine = null;
   }
 
-  const engine = new GameEngine({
-    dataSource: createStarterDataSource()
-  });
+  const engine = createStarterEngine();
   activeEngine = engine;
 
   void engine.initialize(canvas, 'starter').catch((error) => {
@@ -52,7 +53,22 @@ export function startGame(canvas: HTMLCanvasElement): void {
   );
 }
 
-function createStarterDataSource(): GameEngineDataSource {
+export type StarterEngineOptions = Pick<
+  GameEngineDependencies,
+  'createInputManager' | 'frameScheduler' | 'requestFrame' | 'cancelFrame'
+>;
+
+export function createStarterEngine(options: StarterEngineOptions = {}): GameEngine {
+  return new GameEngine({
+    dataSource: createStarterDataSource(),
+    createInputManager: options.createInputManager ?? (() => new BrowserInputManager()),
+    frameScheduler: options.frameScheduler ?? new BrowserRafScheduler(),
+    requestFrame: options.requestFrame,
+    cancelFrame: options.cancelFrame
+  });
+}
+
+export function createStarterDataSource(): GameEngineDataSource {
   return {
     loadGame: async (gameDirectory): Promise<LoadedGame> => {
       return {

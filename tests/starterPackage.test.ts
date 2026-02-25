@@ -52,6 +52,27 @@ describe('starter package manifest', () => {
     expect(readStringField(scripts, 'typecheck')).toBe('tsc --noEmit');
     expect(readStringField(devDependencies, 'typescript')).toBe('^5.6.3');
   });
+
+  it('includes headless install/smoke commands and required tooling dependencies', async () => {
+    const packageJson = await readStarterPackageJson();
+    const scripts = readObjectField(packageJson, 'scripts');
+    const devDependencies = readObjectField(packageJson, 'devDependencies');
+    const scriptKeys = Object.keys(scripts).sort();
+
+    expect(readStringField(scripts, 'headless')).toBe('tsx src/headless/cli.ts');
+    expect(readStringField(scripts, 'headless:install')).toBe('playwright install --with-deps chromium');
+    expect(readStringField(scripts, 'headless:smoke')).toBe('tsx src/headless/cli.ts --smoke');
+    expect(scriptKeys).toEqual([
+      'build',
+      'headless',
+      'headless:install',
+      'headless:run',
+      'headless:smoke',
+      'typecheck',
+      'watch'
+    ]);
+    expect(readStringField(devDependencies, '@playwright/test')).toBe('^1.58.2');
+  });
 });
 
 describe('starter README', () => {
@@ -62,5 +83,19 @@ describe('starter README', () => {
     expect(readme).toContain('`dist/` is generated build output.');
     expect(readme).toContain('Do not edit files in `dist/` directly; make changes in `src/` and rebuild.');
     expect(readme).toContain('Keep `dist/` gitignored.');
+  });
+
+  it('documents headless debugging commands and snapshot output path', async () => {
+    const readme = await readStarterReadme();
+
+    expect(readme).toContain('## Headless debugging scripts');
+    expect(readme).toContain('Protocol is steps-only.');
+    expect(readme).toContain('`360x640` (`dpr=1`)');
+    expect(readme).toContain('`maxFrames=120` and `maxSnaps=1`');
+    expect(readme).toContain('`cat /path/to/protocol.json | npm run headless`');
+    expect(readme).toContain('`npm run headless:install`');
+    expect(readme).toContain('`npm run headless:smoke`');
+    expect(readme).toContain('`npm run headless:run -- --script');
+    expect(readme).toContain('`snapshots/<timestamp>/`');
   });
 });

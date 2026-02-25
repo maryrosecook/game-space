@@ -6,7 +6,8 @@ import {
   runtimeThingToRawThing,
   sanitizeThingData
 } from './blueprints';
-import { InputManager } from './input';
+import { BrowserRafScheduler, FrameScheduler } from './frameScheduler';
+import { BrowserInputManager, StarterInputManager } from './input';
 import { createParticleSystem, ParticleSystem } from './particles';
 import { createNoopPhysicsAdapter, PhysicsAdapter } from './physics';
 import { createWebGlRenderer, GameRenderer, renderGame } from './render';
@@ -40,8 +41,9 @@ export type GameEngineDependencies = {
   dataSource: GameEngineDataSource;
   physicsAdapter?: PhysicsAdapter;
   createRenderer?: (gl: WebGLRenderingContext) => GameRenderer;
-  createInputManager?: () => InputManager;
+  createInputManager?: () => StarterInputManager;
   particleSystem?: ParticleSystem;
+  frameScheduler?: FrameScheduler;
   requestFrame?: (callback: FrameRequestCallback) => number;
   cancelFrame?: (handle: number) => void;
 };
@@ -64,7 +66,7 @@ export class GameEngine {
   private resizeAttached = false;
   private readonly resizeListener = () => this.resizeCanvas();
 
-  private readonly inputManager: InputManager;
+  private readonly inputManager: StarterInputManager;
   private readonly physicsAdapter: PhysicsAdapter;
   private readonly particleSystem: ParticleSystem;
   private readonly requestFrame: (callback: FrameRequestCallback) => number;
@@ -84,19 +86,16 @@ export class GameEngine {
   private createdThingIds = new Set<string>();
 
   constructor(private readonly dependencies: GameEngineDependencies) {
-    this.inputManager = dependencies.createInputManager?.() ?? new InputManager();
+    this.inputManager = dependencies.createInputManager?.() ?? new BrowserInputManager();
     this.physicsAdapter = dependencies.physicsAdapter ?? createNoopPhysicsAdapter();
     this.particleSystem = dependencies.particleSystem ?? createParticleSystem();
+    const frameScheduler = dependencies.frameScheduler ?? new BrowserRafScheduler();
     this.requestFrame =
       dependencies.requestFrame ??
-      ((callback) => {
-        return window.requestAnimationFrame(callback);
-      });
+      ((callback) => frameScheduler.requestFrame(callback));
     this.cancelFrame =
       dependencies.cancelFrame ??
-      ((handle) => {
-        window.cancelAnimationFrame(handle);
-      });
+      ((handle) => frameScheduler.cancelFrame(handle));
   }
 
   async initialize(canvas: HTMLCanvasElement, gameDirectory: string): Promise<void> {
