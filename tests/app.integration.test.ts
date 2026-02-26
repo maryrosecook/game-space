@@ -1173,6 +1173,7 @@ describe('express app integration', () => {
 
     expect(adminView.text).toContain('id="prompt-panel"');
     expect(adminView.text).toContain('id="prompt-record-button"');
+    expect(adminView.text).toContain('<span class="game-view-icon-tab-label">Describe a change</span>');
     expect(adminView.text).toContain('id="game-tab-capture-tile"');
     expect(adminView.text).toContain('id="game-codex-toggle"');
     expect(adminView.text).toContain('id="game-codex-transcript"');
