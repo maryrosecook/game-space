@@ -6,6 +6,7 @@ const promptInput = document.getElementById('prompt-input');
 const editTab = document.getElementById('game-tab-edit');
 const favoriteButton = document.getElementById('game-tab-favorite');
 const recordButton = document.getElementById('prompt-record-button');
+const tileCaptureButton = document.getElementById('game-tab-capture-tile');
 const codexToggle = document.getElementById('game-codex-toggle');
 const deleteButton = document.getElementById('game-tab-delete');
 const promptOverlay = document.getElementById('prompt-overlay');
@@ -25,6 +26,7 @@ if (
   !(editTab instanceof HTMLButtonElement) ||
   !(favoriteButton instanceof HTMLButtonElement) ||
   !(recordButton instanceof HTMLButtonElement) ||
+  !(tileCaptureButton instanceof HTMLButtonElement) ||
   !(codexToggle instanceof HTMLButtonElement) ||
   !(deleteButton instanceof HTMLButtonElement) ||
   !(codexTranscript instanceof HTMLElement) ||
@@ -51,6 +53,7 @@ let transcriptSignature = '';
 let transcriptRequestInFlight = false;
 let favoriteRequestInFlight = false;
 let deleteRequestInFlight = false;
+let tileCaptureInFlight = false;
 let editPanelOpen = false;
 let codexPanelExpanded = false;
 let gameFavorited = initialFavorite;
@@ -202,16 +205,79 @@ function readAnnotationPngDataUrl() {
   return promptDrawingCanvas.toDataURL('image/png');
 }
 
-function captureGameScreenshotPngDataUrl() {
+function blankCanvasPngDataUrl(width, height) {
+  if (typeof document.createElement !== 'function') {
+    return null;
+  }
+
+  const blankCanvas = document.createElement('canvas');
+  if (!(blankCanvas instanceof HTMLCanvasElement)) {
+    return null;
+  }
+
+  blankCanvas.width = Math.max(1, width);
+  blankCanvas.height = Math.max(1, height);
+
+  try {
+    return blankCanvas.toDataURL('image/png');
+  } catch {
+    return null;
+  }
+}
+
+function flushGameCanvasWebGlFrame() {
+  if (!(gameCanvas instanceof HTMLCanvasElement) || typeof gameCanvas.getContext !== 'function') {
+    return;
+  }
+
+  const webGlContext =
+    gameCanvas.getContext('webgl2') ??
+    gameCanvas.getContext('webgl') ??
+    gameCanvas.getContext('experimental-webgl');
+  if (!webGlContext || typeof webGlContext.finish !== 'function') {
+    return;
+  }
+
+  webGlContext.finish();
+}
+
+function waitForNextAnimationFrame() {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => {
+      resolve();
+    });
+  });
+}
+
+async function captureGameScreenshotPngDataUrl(maxAttempts = 3) {
   if (!(gameCanvas instanceof HTMLCanvasElement) || typeof gameCanvas.toDataURL !== 'function') {
     return null;
   }
 
-  try {
-    return gameCanvas.toDataURL('image/png');
-  } catch {
-    return null;
+  const attempts = Number.isFinite(maxAttempts) ? Math.max(1, Math.floor(maxAttempts)) : 1;
+  const blankSnapshot = blankCanvasPngDataUrl(gameCanvas.width, gameCanvas.height);
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await waitForNextAnimationFrame();
+    flushGameCanvasWebGlFrame();
+
+    try {
+      const snapshot = gameCanvas.toDataURL('image/png');
+      if (typeof snapshot !== 'string' || snapshot.length === 0) {
+        continue;
+      }
+
+      if (blankSnapshot && snapshot === blankSnapshot && attempt < attempts - 1) {
+        continue;
+      }
+
+      return snapshot;
+    } catch {
+      // Retry until attempts are exhausted.
+    }
   }
+
+  return null;
 }
 
 function loadDataUrlImage(dataUrl) {
@@ -232,7 +298,7 @@ async function composePromptScreenshotPngDataUrl(baseGameScreenshotPngDataUrl = 
   const gameScreenshotPngDataUrl =
     typeof baseGameScreenshotPngDataUrl === 'string' && baseGameScreenshotPngDataUrl.trim().length > 0
       ? baseGameScreenshotPngDataUrl
-      : captureGameScreenshotPngDataUrl();
+      : await captureGameScreenshotPngDataUrl();
   if (!gameScreenshotPngDataUrl) {
     return null;
   }
@@ -302,6 +368,11 @@ function updateRecordButtonVisualState() {
   }
 
   recordButton.setAttribute('aria-label', 'Start voice recording');
+}
+
+function updateTileCaptureButtonVisualState() {
+  tileCaptureButton.classList.toggle('game-view-icon-tab--busy', tileCaptureInFlight);
+  tileCaptureButton.disabled = tileCaptureInFlight;
 }
 
 function stopAudioStream(stream) {
@@ -575,6 +646,37 @@ async function deleteGameVersion() {
   }
 }
 
+async function captureTileSnapshot() {
+  if (!versionId || tileCaptureInFlight) {
+    return;
+  }
+
+  const tilePngDataUrl = await captureGameScreenshotPngDataUrl();
+  if (typeof tilePngDataUrl !== 'string' || tilePngDataUrl.length === 0) {
+    return;
+  }
+
+  tileCaptureInFlight = true;
+  updateTileCaptureButtonVisualState();
+
+  try {
+    const response = await fetch(`/api/games/${encodeURIComponent(versionId)}/tile-snapshot`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...csrfRequestHeaders()
+      },
+      body: JSON.stringify({ tilePngDataUrl })
+    });
+    if (!response.ok) {
+      return;
+    }
+  } finally {
+    tileCaptureInFlight = false;
+    updateTileCaptureButtonVisualState();
+  }
+}
+
 async function startRealtimeRecording() {
   if (!navigator?.mediaDevices?.getUserMedia) {
     return;
@@ -590,7 +692,7 @@ async function startRealtimeRecording() {
   completedTranscriptionSegments = [];
   clearTranscriptionDisplayBuffer();
   clearDrawingCanvas();
-  recordingStartGameScreenshotPngDataUrl = captureGameScreenshotPngDataUrl();
+  recordingStartGameScreenshotPngDataUrl = await captureGameScreenshotPngDataUrl();
   setAnnotationEnabled(false);
 
   let peerConnection = null;
@@ -954,6 +1056,7 @@ async function submitPrompt(prompt, annotationPngDataUrl = null, gameScreenshotP
 applyBottomPanelState();
 resizePromptInput();
 updateEditDrawerHeight();
+updateTileCaptureButtonVisualState();
 
 editTab.addEventListener('click', () => {
   toggleEditPanel();
@@ -961,6 +1064,10 @@ editTab.addEventListener('click', () => {
 
 codexToggle.addEventListener('click', () => {
   toggleCodexPanelExpanded();
+});
+
+tileCaptureButton.addEventListener('click', () => {
+  void captureTileSnapshot();
 });
 
 promptForm.addEventListener('submit', (event) => {
