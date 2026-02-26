@@ -32,7 +32,7 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     return null;
   }
 
-  const { id, threeWords, prompt, parentId, createdTime, tileColor, favorite, codexSessionId, codexSessionStatus } = value;
+  const { id, threeWords, prompt, parentId, createdTime, tileColor, favorite, codexSessionId, codexSessionStatus, tileSnapshotPath } = value;
   if (typeof id !== 'string' || id.length === 0) {
     return null;
   }
@@ -80,8 +80,14 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     return null;
   }
 
+  if (!(tileSnapshotPath === undefined || tileSnapshotPath === null || typeof tileSnapshotPath === 'string')) {
+    return null;
+  }
+
   const normalizedSessionId = typeof codexSessionId === 'string' && codexSessionId.trim().length > 0 ? codexSessionId : null;
   const normalizedSessionStatus = resolveCodexSessionStatus(normalizedSessionId, codexSessionStatus);
+  const normalizedTileSnapshotPath =
+    typeof tileSnapshotPath === 'string' && tileSnapshotPath.trim().length > 0 ? tileSnapshotPath.trim() : undefined;
 
   return {
     id,
@@ -92,7 +98,8 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     tileColor: normalizedTileColor,
     favorite: favorite === true,
     codexSessionId: normalizedSessionId,
-    codexSessionStatus: normalizedSessionStatus
+    codexSessionStatus: normalizedSessionStatus,
+    ...(normalizedTileSnapshotPath ? { tileSnapshotPath: normalizedTileSnapshotPath } : {})
   };
 }
 
@@ -154,7 +161,10 @@ export async function writeMetadataFile(metadataPath: string, metadata: GameMeta
     tileColor: normalizedTileColor,
     favorite: metadata.favorite === true,
     codexSessionId: metadata.codexSessionId ?? null,
-    codexSessionStatus: resolveCodexSessionStatus(metadata.codexSessionId ?? null, metadata.codexSessionStatus)
+    codexSessionStatus: resolveCodexSessionStatus(metadata.codexSessionId ?? null, metadata.codexSessionStatus),
+    ...(typeof metadata.tileSnapshotPath === 'string' && metadata.tileSnapshotPath.trim().length > 0
+      ? { tileSnapshotPath: metadata.tileSnapshotPath.trim() }
+      : {})
   };
 
   const serializedMetadata = `${JSON.stringify(normalizedMetadata, null, 2)}\n`;
@@ -182,6 +192,26 @@ function serializeMetadataWrite(metadataPath: string, writer: () => Promise<void
   });
 }
 
+
+
+async function resolveTileSnapshotPath(
+  directoryPath: string,
+  versionId: string,
+  metadataTileSnapshotPath: string | null | undefined
+): Promise<string | undefined> {
+  if (typeof metadataTileSnapshotPath === 'string' && metadataTileSnapshotPath.trim().length > 0) {
+    return metadataTileSnapshotPath.trim();
+  }
+
+  const snapshotPath = path.join(directoryPath, 'snapshots', 'tile.png');
+  try {
+    await fs.access(snapshotPath);
+    return `/games/${encodeURIComponent(versionId)}/snapshots/tile.png`;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function listGameVersions(gamesRootPath: string): Promise<GameVersion[]> {
   let directoryEntries: Dirent[];
   try {
@@ -207,8 +237,11 @@ export async function listGameVersions(gamesRootPath: string): Promise<GameVersi
       continue;
     }
 
+    const tileSnapshotPath = await resolveTileSnapshotPath(directoryPath, metadata.id, metadata.tileSnapshotPath);
+
     versions.push({
       ...metadata,
+      ...(tileSnapshotPath ? { tileSnapshotPath } : {}),
       directoryPath
     });
   }

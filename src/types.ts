@@ -12,6 +12,7 @@ export type GameMetadata = {
   favorite?: boolean;
   codexSessionId?: string | null;
   codexSessionStatus?: CodexSessionStatus;
+  tileSnapshotPath?: string | null;
 };
 
 export type GameVersion = GameMetadata & {

@@ -1,4 +1,5 @@
 import express from "express";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -76,6 +77,7 @@ type AppOptions = {
   claudeSessionsRootPath?: string;
   codexRunner?: CodexRunner;
   codegenConfigStore?: RuntimeCodegenConfigStore;
+  captureTileSnapshot?: (gameDirectoryPath: string) => Promise<void>;
   logError?: ErrorLogger;
   shouldBuildGamesOnStartup?: boolean;
   enableGameLiveReload?: boolean;
@@ -90,6 +92,92 @@ const ANNOTATION_PNG_BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 const MAX_ANNOTATION_PNG_BYTES = 1024 * 1024;
 const MAX_GAME_SCREENSHOT_PNG_BYTES = 3 * 1024 * 1024;
 const IDEAS_STARTER_VERSION_ID = "starter";
+
+
+const TILE_SNAPSHOT_PROTOCOL = {
+  steps: [{ run: 120 }, { snap: "tile" }],
+};
+
+type HeadlessSnapshotResult = {
+  captures?: readonly { path?: string }[];
+};
+
+async function captureTileSnapshotForGame(gameDirectoryPath: string): Promise<void> {
+  const runResult = await runHeadlessSnapshotScript(gameDirectoryPath, TILE_SNAPSHOT_PROTOCOL);
+  const capture = Array.isArray(runResult.captures) ? runResult.captures[0] : null;
+  if (!capture || typeof capture.path !== "string" || capture.path.length === 0) {
+    throw new Error("Headless snapshot run did not produce a capture");
+  }
+
+  const snapshotsDirectoryPath = path.join(gameDirectoryPath, "snapshots");
+  const targetPath = path.join(snapshotsDirectoryPath, "tile.png");
+  await fs.mkdir(snapshotsDirectoryPath, { recursive: true });
+  await fs.copyFile(capture.path, targetPath);
+}
+
+async function runHeadlessSnapshotScript(gameDirectoryPath: string, protocol: unknown): Promise<HeadlessSnapshotResult> {
+  const args = ["run", "headless", "--", "--json", JSON.stringify(protocol)];
+
+  return new Promise<HeadlessSnapshotResult>((resolve, reject) => {
+    const child = spawn("npm", args, {
+      cwd: gameDirectoryPath,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+
+    child.on("close", (exitCode) => {
+      if (exitCode !== 0) {
+        reject(
+          new Error(
+            `headless snapshot failed with exit code ${exitCode ?? "unknown"}${
+              stderr.trim().length > 0 ? `: ${stderr.trim()}` : ""
+            }`,
+          ),
+        );
+        return;
+      }
+
+      const parsed = parseLastJsonObject(stdout);
+      if (parsed === null) {
+        reject(new Error("headless snapshot output did not contain JSON result"));
+        return;
+      }
+
+      resolve(parsed as HeadlessSnapshotResult);
+    });
+  });
+}
+
+function parseLastJsonObject(serializedOutput: string): unknown | null {
+  const trimmed = serializedOutput.trim();
+  const objectStartIndex = trimmed.lastIndexOf("\n{");
+  const jsonText = objectStartIndex === -1 ? trimmed : trimmed.slice(objectStartIndex + 1);
+  if (!jsonText.startsWith("{")) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(jsonText) as unknown;
+  } catch {
+    return null;
+  }
+}
 
 function defaultLogger(message: string, error: unknown): void {
   console.error(message, error);
@@ -218,6 +306,7 @@ async function submitPromptForVersion(options: {
   gameScreenshotPngDataUrl?: string | null;
   gameScreenshotPngBytes?: Buffer | null;
   codexRunner: CodexRunner;
+  captureTileSnapshot: (gameDirectoryPath: string) => Promise<void>;
   logError: ErrorLogger;
 }): Promise<PromptSubmitResult> {
   const {
@@ -231,6 +320,7 @@ async function submitPromptForVersion(options: {
     gameScreenshotPngDataUrl,
     gameScreenshotPngBytes,
     codexRunner,
+    captureTileSnapshot,
     logError,
   } = options;
 
@@ -315,6 +405,23 @@ async function submitPromptForVersion(options: {
     lastPersistedSessionStatus = codexSessionStatus;
   }
 
+
+
+  async function persistTileSnapshotPath(tileSnapshotPath: string): Promise<void> {
+    const currentMetadata = await readMetadataFile(forkMetadataPath);
+    if (!currentMetadata) {
+      throw new Error(`Fork metadata missing while storing tile snapshot path for ${forkedMetadata.id}`);
+    }
+
+    if (currentMetadata.tileSnapshotPath === tileSnapshotPath) {
+      return;
+    }
+
+    await writeMetadataFile(forkMetadataPath, {
+      ...currentMetadata,
+      tileSnapshotPath,
+    });
+  }
   function persistSessionIdInBackground(sessionId: string): void {
     void persistSessionId(sessionId).catch((error: unknown) => {
       logError(`Failed to store codex session id for ${forkedMetadata.id}`, error);
@@ -356,6 +463,16 @@ async function submitPromptForVersion(options: {
         await persistSessionStatus("stopped");
       } catch (error: unknown) {
         logError(`Failed to store codex session status for ${forkedMetadata.id}`, error);
+      }
+
+      if (runResult.completionDetected !== false) {
+        void captureTileSnapshot(forkDirectoryPath)
+          .then(async () => {
+            await persistTileSnapshotPath(`/games/${encodeURIComponent(forkedMetadata.id)}/snapshots/tile.png`);
+          })
+          .catch((error: unknown) => {
+            logError(`Failed to capture tile snapshot for ${forkedMetadata.id}`, error);
+          });
       }
     })
     .catch((error) => {
@@ -402,6 +519,7 @@ export function createApp(options: AppOptions = {}): express.Express {
     options.codexRunner ??
     new SpawnCodegenRunner(() => codegenConfigStore.read());
   const logError = options.logError ?? defaultLogger;
+  const captureTileSnapshot = options.captureTileSnapshot ?? captureTileSnapshotForGame;
   const shouldBuildGamesOnStartup = options.shouldBuildGamesOnStartup ?? false;
   const enableGameLiveReload =
     options.enableGameLiveReload ??
@@ -716,6 +834,7 @@ export function createApp(options: AppOptions = {}): express.Express {
           versionId,
           promptInput: idea.prompt,
           codexRunner,
+          captureTileSnapshot,
           logError,
         });
 
@@ -1141,6 +1260,7 @@ export function createApp(options: AppOptions = {}): express.Express {
           gameScreenshotPngDataUrl,
           gameScreenshotPngBytes,
           codexRunner,
+          captureTileSnapshot,
           logError,
         });
 
