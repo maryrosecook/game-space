@@ -26,6 +26,7 @@ test('admin game page places tile capture in edit panel and posts tile snapshot 
   await page.locator('#game-tab-edit').click();
   await expect(page.locator('#prompt-panel')).toHaveAttribute('aria-hidden', 'false');
   await expect(page.locator('#game-tab-capture-tile')).toBeVisible();
+  await expect(page.locator('#game-tab-capture-tile')).toHaveCSS('color', 'rgb(247, 249, 255)');
 
   const actionButtonIds = await page
     .locator('#prompt-form .prompt-action-row > button')
