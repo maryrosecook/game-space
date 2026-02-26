@@ -20,7 +20,6 @@ The host page will load and run your game with this fixed contract:
 - The headless runner always uses a fixed viewport of `360x640` at `dpr=1`.
 - The headless runner always enforces `maxFrames=120` and `maxSnaps=1`.
 - Validate you've achieved the prompt by running the game headless with `npm run headless -- --json '<protocol-json>'`.
-- After implementing generation completion behavior, run the e2e assertion that a just-finished generation records a tile image: `npm run test:e2e -- tests/e2e/homepage.spec.ts --grep "just finished generating"`.
 - Illustrative protocol JSON:
 
 ```json
