@@ -1145,6 +1145,54 @@ export function createApp(options: AppOptions = {}): express.Express {
     },
   );
 
+  app.post(
+    "/api/games/:versionId/tile-snapshot",
+    requireAdmin,
+    requireValidCsrf,
+    async (request, response, next) => {
+      try {
+        const versionId = request.params.versionId;
+        if (typeof versionId !== "string" || !isSafeVersionId(versionId)) {
+          response.status(400).json({ error: "Invalid version id" });
+          return;
+        }
+
+        if (!(await hasGameDirectory(gamesRootPath, versionId))) {
+          response.status(404).json({ error: "Game version not found" });
+          return;
+        }
+
+        const tilePngDataUrlInput = request.body?.tilePngDataUrl;
+        if (typeof tilePngDataUrlInput !== "string" || tilePngDataUrlInput.trim().length === 0) {
+          response.status(400).json({ error: "Tile snapshot must be a non-empty string" });
+          return;
+        }
+
+        const tilePngBytes = decodeGameScreenshotPngDataUrl(tilePngDataUrlInput.trim());
+        if (tilePngBytes === null) {
+          response
+            .status(400)
+            .json({ error: "Tile snapshot must be a PNG data URL (data:image/png;base64,...)" });
+          return;
+        }
+
+        const targetDirectoryPath = gameDirectoryPath(gamesRootPath, versionId);
+        const snapshotsDirectoryPath = path.join(targetDirectoryPath, "snapshots");
+        const tileSnapshotPath = path.join(snapshotsDirectoryPath, "tile.png");
+        await fs.mkdir(snapshotsDirectoryPath, { recursive: true });
+        await fs.writeFile(tileSnapshotPath, tilePngBytes);
+
+        response.status(200).json({
+          status: "ok",
+          versionId,
+          tileSnapshotPath: `/games/${encodeURIComponent(versionId)}/snapshots/tile.png`,
+        });
+      } catch (error: unknown) {
+        next(error);
+      }
+    },
+  );
+
   app.delete(
     "/api/games/:versionId",
     requireAdmin,

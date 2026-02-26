@@ -356,6 +356,7 @@ type GameViewHarness = {
   favoriteButton: TestHTMLButtonElement;
   deleteButton: TestHTMLButtonElement;
   recordButton: TestHTMLButtonElement;
+  tileCaptureButton: TestHTMLButtonElement;
   codexToggle: TestHTMLButtonElement;
   promptForm: TestHTMLFormElement;
   promptInput: TestHTMLInputElement;
@@ -416,6 +417,7 @@ async function runGameViewScript(
   const favoriteButton = new TestHTMLButtonElement();
   const deleteButton = new TestHTMLButtonElement();
   const recordButton = new TestHTMLButtonElement();
+  const tileCaptureButton = new TestHTMLButtonElement();
   const codexToggle = new TestHTMLButtonElement();
   const codexTranscript = new TestHTMLElement();
   const promptOverlay = new TestHTMLElement();
@@ -431,6 +433,7 @@ async function runGameViewScript(
   document.registerElement('game-tab-favorite', favoriteButton);
   document.registerElement('game-tab-delete', deleteButton);
   document.registerElement('prompt-record-button', recordButton);
+  document.registerElement('game-tab-capture-tile', tileCaptureButton);
   document.registerElement('game-codex-toggle', codexToggle);
   document.registerElement('game-codex-transcript', codexTranscript);
   document.registerElement('prompt-overlay', promptOverlay);
@@ -561,6 +564,7 @@ async function runGameViewScript(
     favoriteButton,
     deleteButton,
     recordButton,
+    tileCaptureButton,
     codexToggle,
     promptForm,
     promptInput,
@@ -728,6 +732,38 @@ describe('game view prompt submit client', () => {
     expect(harness.favoriteButton.classList.contains('game-view-icon-tab--active')).toBe(false);
     expect(harness.favoriteButton.getAttribute('aria-pressed')).toBe('false');
     expect(harness.favoriteButton.getAttribute('aria-label')).toBe('Favorite game');
+  });
+
+  it('captures a tile snapshot from the game canvas and posts it to the tile snapshot endpoint', async () => {
+    const harness = await runGameViewScript(async (url) => {
+      if (url !== '/api/games/source-version/tile-snapshot') {
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      }
+
+      return {
+        ok: true,
+        async json() {
+          return { status: 'ok' };
+        }
+      };
+    });
+
+    harness.tileCaptureButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    expect(harness.fetchCalls).toHaveLength(1);
+    expect(harness.fetchCalls[0]).toEqual({
+      url: '/api/games/source-version/tile-snapshot',
+      init: {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': 'csrf-token-123'
+        },
+        body: JSON.stringify({ tilePngDataUrl: 'data:image/png;base64,test-canvas' })
+      }
+    });
+    expect(harness.tileCaptureButton.disabled).toBe(false);
   });
 
   it('toggles codex transcript expansion from the robot button', async () => {

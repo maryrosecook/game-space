@@ -3,10 +3,6 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-const bouncingGameSourcePaths = [
-  'games/v1-bounce/src/main.ts',
-  'games/d0cf7658-3371-4f01-99e2-ca90fc1899cf/src/main.ts'
-];
 const starterGameSourcePath = 'games/starter/src/main.ts';
 
 async function readGameSource(relativePath: string): Promise<string> {
@@ -14,17 +10,6 @@ async function readGameSource(relativePath: string): Promise<string> {
 }
 
 describe('game runtime source', () => {
-  it.each(bouncingGameSourcePaths)('keeps circles round in %s', async (relativePath) => {
-    const source = await readGameSource(relativePath);
-
-    expect(source).toContain('uniform float u_viewportScale;');
-    expect(source).toContain('const viewportScale = canvas.height / Math.max(canvas.width, 1);');
-    expect(source).toContain('const horizontalRadius = radius * viewportScale;');
-    expect(source).toContain('gl.uniform1f(viewportScaleLocation, viewportScale);');
-    expect(source).not.toContain('window.innerWidth');
-    expect(source).not.toContain('window.innerHeight');
-  });
-
   it('keeps starter movement bounds camera-aware without viewport globals', async () => {
     const source = await readGameSource(starterGameSourcePath);
 

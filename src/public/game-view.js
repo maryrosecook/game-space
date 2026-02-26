@@ -6,6 +6,7 @@ const promptInput = document.getElementById('prompt-input');
 const editTab = document.getElementById('game-tab-edit');
 const favoriteButton = document.getElementById('game-tab-favorite');
 const recordButton = document.getElementById('prompt-record-button');
+const tileCaptureButton = document.getElementById('game-tab-capture-tile');
 const codexToggle = document.getElementById('game-codex-toggle');
 const deleteButton = document.getElementById('game-tab-delete');
 const promptOverlay = document.getElementById('prompt-overlay');
@@ -25,6 +26,7 @@ if (
   !(editTab instanceof HTMLButtonElement) ||
   !(favoriteButton instanceof HTMLButtonElement) ||
   !(recordButton instanceof HTMLButtonElement) ||
+  !(tileCaptureButton instanceof HTMLButtonElement) ||
   !(codexToggle instanceof HTMLButtonElement) ||
   !(deleteButton instanceof HTMLButtonElement) ||
   !(codexTranscript instanceof HTMLElement) ||
@@ -51,6 +53,7 @@ let transcriptSignature = '';
 let transcriptRequestInFlight = false;
 let favoriteRequestInFlight = false;
 let deleteRequestInFlight = false;
+let tileCaptureInFlight = false;
 let editPanelOpen = false;
 let codexPanelExpanded = false;
 let gameFavorited = initialFavorite;
@@ -302,6 +305,11 @@ function updateRecordButtonVisualState() {
   }
 
   recordButton.setAttribute('aria-label', 'Start voice recording');
+}
+
+function updateTileCaptureButtonVisualState() {
+  tileCaptureButton.classList.toggle('game-view-icon-tab--busy', tileCaptureInFlight);
+  tileCaptureButton.disabled = tileCaptureInFlight;
 }
 
 function stopAudioStream(stream) {
@@ -572,6 +580,37 @@ async function deleteGameVersion() {
     deleteRequestInFlight = false;
     favoriteButton.disabled = false;
     deleteButton.disabled = false;
+  }
+}
+
+async function captureTileSnapshot() {
+  if (!versionId || tileCaptureInFlight) {
+    return;
+  }
+
+  const tilePngDataUrl = captureGameScreenshotPngDataUrl();
+  if (typeof tilePngDataUrl !== 'string' || tilePngDataUrl.length === 0) {
+    return;
+  }
+
+  tileCaptureInFlight = true;
+  updateTileCaptureButtonVisualState();
+
+  try {
+    const response = await fetch(`/api/games/${encodeURIComponent(versionId)}/tile-snapshot`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...csrfRequestHeaders()
+      },
+      body: JSON.stringify({ tilePngDataUrl })
+    });
+    if (!response.ok) {
+      return;
+    }
+  } finally {
+    tileCaptureInFlight = false;
+    updateTileCaptureButtonVisualState();
   }
 }
 
@@ -954,6 +993,7 @@ async function submitPrompt(prompt, annotationPngDataUrl = null, gameScreenshotP
 applyBottomPanelState();
 resizePromptInput();
 updateEditDrawerHeight();
+updateTileCaptureButtonVisualState();
 
 editTab.addEventListener('click', () => {
   toggleEditPanel();
@@ -961,6 +1001,10 @@ editTab.addEventListener('click', () => {
 
 codexToggle.addEventListener('click', () => {
   toggleCodexPanelExpanded();
+});
+
+tileCaptureButton.addEventListener('click', () => {
+  void captureTileSnapshot();
 });
 
 promptForm.addEventListener('submit', (event) => {

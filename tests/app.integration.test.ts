@@ -1147,6 +1147,7 @@ describe('express app integration', () => {
     expect(publicView.text).not.toContain('game-admin-notice');
     expect(publicView.text).not.toContain('id="prompt-panel"');
     expect(publicView.text).not.toContain('id="prompt-record-button"');
+    expect(publicView.text).not.toContain('id="game-tab-capture-tile"');
     expect(publicView.text).not.toContain('id="game-codex-toggle"');
     expect(publicView.text).not.toContain('id="game-codex-transcript"');
     expect(publicView.text).not.toContain('id="game-tab-favorite"');
@@ -1169,6 +1170,7 @@ describe('express app integration', () => {
 
     expect(adminView.text).toContain('id="prompt-panel"');
     expect(adminView.text).toContain('id="prompt-record-button"');
+    expect(adminView.text).toContain('id="game-tab-capture-tile"');
     expect(adminView.text).toContain('id="game-codex-toggle"');
     expect(adminView.text).toContain('id="game-codex-transcript"');
     expect(adminView.text).toContain('id="game-tab-edit"');
@@ -1180,6 +1182,7 @@ describe('express app integration', () => {
     expect(adminView.text).toContain('id="game-tab-favorite"');
     expect(adminView.text).toContain('id="game-tab-delete"');
     expect(adminView.text).toContain('class="game-view-icon lucide lucide-trash-2"');
+    expect(adminView.text).toContain('class="game-view-icon lucide lucide-video"');
     expect(adminView.text).toContain('class="game-view-tab-spinner"');
     expect(adminView.text).toContain('aria-label="Favorite game"');
     expect(adminView.text).toContain('aria-pressed="false"');
@@ -1244,6 +1247,85 @@ describe('express app integration', () => {
       favorite: false
     });
     expect((await readMetadata(path.join(gamesRootPath, 'v1', 'metadata.json'))).favorite).toBe(false);
+  });
+
+  it('stores a manual tile snapshot PNG for a game when called by an authenticated admin', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-tile-snapshot-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v1',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md')
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await request(app)
+      .post('/api/games/v1/tile-snapshot')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .set('Content-Type', 'application/json')
+      .send({ tilePngDataUrl: TEST_PNG_DATA_URL })
+      .expect(200);
+
+    expect(response.body).toEqual({
+      status: 'ok',
+      versionId: 'v1',
+      tileSnapshotPath: '/games/v1/snapshots/tile.png'
+    });
+
+    const persistedTilePath = path.join(gamesRootPath, 'v1', 'snapshots', 'tile.png');
+    const persistedTile = await fs.readFile(persistedTilePath);
+    const encodedPayload = TEST_PNG_DATA_URL.replace(/^data:image\/png;base64,/, '');
+    const expectedTile = Buffer.from(encodedPayload, 'base64');
+    expect(persistedTile.equals(expectedTile)).toBe(true);
+  });
+
+  it('rejects invalid manual tile snapshot payloads', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-tile-snapshot-invalid-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'v1',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      buildPromptPath: path.join(process.cwd(), 'game-build-prompt.md')
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await request(app)
+      .post('/api/games/v1/tile-snapshot')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .set('Content-Type', 'application/json')
+      .send({ tilePngDataUrl: 'not-a-data-url' })
+      .expect(400);
+
+    expect(response.body).toEqual({
+      error: 'Tile snapshot must be a PNG data URL (data:image/png;base64,...)'
+    });
+    await expect(fs.stat(path.join(gamesRootPath, 'v1', 'snapshots', 'tile.png'))).rejects.toThrow();
   });
 
   it('deletes a game directory when called by an authenticated admin', async () => {
@@ -1384,6 +1466,25 @@ describe('express app integration', () => {
       .expect(403);
 
     await request(app)
+      .post('/api/games/source/tile-snapshot')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('Content-Type', 'application/json')
+      .send({ tilePngDataUrl: TEST_PNG_DATA_URL })
+      .expect(403);
+
+    await request(app)
+      .post('/api/games/source/tile-snapshot')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', 'wrong-token')
+      .set('Content-Type', 'application/json')
+      .send({ tilePngDataUrl: TEST_PNG_DATA_URL })
+      .expect(403);
+
+    await request(app)
       .delete('/api/games/source')
       .set('Host', TEST_HOST)
       .set('Origin', TEST_ORIGIN)
@@ -1411,6 +1512,17 @@ describe('express app integration', () => {
       .set('X-CSRF-Token', authSession.csrfToken)
       .expect(200);
     expect(favoriteAccepted.body.favorite).toBe(true);
+
+    const tileSnapshotAccepted = await request(app)
+      .post('/api/games/source/tile-snapshot')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .set('Content-Type', 'application/json')
+      .send({ tilePngDataUrl: TEST_PNG_DATA_URL })
+      .expect(200);
+    expect(tileSnapshotAccepted.body.status).toBe('ok');
   });
 
   it('serves only runtime-safe /games assets and denies sensitive files', async () => {

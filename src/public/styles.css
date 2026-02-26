@@ -519,6 +519,14 @@ body {
   color: rgba(216, 230, 255, 0.9);
 }
 
+.game-view-icon-tab--tile-capture {
+  color: #60a5fa;
+}
+
+.game-view-icon-tab--tile-capture.game-view-icon-tab--busy {
+  opacity: 0.7;
+}
+
 .game-view-icon-tab--record.game-view-icon-tab--recording {
   color: #ef4444;
   animation: game-recording-throb 1.15s ease-in-out infinite;
