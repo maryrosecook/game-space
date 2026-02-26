@@ -734,7 +734,7 @@ describe('game view prompt submit client', () => {
     expect(harness.favoriteButton.getAttribute('aria-label')).toBe('Favorite game');
   });
 
-  it('captures a tile snapshot from the game canvas and posts it to the tile snapshot endpoint', async () => {
+  it('retries tile capture when the first canvas snapshots are blank and posts the first non-blank frame', async () => {
     const harness = await runGameViewScript(async (url) => {
       if (url !== '/api/games/source-version/tile-snapshot') {
         throw new Error(`Unexpected fetch URL: ${url}`);
@@ -748,6 +748,16 @@ describe('game view prompt submit client', () => {
       };
     });
 
+    let snapshotReadCount = 0;
+    harness.gameCanvas.toDataURL = () => {
+      snapshotReadCount += 1;
+      if (snapshotReadCount < 3) {
+        return 'data:image/png;base64,test-canvas';
+      }
+
+      return 'data:image/png;base64,drawn-canvas';
+    };
+
     harness.tileCaptureButton.dispatchEvent('click', createEvent());
     await flushAsyncOperations();
 
@@ -760,9 +770,10 @@ describe('game view prompt submit client', () => {
           'Content-Type': 'application/json',
           'X-CSRF-Token': 'csrf-token-123'
         },
-        body: JSON.stringify({ tilePngDataUrl: 'data:image/png;base64,test-canvas' })
+        body: JSON.stringify({ tilePngDataUrl: 'data:image/png;base64,drawn-canvas' })
       }
     });
+    expect(snapshotReadCount).toBe(3);
     expect(harness.tileCaptureButton.disabled).toBe(false);
   });
 

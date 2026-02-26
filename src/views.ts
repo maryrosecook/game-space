@@ -390,14 +390,6 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
         >
           ${renderLucideIcon('mic', 'game-view-icon')}
         </button>
-        <button
-          id="game-tab-capture-tile"
-          class="game-view-icon-tab game-view-icon-tab--tile-capture"
-          type="button"
-          aria-label="Capture homepage tile snapshot"
-        >
-          ${renderLucideIcon('video', 'game-view-icon')}
-        </button>
       </div>
       <div id="prompt-overlay" class="prompt-overlay" aria-hidden="true" aria-live="polite"></div>
     </div>`
@@ -443,6 +435,14 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
             aria-label="Toggle ${providerLabel} session"
           >
             ${renderLucideIcon('bot', 'game-view-icon')}
+          </button>
+          <button
+            id="game-tab-capture-tile"
+            class="prompt-action-button prompt-action-button--icon prompt-action-button--tile-capture"
+            type="button"
+            aria-label="Capture homepage tile snapshot"
+          >
+            ${renderLucideIcon('video', 'game-view-icon')}
           </button>
           <button
             id="game-tab-delete"
@@ -548,6 +548,21 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
       import { startGame } from '/games/${encodedVersionId}/dist/game.js';
       const canvas = document.getElementById('game-canvas');
       if (canvas instanceof HTMLCanvasElement) {
+        const forcePreservedDrawingBuffer = ${isAdmin ? 'true' : 'false'};
+        if (forcePreservedDrawingBuffer) {
+          const originalGetContext = canvas.getContext.bind(canvas);
+          canvas.getContext = (contextId, contextAttributes) => {
+            if (contextId === 'webgl' || contextId === 'webgl2' || contextId === 'experimental-webgl') {
+              const mergedAttributes =
+                contextAttributes && typeof contextAttributes === 'object'
+                  ? { ...contextAttributes, preserveDrawingBuffer: true }
+                  : { preserveDrawingBuffer: true };
+              return originalGetContext(contextId, mergedAttributes);
+            }
+
+            return originalGetContext(contextId, contextAttributes);
+          };
+        }
         startGame(canvas);
       }
     </script>${gameViewScriptMarkup}

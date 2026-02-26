@@ -1155,6 +1155,7 @@ describe('express app integration', () => {
     expect(publicView.text).not.toContain('id="game-tab-edit"');
     expect(publicView.text).toContain('id="game-home-button"');
     expect(publicView.text).not.toContain('/public/game-view.js');
+    expect(publicView.text).toContain('const forcePreservedDrawingBuffer = false;');
     expect(publicView.text).toContain('/public/game-live-reload.js');
     expect(publicView.text).toContain("'touchend'");
     expect(publicView.text).toContain("'dblclick'");
@@ -1183,10 +1184,13 @@ describe('express app integration', () => {
     expect(adminView.text).toContain('id="game-tab-delete"');
     expect(adminView.text).toContain('class="game-view-icon lucide lucide-trash-2"');
     expect(adminView.text).toContain('class="game-view-icon lucide lucide-video"');
+    expect(adminView.text).toMatch(/id="game-tab-capture-tile"[\s\S]*id="game-tab-delete"/);
+    expect(adminView.text).not.toMatch(/class="game-tool-tabs"[\s\S]*id="game-tab-capture-tile"/);
     expect(adminView.text).toContain('class="game-view-tab-spinner"');
     expect(adminView.text).toContain('aria-label="Favorite game"');
     expect(adminView.text).toContain('aria-pressed="false"');
     expect(adminView.text).toContain('/public/game-view.js');
+    expect(adminView.text).toContain('const forcePreservedDrawingBuffer = true;');
     expect(adminView.text).toContain('data-csrf-token="');
     expect(adminView.text).toContain('data-game-favorited="false"');
     expect(adminView.text).toContain('data-codegen-provider="codex"');

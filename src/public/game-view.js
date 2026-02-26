@@ -205,16 +205,79 @@ function readAnnotationPngDataUrl() {
   return promptDrawingCanvas.toDataURL('image/png');
 }
 
-function captureGameScreenshotPngDataUrl() {
+function blankCanvasPngDataUrl(width, height) {
+  if (typeof document.createElement !== 'function') {
+    return null;
+  }
+
+  const blankCanvas = document.createElement('canvas');
+  if (!(blankCanvas instanceof HTMLCanvasElement)) {
+    return null;
+  }
+
+  blankCanvas.width = Math.max(1, width);
+  blankCanvas.height = Math.max(1, height);
+
+  try {
+    return blankCanvas.toDataURL('image/png');
+  } catch {
+    return null;
+  }
+}
+
+function flushGameCanvasWebGlFrame() {
+  if (!(gameCanvas instanceof HTMLCanvasElement) || typeof gameCanvas.getContext !== 'function') {
+    return;
+  }
+
+  const webGlContext =
+    gameCanvas.getContext('webgl2') ??
+    gameCanvas.getContext('webgl') ??
+    gameCanvas.getContext('experimental-webgl');
+  if (!webGlContext || typeof webGlContext.finish !== 'function') {
+    return;
+  }
+
+  webGlContext.finish();
+}
+
+function waitForNextAnimationFrame() {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => {
+      resolve();
+    });
+  });
+}
+
+async function captureGameScreenshotPngDataUrl(maxAttempts = 3) {
   if (!(gameCanvas instanceof HTMLCanvasElement) || typeof gameCanvas.toDataURL !== 'function') {
     return null;
   }
 
-  try {
-    return gameCanvas.toDataURL('image/png');
-  } catch {
-    return null;
+  const attempts = Number.isFinite(maxAttempts) ? Math.max(1, Math.floor(maxAttempts)) : 1;
+  const blankSnapshot = blankCanvasPngDataUrl(gameCanvas.width, gameCanvas.height);
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await waitForNextAnimationFrame();
+    flushGameCanvasWebGlFrame();
+
+    try {
+      const snapshot = gameCanvas.toDataURL('image/png');
+      if (typeof snapshot !== 'string' || snapshot.length === 0) {
+        continue;
+      }
+
+      if (blankSnapshot && snapshot === blankSnapshot && attempt < attempts - 1) {
+        continue;
+      }
+
+      return snapshot;
+    } catch {
+      // Retry until attempts are exhausted.
+    }
   }
+
+  return null;
 }
 
 function loadDataUrlImage(dataUrl) {
@@ -235,7 +298,7 @@ async function composePromptScreenshotPngDataUrl(baseGameScreenshotPngDataUrl = 
   const gameScreenshotPngDataUrl =
     typeof baseGameScreenshotPngDataUrl === 'string' && baseGameScreenshotPngDataUrl.trim().length > 0
       ? baseGameScreenshotPngDataUrl
-      : captureGameScreenshotPngDataUrl();
+      : await captureGameScreenshotPngDataUrl();
   if (!gameScreenshotPngDataUrl) {
     return null;
   }
@@ -588,7 +651,7 @@ async function captureTileSnapshot() {
     return;
   }
 
-  const tilePngDataUrl = captureGameScreenshotPngDataUrl();
+  const tilePngDataUrl = await captureGameScreenshotPngDataUrl();
   if (typeof tilePngDataUrl !== 'string' || tilePngDataUrl.length === 0) {
     return;
   }
@@ -629,7 +692,7 @@ async function startRealtimeRecording() {
   completedTranscriptionSegments = [];
   clearTranscriptionDisplayBuffer();
   clearDrawingCanvas();
-  recordingStartGameScreenshotPngDataUrl = captureGameScreenshotPngDataUrl();
+  recordingStartGameScreenshotPngDataUrl = await captureGameScreenshotPngDataUrl();
   setAnnotationEnabled(false);
 
   let peerConnection = null;
