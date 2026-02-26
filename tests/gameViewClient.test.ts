@@ -957,7 +957,7 @@ describe('game view prompt submit client', () => {
     harness.recordButton.dispatchEvent('click', createEvent());
     await flushAsyncOperations();
 
-    expect(drawingContext.strokeStyleValue).toBe('rgba(128, 128, 128, 0.5)');
+    expect(drawingContext.strokeStyleValue).toBe('rgba(250, 204, 21, 0.95)');
     expect(drawingContext.operations).toContainEqual({ type: 'moveTo', x: 25, y: 35 });
     expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 25, y: 35 });
     expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 70, y: 96 });
