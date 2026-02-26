@@ -7,6 +7,7 @@ import {
   Settings,
   Star,
   Trash2,
+  Video,
   type IconNode
 } from 'lucide';
 import type { GameVersion } from './types';
@@ -38,7 +39,8 @@ type LucideIconName =
   | 'rocket'
   | 'settings'
   | 'star'
-  | 'trash-2';
+  | 'trash-2'
+  | 'video';
 
 const LUCIDE_ICON_NODES: Record<LucideIconName, IconNode> = {
   bot: Bot,
@@ -48,7 +50,8 @@ const LUCIDE_ICON_NODES: Record<LucideIconName, IconNode> = {
   rocket: Rocket,
   settings: Settings,
   star: Star,
-  'trash-2': Trash2
+  'trash-2': Trash2,
+  video: Video
 };
 
 function renderLucideNode(iconNode: IconNode): string {
@@ -386,6 +389,14 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           aria-label="Start voice recording"
         >
           ${renderLucideIcon('mic', 'game-view-icon')}
+        </button>
+        <button
+          id="game-tab-capture-tile"
+          class="game-view-icon-tab game-view-icon-tab--tile-capture"
+          type="button"
+          aria-label="Capture homepage tile snapshot"
+        >
+          ${renderLucideIcon('video', 'game-view-icon')}
         </button>
       </div>
       <div id="prompt-overlay" class="prompt-overlay" aria-hidden="true" aria-live="polite"></div>
