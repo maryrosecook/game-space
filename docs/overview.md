@@ -126,7 +126,7 @@ Top three features:
 - Static serving model: Express serves shared `src/public/*`; `/games/*` is runtime-allowlisted and blocks metadata/source/config/dev artifacts.
 - Dev live-reload model: token file stays on disk under each game `dist/`, but browser access is routed through `/api/dev/reload-token/:versionId` in dev mode.
 - Deployment model: GitHub Actions deploys `main` to DigitalOcean over SSH using repository secrets and PM2 process management.
-- PR video model: Playwright videos are opt-in per PR update; selectors come from the PR body `video-tests` marker block, and workflow comments are edited in place.
+- PR video model: Playwright videos are opt-in per PR update; workflow first enforces exactly one PR-body `video-tests` marker block and then resolves selectors from that block before editing a single status comment in place.
 - Codex validation model: repo-level agent instructions require `npm run typecheck` and `npm run lint` to run sequentially (typecheck first, then lint) to reduce memory pressure.
 
 # Testing
@@ -161,6 +161,7 @@ Top three features:
     - `<!-- video-tests:start -->`
     - `<selector per line>`
     - `<!-- video-tests:end -->`
+  - The PR video workflow now fails fast if that delimiter block is missing, duplicated, or malformed.
   - On later commits to the same PR, keep that selector block current; the workflow reruns on `synchronize` and updates the existing “Feature Video Artifacts” comment in place.
 - End-to-end/manual flow:
   - Run `npm run dev`.
