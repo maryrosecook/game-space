@@ -94,11 +94,18 @@ describe('repo automation configuration', () => {
   it('pr feature video workflow resolves selectors from PR body markers only', async () => {
     const workflow = await readRepoFile('.github/workflows/pr-feature-videos.yml');
 
-    expect(workflow).toContain('MARKER_CONTENT');
-    expect(workflow).toContain('github.event.pull_request.body');
-    expect(workflow).toContain('<!-- video-tests:start -->');
-    expect(workflow).toContain('<!-- video-tests:end -->');
-    expect(workflow).not.toContain('.github/video-tests.txt');
+    expect(workflow).toContain('validate-selector-block:');
+    expect(workflow).toContain('Validate video selector block in PR body');
+    expect(workflow).toContain('must include exactly one video selector block');
+    expect(workflow).toContain('feature-videos:');
+    expect(workflow).toContain('needs: validate-selector-block');
+    expect(workflow).toContain("const startMarker = '<!-- video-tests:start -->';");
+    expect(workflow).toContain("const endMarker = '<!-- video-tests:end -->';");
+    expect(workflow).toContain('context.payload.pull_request?.body');
+    expect(workflow).toContain('hasSelectorBlock');
+    expect(workflow).toContain("core.setOutput('selector_source', selectorSource);");
+    expect(workflow).not.toContain('github.rest.pulls.listFiles');
+    expect(workflow).not.toContain('/^tests\\/e2e\\/.+\\.spec\\.ts$/.test(filename)');
   });
 
   it('pull request template nudges authors to request feature videos for user-visible changes', async () => {
@@ -116,6 +123,8 @@ describe('repo automation configuration', () => {
 
     expect(instructions).toContain('at least one end-to-end test');
     expect(instructions).toContain('clearly not demonstrable with an end-to-end test');
+    expect(instructions).toContain('video-tests:start');
+    expect(instructions).toContain('keep the PR body `video-tests` selector block present and updated');
   });
 
   it('pr feature video workflow remains valid yaml after script updates', () => {
