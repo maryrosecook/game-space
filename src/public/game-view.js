@@ -46,7 +46,7 @@ const transcriptPresenter = createCodexTranscriptPresenter(gameSessionView, {
 });
 const transcriptPollIntervalMs = 2000;
 const generatingClassName = 'game-view-tab--generating';
-const annotationStrokeColor = 'rgba(128, 128, 128, 0.5)';
+const annotationStrokeColor = 'rgba(250, 204, 21, 0.95)';
 const annotationStrokeWidth = 4;
 let transcriptStatusKey = '';
 let transcriptSignature = '';

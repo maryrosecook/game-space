@@ -58,3 +58,19 @@ test('admin game page places tile capture in edit panel and posts tile snapshot 
   expect(typeof tileCapturePayload.tilePngDataUrl).toBe('string');
   expect(tileCapturePayload.tilePngDataUrl?.startsWith('data:image/png;base64,')).toBe(true);
 });
+
+
+test('game page initializes yellow annotation stroke color for prompt drawing', async ({ page }) => {
+  await page.goto('/game/starter');
+
+  const strokeStyle = await page.locator('#prompt-drawing-canvas').evaluate((canvas) => {
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      return null;
+    }
+
+    const context = canvas.getContext('2d');
+    return context?.strokeStyle ?? null;
+  });
+
+  expect(strokeStyle).toBe('rgba(250, 204, 21, 0.95)');
+});
