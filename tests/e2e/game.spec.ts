@@ -60,6 +60,18 @@ test('admin game page places tile capture in edit panel and posts tile snapshot 
 });
 
 
+test('admin game page shows a labeled record button with rounded border styling', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.goto('/game/starter');
+
+  const recordButton = page.locator('#prompt-record-button');
+  await expect(recordButton).toBeVisible();
+  await expect(recordButton).toContainText('Describe a change');
+  await expect(recordButton).toHaveCSS('border-top-left-radius', '999px');
+  await expect(recordButton).toHaveCSS('border-top-width', '1px');
+});
+
+
 test('game page initializes yellow annotation stroke color for prompt drawing', async ({ page }) => {
   await page.goto('/game/starter');
 

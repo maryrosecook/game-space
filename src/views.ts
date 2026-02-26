@@ -389,6 +389,7 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
           aria-label="Start voice recording"
         >
           ${renderLucideIcon('mic', 'game-view-icon')}
+          <span class="game-view-icon-tab-label">Describe a change</span>
         </button>
       </div>
       <div id="prompt-overlay" class="prompt-overlay" aria-hidden="true" aria-live="polite"></div>
