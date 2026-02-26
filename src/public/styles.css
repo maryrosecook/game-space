@@ -371,10 +371,6 @@ body {
   padding: 11px;
 }
 
-.prompt-action-button--tile-capture {
-  color: #60a5fa;
-}
-
 .prompt-action-button--tile-capture.game-view-icon-tab--busy {
   opacity: 0.7;
 }
