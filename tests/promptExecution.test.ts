@@ -7,6 +7,7 @@ import {
   buildClaudeStreamJsonUserInput,
   buildCodexExecArgs,
   composeCodexPrompt,
+  parseGenerationCompleteEventLine,
   parseSessionIdFromCodexEventLine,
   readBuildPromptFile
 } from '../src/services/promptExecution';
@@ -134,6 +135,16 @@ describe('composeCodexPrompt', () => {
     expect(parseSessionIdFromCodexEventLine(line)).toBe('77e122f3-31c9-4f14-acd4-886d3d8479af');
   });
 
+
+
+  it('detects codex and claude terminal completion events', () => {
+    expect(parseGenerationCompleteEventLine('{"type":"response.completed"}', 'codex')).toBe(true);
+    expect(
+      parseGenerationCompleteEventLine('{"type":"event_msg","payload":{"type":"task_complete"}}', 'codex')
+    ).toBe(true);
+    expect(parseGenerationCompleteEventLine('{"type":"message_stop"}', 'claude')).toBe(true);
+    expect(parseGenerationCompleteEventLine('{"type":"assistant"}', 'claude')).toBe(false);
+  });
   it('returns null for unrelated or invalid JSONL lines', () => {
     expect(parseSessionIdFromCodexEventLine('{"type":"response_item","payload":{}}')).toBeNull();
     expect(parseSessionIdFromCodexEventLine('{"type":"thread.started","thread_id":""}')).toBeNull();

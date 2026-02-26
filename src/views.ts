@@ -85,8 +85,16 @@ export function renderHomepage(versions: readonly GameVersion[], options: Homepa
       const tileColor = typeof version.tileColor === 'string' ? version.tileColor : '#1D3557';
       const tileColorEscaped = escapeHtml(tileColor);
       const favoriteClassName = version.favorite === true ? ' game-tile--favorite' : '';
+      const tileSnapshotPath =
+        typeof version.tileSnapshotPath === 'string' && version.tileSnapshotPath.length > 0
+          ? escapeHtml(version.tileSnapshotPath)
+          : null;
+      const tileMedia = tileSnapshotPath
+        ? `<img class="tile-image" src="${tileSnapshotPath}" alt="${displayId}" loading="lazy" decoding="async" />`
+        : '<span class="tile-image tile-image--placeholder" aria-hidden="true"></span>';
       return `
         <a class="game-tile${favoriteClassName}" href="/game/${encodeURIComponent(version.id)}" data-version-id="${id}" data-tile-color="${tileColorEscaped}" style="--tile-color: ${tileColorEscaped};">
+          ${tileMedia}
           <span class="tile-id">${displayId}</span>
         </a>
       `;

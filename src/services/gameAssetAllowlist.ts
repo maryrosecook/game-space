@@ -88,12 +88,17 @@ export function isAllowedGamesRuntimeAssetPath(requestPath: string): boolean {
     return false;
   }
 
-  if (rootDirectory !== 'dist') {
+  if (rootDirectory !== 'dist' && rootDirectory !== 'snapshots') {
     return false;
   }
 
   if (assetSegments.length === 0 || assetSegments.some((segment) => isUnsafePathSegment(segment))) {
     return false;
+  }
+
+
+  if (rootDirectory === 'snapshots') {
+    return assetSegments.length === 1 && assetSegments[0]?.toLowerCase() === 'tile.png';
   }
 
   const normalizedAssetPath = path.posix.normalize(assetSegments.join('/'));

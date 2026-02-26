@@ -10,6 +10,7 @@ export type CodexRunResult = {
   sessionId: string | null;
   success: boolean;
   failureMessage: string | null;
+  completionDetected?: boolean;
 };
 
 export type CodexRunOptions = {
@@ -71,6 +72,50 @@ function maybeCaptureSessionId(
   return parseSessionIdFromCodexEventLine(serializedEventLine);
 }
 
+
+
+type CodegenProviderForEvents = 'codex' | 'claude';
+
+const CODEX_TERMINAL_EVENT_TYPES = new Set([
+  'response.completed',
+  'run.completed',
+  'task_complete',
+  'task_failed',
+  'task_error',
+  'task_cancelled',
+  'task_canceled'
+]);
+
+export function parseGenerationCompleteEventLine(
+  serializedEventLine: string,
+  provider: CodegenProviderForEvents
+): boolean {
+  let rawEvent: unknown;
+  try {
+    rawEvent = JSON.parse(serializedEventLine) as unknown;
+  } catch {
+    return false;
+  }
+
+  if (!isObjectRecord(rawEvent) || typeof rawEvent.type !== 'string') {
+    return false;
+  }
+
+  if (provider === 'claude') {
+    return rawEvent.type === 'message_stop';
+  }
+
+  if (CODEX_TERMINAL_EVENT_TYPES.has(rawEvent.type)) {
+    return true;
+  }
+
+  if (rawEvent.type !== 'event_msg' || !('payload' in rawEvent)) {
+    return false;
+  }
+
+  const payload = rawEvent.payload;
+  return isObjectRecord(payload) && typeof payload.type === 'string' && CODEX_TERMINAL_EVENT_TYPES.has(payload.type);
+}
 function notifySessionId(onSessionId: ((sessionId: string) => void) | undefined, sessionId: string): void {
   if (!onSessionId) {
     return;
@@ -86,17 +131,21 @@ function notifySessionId(onSessionId: ((sessionId: string) => void) | undefined,
 function drainStdoutLines(
   bufferedOutput: string,
   currentSessionId: string | null,
-  onSessionId: ((sessionId: string) => void) | undefined
-): { remainingOutput: string; sessionId: string | null } {
+  onSessionId: ((sessionId: string) => void) | undefined,
+  provider: CodegenProviderForEvents,
+  completionDetected: boolean
+): { remainingOutput: string; sessionId: string | null; completionDetected: boolean } {
   let output = bufferedOutput;
   let sessionId = currentSessionId;
+  let detectedCompletion = completionDetected;
 
   for (;;) {
     const newlineIndex = output.indexOf('\n');
     if (newlineIndex === -1) {
       return {
         remainingOutput: output,
-        sessionId
+        sessionId,
+        completionDetected: detectedCompletion
       };
     }
 
@@ -108,6 +157,7 @@ function drainStdoutLines(
       }
 
       sessionId = nextSessionId;
+      detectedCompletion = detectedCompletion || parseGenerationCompleteEventLine(line, provider);
     }
 
     output = output.slice(newlineIndex + 1);
@@ -126,13 +176,15 @@ export class SpawnCodexRunner implements CodexRunner {
       let errorOutput = '';
       let stdoutBuffer = '';
       let sessionId: string | null = null;
+      let completionDetected = false;
 
       childProcess.stdout.setEncoding('utf8');
       childProcess.stdout.on('data', (chunk: string) => {
         stdoutBuffer += chunk;
-        const drained = drainStdoutLines(stdoutBuffer, sessionId, onSessionId);
+        const drained = drainStdoutLines(stdoutBuffer, sessionId, onSessionId, 'codex', completionDetected);
         stdoutBuffer = drained.remainingOutput;
         sessionId = drained.sessionId;
+        completionDetected = drained.completionDetected;
       });
 
       childProcess.stderr.setEncoding('utf8');
@@ -153,13 +205,15 @@ export class SpawnCodexRunner implements CodexRunner {
           }
 
           sessionId = nextSessionId;
+          completionDetected = completionDetected || parseGenerationCompleteEventLine(finalLine, 'codex');
         }
 
         if (exitCode === 0) {
           resolve({
             sessionId,
             success: true,
-            failureMessage: null
+            failureMessage: null,
+            completionDetected
           });
           return;
         }
@@ -168,7 +222,8 @@ export class SpawnCodexRunner implements CodexRunner {
         resolve({
           sessionId,
           success: false,
-          failureMessage: `codex exec failed with exit code ${exitCode ?? 'unknown'}${details}`
+          failureMessage: `codex exec failed with exit code ${exitCode ?? 'unknown'}${details}`,
+          completionDetected
         });
       });
 
@@ -319,13 +374,15 @@ export class SpawnClaudeRunner implements CodexRunner {
       let errorOutput = '';
       let stdoutBuffer = '';
       let sessionId: string | null = generatedSessionId;
+      let completionDetected = false;
 
       childProcess.stdout.setEncoding('utf8');
       childProcess.stdout.on('data', (chunk: string) => {
         stdoutBuffer += chunk;
-        const drained = drainStdoutLines(stdoutBuffer, sessionId, onSessionId);
+        const drained = drainStdoutLines(stdoutBuffer, sessionId, onSessionId, 'claude', completionDetected);
         stdoutBuffer = drained.remainingOutput;
         sessionId = drained.sessionId;
+        completionDetected = drained.completionDetected;
       });
 
       childProcess.stderr.setEncoding('utf8');
@@ -346,13 +403,15 @@ export class SpawnClaudeRunner implements CodexRunner {
           }
 
           sessionId = nextSessionId;
+          completionDetected = completionDetected || parseGenerationCompleteEventLine(finalLine, 'claude');
         }
 
         if (exitCode === 0) {
           resolve({
             sessionId,
             success: true,
-            failureMessage: null
+            failureMessage: null,
+            completionDetected
           });
           return;
         }
@@ -361,7 +420,8 @@ export class SpawnClaudeRunner implements CodexRunner {
         resolve({
           sessionId,
           success: false,
-          failureMessage: `claude exec failed with exit code ${exitCode ?? 'unknown'}${details}`
+          failureMessage: `claude exec failed with exit code ${exitCode ?? 'unknown'}${details}`,
+          completionDetected
         });
       });
 
