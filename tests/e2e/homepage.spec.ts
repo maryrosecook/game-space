@@ -27,3 +27,41 @@ test('homepage renders 9:16 tile snapshots when available', async ({ page }) => 
     await fs.rm(snapshotPath, { force: true });
   }
 });
+
+test('homepage shows tile image for a game that just finished generating', async ({ page }) => {
+  const generatedVersionId = `e2e-gen-${Date.now()}`;
+  const generatedGamePath = path.resolve('games', generatedVersionId);
+  const generatedSnapshotDirectoryPath = path.join(generatedGamePath, 'snapshots');
+  const generatedSnapshotPath = path.join(generatedSnapshotDirectoryPath, 'tile.png');
+  const generatedMetadataPath = path.join(generatedGamePath, 'metadata.json');
+
+  await fs.mkdir(generatedSnapshotDirectoryPath, { recursive: true });
+  await fs.writeFile(generatedSnapshotPath, Buffer.from(ONE_BY_ONE_PNG_BASE64, 'base64'));
+  await fs.writeFile(
+    generatedMetadataPath,
+    JSON.stringify(
+      {
+        id: generatedVersionId,
+        threeWords: 'fresh tile game',
+        parentId: 'starter',
+        createdTime: new Date().toISOString(),
+        codexSessionId: 'e2e-session-id',
+        codexSessionStatus: 'stopped',
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+
+  try {
+    await page.goto('/');
+    const generatedTile = page.locator(`.game-tile[data-version-id="${generatedVersionId}"]`);
+    await expect(generatedTile).toBeVisible();
+    await expect(generatedTile.locator('.tile-image')).toHaveAttribute(
+      'src',
+      `/games/${generatedVersionId}/snapshots/tile.png`,
+    );
+  } finally {
+    await fs.rm(generatedGamePath, { recursive: true, force: true });
+  }
+});
