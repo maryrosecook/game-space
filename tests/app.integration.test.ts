@@ -426,7 +426,7 @@ describe('express app integration', () => {
     expect(adminOlderIndex).toBeGreaterThan(adminNewerIndex);
 
     const css = await request(app).get('/public/styles.css').expect(200);
-    expect(css.text).toContain('grid-template-columns: repeat(auto-fit, minmax(min(100%, 90px), 1fr));');
+    expect(css.text).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
     expect(css.text).toContain('--render-aspect-width: 9;');
     expect(css.text).toContain('--bottom-tab-height: 68px;');
     expect(css.text).toContain('--game-top-strip-height: 5px;');
@@ -454,6 +454,8 @@ describe('express app integration', () => {
     expect(css.text).toContain('padding: 16px;');
     expect(css.text).toContain('.game-tile--favorite');
     expect(css.text).toContain('border-color: #facc15;');
+    expect(css.text).toContain('.tile-id {');
+    expect(css.text).toContain('inset: auto 0 0 0;');
     expect(css.text).toContain('.game-view-icon-tab');
     expect(css.text).toContain('border: 0;');
     expect(css.text).toContain('background: transparent;');
