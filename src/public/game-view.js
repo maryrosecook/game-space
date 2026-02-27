@@ -54,11 +54,67 @@ let transcriptRequestInFlight = false;
 let favoriteRequestInFlight = false;
 let deleteRequestInFlight = false;
 let tileCaptureInFlight = false;
-let editPanelOpen = false;
-let codexPanelExpanded = false;
-let gameFavorited = initialFavorite;
-let recordingInProgress = false;
-let transcriptionInFlight = false;
+const initialUiState = Object.freeze({
+  editPanelOpen: false,
+  codexPanelExpanded: false,
+  gameFavorited: initialFavorite,
+  recordingInProgress: false,
+  transcriptionInFlight: false
+});
+
+let uiState = initialUiState;
+
+function reduceUiState(state, action) {
+  switch (action.type) {
+    case 'set-edit-panel-open':
+      if (state.editPanelOpen === action.open) {
+        return state;
+      }
+      return {
+        ...state,
+        editPanelOpen: action.open
+      };
+    case 'set-codex-panel-expanded':
+      if (state.codexPanelExpanded === action.expanded) {
+        return state;
+      }
+      return {
+        ...state,
+        codexPanelExpanded: action.expanded
+      };
+    case 'set-game-favorited':
+      if (state.gameFavorited === action.favorited) {
+        return state;
+      }
+      return {
+        ...state,
+        gameFavorited: action.favorited
+      };
+    case 'set-recording-in-progress':
+      if (state.recordingInProgress === action.inProgress) {
+        return state;
+      }
+      return {
+        ...state,
+        recordingInProgress: action.inProgress
+      };
+    case 'set-transcription-in-flight':
+      if (state.transcriptionInFlight === action.inFlight) {
+        return state;
+      }
+      return {
+        ...state,
+        transcriptionInFlight: action.inFlight
+      };
+    default:
+      return state;
+  }
+}
+
+function dispatchUiState(action) {
+  uiState = reduceUiState(uiState, action);
+}
+
 let realtimePeerConnection = null;
 let realtimeDataChannel = null;
 let realtimeAudioStream = null;
@@ -149,7 +205,7 @@ function isPrimaryAnnotationPointer(event) {
 }
 
 function beginAnnotationStroke(event) {
-  if (!recordingInProgress || annotationStrokeInProgress || !isPrimaryAnnotationPointer(event)) {
+  if (!uiState.recordingInProgress || annotationStrokeInProgress || !isPrimaryAnnotationPointer(event)) {
     return;
   }
 
@@ -339,9 +395,9 @@ async function composePromptScreenshotPngDataUrl(baseGameScreenshotPngDataUrl = 
 }
 
 function applyFavoriteState() {
-  favoriteButton.classList.toggle('game-view-icon-tab--active', gameFavorited);
-  favoriteButton.setAttribute('aria-pressed', gameFavorited ? 'true' : 'false');
-  favoriteButton.setAttribute('aria-label', gameFavorited ? 'Unfavorite game' : 'Favorite game');
+  favoriteButton.classList.toggle('game-view-icon-tab--active', uiState.gameFavorited);
+  favoriteButton.setAttribute('aria-pressed', uiState.gameFavorited ? 'true' : 'false');
+  favoriteButton.setAttribute('aria-label', uiState.gameFavorited ? 'Unfavorite game' : 'Favorite game');
 }
 
 function logRealtimeTranscription(message, details = undefined) {
@@ -358,11 +414,11 @@ function logRealtimeTranscription(message, details = undefined) {
 }
 
 function updateRecordButtonVisualState() {
-  recordButton.classList.toggle('game-view-icon-tab--recording', recordingInProgress);
-  recordButton.classList.toggle('game-view-icon-tab--busy', transcriptionInFlight);
-  recordButton.disabled = transcriptionInFlight;
+  recordButton.classList.toggle('game-view-icon-tab--recording', uiState.recordingInProgress);
+  recordButton.classList.toggle('game-view-icon-tab--busy', uiState.transcriptionInFlight);
+  recordButton.disabled = uiState.transcriptionInFlight;
 
-  if (recordingInProgress) {
+  if (uiState.recordingInProgress) {
     recordButton.setAttribute('aria-label', 'Stop voice recording');
     return;
   }
@@ -401,7 +457,7 @@ function closeRealtimeConnection() {
 
 function updatePromptOverlay() {
   const overlayText = displayedOverlayWords.join(' ').trim();
-  const shouldShowOverlay = !editPanelOpen && overlayText.length > 0;
+  const shouldShowOverlay = !uiState.editPanelOpen && overlayText.length > 0;
 
   if (!(promptOverlay instanceof HTMLElement)) {
     return;
@@ -476,7 +532,7 @@ function appendCompletedTranscriptSegment(transcriptSegment) {
   completedTranscriptionSegments.push(normalizedSegment);
   enqueueOverlayWords(normalizedSegment);
 
-  if (editPanelOpen) {
+  if (uiState.editPanelOpen) {
     promptInput.value = completedTranscriptionSegments.join(' ').trim();
     resizePromptInput();
     focusPromptInput();
@@ -603,8 +659,8 @@ async function toggleFavorite() {
       return;
     }
 
-    gameFavorited = payload.favorite;
-    document.body.dataset.gameFavorited = gameFavorited ? 'true' : 'false';
+    dispatchUiState({ type: 'set-game-favorited', favorited: payload.favorite });
+    document.body.dataset.gameFavorited = uiState.gameFavorited ? 'true' : 'false';
     applyFavoriteState();
   } finally {
     favoriteRequestInFlight = false;
@@ -686,7 +742,7 @@ async function startRealtimeRecording() {
     return;
   }
 
-  transcriptionInFlight = true;
+  dispatchUiState({ type: 'set-transcription-in-flight', inFlight: true });
   updateRecordButtonVisualState();
   ensureOverlayWordDrainLoop();
   completedTranscriptionSegments = [];
@@ -723,7 +779,7 @@ async function startRealtimeRecording() {
     realtimePeerConnection = peerConnection;
     realtimeDataChannel = dataChannel;
     realtimeAudioStream = stream;
-    recordingInProgress = true;
+    dispatchUiState({ type: 'set-recording-in-progress', inProgress: true });
     setAnnotationEnabled(true);
     logRealtimeTranscription('started');
   } catch {
@@ -743,17 +799,17 @@ async function startRealtimeRecording() {
     setAnnotationEnabled(false);
     return;
   } finally {
-    transcriptionInFlight = false;
+    dispatchUiState({ type: 'set-transcription-in-flight', inFlight: false });
     updateRecordButtonVisualState();
   }
 }
 
 async function stopRealtimeRecording() {
-  if (!recordingInProgress) {
+  if (!uiState.recordingInProgress) {
     return;
   }
 
-  transcriptionInFlight = true;
+  dispatchUiState({ type: 'set-transcription-in-flight', inFlight: true });
   updateRecordButtonVisualState();
 
   try {
@@ -772,7 +828,7 @@ async function stopRealtimeRecording() {
     const transcribedPrompt = completedTranscriptionSegments.join(' ').trim();
     const annotationPngDataUrl = readAnnotationPngDataUrl();
     const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl(recordingStartGameScreenshotPngDataUrl);
-    if (!editPanelOpen && versionId && transcribedPrompt.length > 0) {
+    if (!uiState.editPanelOpen && versionId && transcribedPrompt.length > 0) {
       await submitPrompt(transcribedPrompt, annotationPngDataUrl, gameScreenshotPngDataUrl);
       completedTranscriptionSegments = [];
       clearTranscriptionDisplayBuffer();
@@ -780,21 +836,21 @@ async function stopRealtimeRecording() {
   } finally {
     logRealtimeTranscription('stopped');
     logRealtimeTranscription('final transcribed text', promptInput.value);
-    recordingInProgress = false;
+    dispatchUiState({ type: 'set-recording-in-progress', inProgress: false });
     recordingStartGameScreenshotPngDataUrl = null;
     setAnnotationEnabled(false);
     closeRealtimeConnection();
-    transcriptionInFlight = false;
+    dispatchUiState({ type: 'set-transcription-in-flight', inFlight: false });
     updateRecordButtonVisualState();
   }
 }
 
 function toggleRecording() {
-  if (transcriptionInFlight) {
+  if (uiState.transcriptionInFlight) {
     return;
   }
 
-  if (recordingInProgress) {
+  if (uiState.recordingInProgress) {
     void stopRealtimeRecording();
     return;
   }
@@ -820,21 +876,21 @@ function updateEditDrawerHeight() {
 }
 
 function applyBottomPanelState() {
-  promptPanel.classList.toggle('prompt-panel--open', editPanelOpen);
-  promptPanel.setAttribute('aria-hidden', editPanelOpen ? 'false' : 'true');
+  promptPanel.classList.toggle('prompt-panel--open', uiState.editPanelOpen);
+  promptPanel.setAttribute('aria-hidden', uiState.editPanelOpen ? 'false' : 'true');
 
-  editTab.classList.toggle('game-view-tab--active', editPanelOpen);
-  editTab.setAttribute('aria-expanded', editPanelOpen ? 'true' : 'false');
+  editTab.classList.toggle('game-view-tab--active', uiState.editPanelOpen);
+  editTab.setAttribute('aria-expanded', uiState.editPanelOpen ? 'true' : 'false');
 
-  codexToggle.setAttribute('aria-expanded', codexPanelExpanded ? 'true' : 'false');
+  codexToggle.setAttribute('aria-expanded', uiState.codexPanelExpanded ? 'true' : 'false');
 
-  codexTranscript.classList.toggle('game-codex-transcript--open', codexPanelExpanded);
-  codexTranscript.setAttribute('aria-hidden', codexPanelExpanded ? 'false' : 'true');
+  codexTranscript.classList.toggle('game-codex-transcript--open', uiState.codexPanelExpanded);
+  codexTranscript.setAttribute('aria-hidden', uiState.codexPanelExpanded ? 'false' : 'true');
 
-  document.body.classList.toggle('game-page--edit-open', editPanelOpen);
-  document.body.classList.toggle('game-page--codex-expanded', codexPanelExpanded);
+  document.body.classList.toggle('game-page--edit-open', uiState.editPanelOpen);
+  document.body.classList.toggle('game-page--codex-expanded', uiState.codexPanelExpanded);
 
-  if (editPanelOpen) {
+  if (uiState.editPanelOpen) {
     promptInput.value = completedTranscriptionSegments.join(' ').trim();
     resizePromptInput();
     updateEditDrawerHeight();
@@ -844,14 +900,14 @@ function applyBottomPanelState() {
 }
 
 function toggleEditPanel() {
-  if (editPanelOpen) {
-    editPanelOpen = false;
-    codexPanelExpanded = false;
+  if (uiState.editPanelOpen) {
+    dispatchUiState({ type: 'set-edit-panel-open', open: false });
+    dispatchUiState({ type: 'set-codex-panel-expanded', expanded: false });
     applyBottomPanelState();
     return;
   }
 
-  editPanelOpen = true;
+  dispatchUiState({ type: 'set-edit-panel-open', open: true });
   applyBottomPanelState();
   focusPromptInput();
 }
@@ -867,14 +923,14 @@ function requestTranscriptScrollToBottom() {
 }
 
 function toggleCodexPanelExpanded() {
-  if (!editPanelOpen) {
-    editPanelOpen = true;
+  if (!uiState.editPanelOpen) {
+    dispatchUiState({ type: 'set-edit-panel-open', open: true });
   }
 
-  codexPanelExpanded = !codexPanelExpanded;
+  dispatchUiState({ type: 'set-codex-panel-expanded', expanded: !uiState.codexPanelExpanded });
   applyBottomPanelState();
 
-  if (codexPanelExpanded) {
+  if (uiState.codexPanelExpanded) {
     requestTranscriptScrollToBottom();
     return;
   }
