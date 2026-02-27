@@ -86,3 +86,37 @@ test('game page initializes yellow annotation stroke color for prompt drawing', 
 
   expect(strokeStyle).toBe('rgba(250, 204, 21, 0.95)');
 });
+
+
+test('admin game panel toggles keep aria-expanded attributes in sync', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.goto('/game/starter');
+
+  const editToggle = page.locator('#game-tab-edit');
+  const transcriptToggle = page.locator('#game-codex-toggle');
+  const promptPanel = page.locator('#prompt-panel');
+  const transcriptPanel = page.locator('#game-codex-transcript');
+
+  await expect(editToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(transcriptToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(promptPanel).toHaveAttribute('aria-hidden', 'true');
+  await expect(transcriptPanel).toHaveAttribute('aria-hidden', 'true');
+
+  await editToggle.click();
+  await expect(editToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(promptPanel).toHaveAttribute('aria-hidden', 'false');
+  await expect(transcriptToggle).toHaveAttribute('aria-expanded', 'false');
+
+  await transcriptToggle.click();
+  await expect(transcriptToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(transcriptPanel).toHaveAttribute('aria-hidden', 'false');
+
+  await transcriptToggle.click();
+  await expect(transcriptToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(transcriptPanel).toHaveAttribute('aria-hidden', 'true');
+  await expect(editToggle).toHaveAttribute('aria-expanded', 'true');
+
+  await editToggle.click();
+  await expect(editToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(promptPanel).toHaveAttribute('aria-hidden', 'true');
+});
