@@ -1,7 +1,13 @@
 # Shadcn UI Refactor Plan for Game View Controls
 
 ## Goal
-Refactor the game controls to use a generic light-themed `shadcn/ui` style while preserving all current behavior and control dimensions.
+Refactor the game controls to use the **default `shadcn/ui` light theme** (not a custom dark variant) while preserving all current behavior and control dimensions.
+
+## Theme Direction (explicit)
+
+- Use `shadcn/ui`'s default light token set as the migration baseline.
+- Avoid introducing custom theme overrides during the initial refactor unless they are strictly needed to preserve dimensions/behavior.
+- Treat any color, border, and surface changes from adopting the default light theme as acceptable, but preserve interaction behavior and control geometry.
 
 ## Behavior and UX Invariants (must not change)
 
@@ -45,7 +51,7 @@ Refactor the game controls to use a generic light-themed `shadcn/ui` style while
    - `Sheet`/`Drawer`-style container (prompt panel shell)
    - `ScrollArea` for transcript body if needed
 2. Keep existing IDs and data/aria attributes to avoid breaking `game-view.js` during migration.
-3. Use `className` passthrough to retain exact sizing tokens while allowing new light theme surface styles.
+3. Use `className` passthrough to retain exact sizing tokens while allowing default light theme surface styles.
 
 ### Phase 2: Separate behavior state from presentation classes
 1. Replace direct class toggles with semantic state attributes on root/panel (e.g. `data-edit-open`, `data-codex-expanded`).
@@ -55,7 +61,7 @@ Refactor the game controls to use a generic light-themed `shadcn/ui` style while
    - `toggleCodexPanelExpanded` auto-opening edit panel first.
 
 ### Phase 3: Rebuild layout with shadcn-themed styling while preserving geometry
-1. Migrate toolbar and panel styling to new light theme tokens.
+1. Migrate toolbar and panel styling to the default `shadcn/ui` light theme tokens.
 2. Lock dimensions with explicit CSS custom properties sourced from baseline:
    - button heights/paddings
    - icon button square sizes
