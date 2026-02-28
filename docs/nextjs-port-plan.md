@@ -20,6 +20,30 @@
 - UI rendering
   - Server-rendered HTML from `src/views.ts` + browser scripts in `src/public/*.js`.
 
+## Audited behavior inventory to retain (full app surface)
+- Public pages/routes
+  - `GET /` home list (admin sees all versions; non-admin sees favorites only).
+  - `GET /game/:versionId` game player page with admin-only tool panels.
+  - Static assets: `/public/*`, `/games/*` (with runtime allowlist middleware semantics).
+- Auth/session routes
+  - `GET /auth`, `POST /auth/login`, `POST /auth/logout`, `POST /auth/provider`.
+  - Login protections: CSRF required, invalid-password throttling, admin cookie issuance/clearing.
+- Admin pages/routes
+  - `GET /codex`, `GET /ideas`.
+- Admin JSON APIs (must keep auth/CSRF gates as-is)
+  - Ideas: `GET /api/ideas`, `POST /api/ideas/generate`, `POST /api/ideas/:ideaIndex/build`, `DELETE /api/ideas/:ideaIndex`.
+  - Sessions/transcription: `GET /api/codex-sessions/:versionId`, `POST /api/transcribe`.
+  - Game mutations: `POST /api/games/:versionId/favorite`, `POST /api/games/:versionId/tile-snapshot`, `DELETE /api/games/:versionId`, `POST /api/games/:versionId/prompts`.
+  - Dev-only route when enabled: `GET /api/dev/reload-token/:versionId`.
+- Input-validation and response semantics
+  - `versionId` safety checks, directory existence checks, metadata existence checks.
+  - PNG data URL validation (prefix, base64 format, byte limits, round-trip check).
+  - Distinct status behavior (`400/401/403/404/409/429/502/503`) and JSON error message contracts.
+- Background/async behaviors
+  - Prompt submit forks a version, persists session id/status transitions, and conditionally captures tile snapshot.
+  - Idea generation cancellation semantics (new request aborts previous).
+  - Optional startup game build and optional live reload token behavior.
+
 ## Migration strategy overview
 1. **Phase 0: Lock behavior with tests + route contract map** (no framework change).
 2. **Phase 1: React + TypeScript UI inside current Express app** (backend unchanged).
@@ -40,6 +64,7 @@
     - login attempt throttling behavior.
   - Snapshot of filesystem invariants:
     - exact `games/` and `ideas.json` path usage and format contracts.
+  - Behavior matrix generated from code + tests covering all routes above (including status code differences by auth state).
 - Test additions (before refactor)
   - Expand E2E coverage for:
     - login/logout flow,
@@ -48,6 +73,11 @@
     - ideas create/build/delete,
     - game view/load and protected API calls.
   - Add contract tests for status/body parity on key endpoints.
+  - Add parity fixtures for:
+    - cookie attributes and TTL behavior,
+    - CSRF cookie/header/form acceptance rules,
+    - admin guard 404-vs-401 semantics,
+    - fork metadata/session-state transitions.
 - Exit criteria
   - New tests fail on intentional security regression.
   - CI baseline stable.
@@ -96,6 +126,8 @@
   - CSRF issuance + validation semantics preserved for every mutating admin route.
   - Input validation parity for all route params and bodies (`versionId`, indices, base64 payloads, etc.).
   - Filesystem access constraints preserved (`isSafeVersionId`, allowlist behavior, path normalization).
+  - Preserve rate-limit keying behavior for login attempts (IP-based fallback behavior included).
+  - Preserve anti-leak behavior on privileged routes (no auth detail disclosure where 404 is expected).
 - Data/path parity requirements
   - Continue reading/writing root `ideas.json` with same schema.
   - Continue reading/writing under existing `games/` hierarchy with unchanged metadata structure.
@@ -103,6 +135,7 @@
 - Operational concerns
   - Ensure long-running/background tasks (prompt execution, snapshot capture, idea generation cancellation) remain reliable in Next runtime choice (prefer Node runtime routes, not Edge).
   - Preserve startup/game-build behavior currently controlled in server app options.
+  - Keep Node runtime for all file-system and child-process routes (`spawn`, metadata IO, game builds).
 - Exit criteria
   - Endpoint contract tests pass against Next handlers.
   - Security regression suite green.
@@ -141,3 +174,4 @@
 - Same or stricter security guarantees on all protected routes.
 - Same `games/` and `ideas.json` storage paths + structures.
 - Green unit/integration/E2E suites with added security and contract coverage.
+- Route-contract diff report shows parity (or intentional, documented tightening only).
