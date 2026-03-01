@@ -51,6 +51,37 @@ describe('game build pipeline', () => {
     ]);
   });
 
+  it('skips game directories that do not contain a package.json file', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-build-skip-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    const alphaPath = await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'alpha',
+        parentId: null,
+        createdTime: '2026-02-04T00:00:00.000Z'
+      }
+    });
+
+    const incompletePath = path.join(gamesRootPath, 'incomplete');
+    await fs.mkdir(incompletePath, { recursive: true });
+
+    const calls: string[] = [];
+    const run: CommandRunner = async (command, args) => {
+      calls.push(`${command} ${args.join(' ')}`);
+    };
+
+    const builtDirectories = await buildAllGames(gamesRootPath, run);
+
+    expect(builtDirectories).toEqual([alphaPath]);
+    expect(calls).toEqual([
+      `npm --prefix ${alphaPath} install`,
+      `npm --prefix ${alphaPath} run build`
+    ]);
+  });
+
   it('extracts version ids from watched source paths', () => {
     const gamesRootPath = '/tmp/repo/games';
     const sourcePath = '/tmp/repo/games/v1/src/main.ts';

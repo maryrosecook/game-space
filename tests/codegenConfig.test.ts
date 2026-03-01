@@ -10,7 +10,7 @@ import {
 
 describe('codegen config service', () => {
   it('reads defaults when env values are missing', () => {
-    expect(readCodegenConfigFromEnv({})).toEqual({
+    expect(readCodegenConfigFromEnv({ NODE_ENV: 'test' })).toEqual({
       provider: 'codex',
       claudeModel: DEFAULT_CODEGEN_CLAUDE_MODEL,
       claudeThinking: DEFAULT_CODEGEN_CLAUDE_THINKING
@@ -23,7 +23,7 @@ describe('codegen config service', () => {
   });
 
   it('persists provider updates back into the env-backed store', () => {
-    const env: NodeJS.ProcessEnv = {};
+    const env: NodeJS.ProcessEnv = { NODE_ENV: 'test' };
     const store = new RuntimeCodegenConfigStore(
       {
         provider: 'codex',

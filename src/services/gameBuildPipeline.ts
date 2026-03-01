@@ -78,16 +78,28 @@ export async function buildGameDirectory(
   await run('npm', ['--prefix', gameDirectoryPath, 'run', 'build']);
 }
 
+async function hasPackageJson(gameDirectoryPath: string): Promise<boolean> {
+  const packageJsonPath = path.join(gameDirectoryPath, 'package.json');
+  return pathExists(packageJsonPath);
+}
+
 export async function buildAllGames(
   gamesRootPath: string,
   run: CommandRunner = runCommand
 ): Promise<string[]> {
   const gameDirectories = await discoverGameDirectories(gamesRootPath);
+  const builtDirectories: string[] = [];
+
   for (const gameDirectoryPath of gameDirectories) {
+    if (!(await hasPackageJson(gameDirectoryPath))) {
+      continue;
+    }
+
     await buildGameDirectory(gameDirectoryPath, run);
+    builtDirectories.push(gameDirectoryPath);
   }
 
-  return gameDirectories;
+  return builtDirectories;
 }
 
 export function extractVersionIdFromSourcePath(

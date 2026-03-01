@@ -9,17 +9,18 @@ Top three features:
 
 # Repo structure
 
-- `src/` - Backend app, HTML rendering, browser assets, and service modules.
-  - `app.ts` - Express app factory, route wiring, auth/CSRF enforcement, runtime-state API shaping, and static asset gating.
-  - `server.ts` - HTTP server bootstrap and dotenv loading.
-  - `views.ts` - Homepage/auth/game/codex HTML rendering.
+- `src/` - Backend runtime, browser assets, and service modules.
+  - `server.ts` - Production HTTP entrypoint that boots Next and forwards all requests through `nextBridge.handleRequest`, with centralized `502 Bad gateway` fallback on Next failures.
   - `types.ts` - Shared metadata/version TypeScript types.
+  - `react/` - Shared React + TypeScript UI components and typed browser API client modules used by Next routes.
+    - `components/` - Route-level React UI trees used by Next SSR + client hydration.
+    - `api/client.ts` - Typed fetch wrappers for game/codex/ideas browser interactions.
+    - `legacy/` - Transitional browser modules moved out of static serving paths and loaded through Next client bootstrap.
+      - `game-view-client.js` - Legacy admin game-page behavior module (prompt submit/favorite/delete/snapshot/transcript/voice/annotation wiring).
+      - `game-live-reload-client.js` - Legacy dev-only polling module.
+      - `codex-transcript-presenter.js` - Shared transcript presenter used by `game-view-client`.
   - `public/` - Static browser assets.
     - `styles.css` - Homepage/game/auth styling, including minimum three-column homepage tile layout with full-bleed media + overlaid labels, favorite tile/button states, admin/public game states, provider selector controls on `/auth`, transcript layouts, and Edit-tab generating spinner animation.
-    - `game-view.js` - Admin game-page Build prompt submission, favorite toggle API calls, Edit-drawer tile snapshot capture (`#game-canvas` pixels -> `/api/games/:versionId/tile-snapshot`) with animation-frame retry against blank frames, realtime voice transcription (session mint + WebRTC stream + transcript events), recording-time annotation drawing (mouse/touch pointer strokes on an overlay canvas), PNG annotation attachment in prompt-submit payloads, bottom-tab behavior, transcript polling, transcript auto-scroll on panel open and new entries, provider-specific transcript heading labels (`Codex Transcript` or `Claude Transcript`), and Edit-tab generating-state class toggling from server `eyeState`.
-    - `game-live-reload.js` - Dev-only game-page polling via `/api/dev/reload-token/:versionId`.
-    - `codex-view.js` - `/codex` selector wiring and transcript loading with provider-specific heading labels and initial render auto-scroll to newest messages.
-    - `codex-transcript-presenter.js` - Shared transcript presenter used by `/codex` and game pages, with configurable transcript title text.
   - `services/` - Filesystem, auth, build, provider-configurable prompt execution, and session/transcript orchestration.
     - `fsUtils.ts` - Shared fs/object/error helpers.
     - `adminAuth.ts` - Admin password verification, iron-session sealed cookies, fixed TTL, and login rate limiter.
@@ -35,9 +36,20 @@ Top three features:
     - `openaiTranscription.ts` - OpenAI Realtime client-secret factory (`/v1/realtime/client_secrets`) that configures `gpt-realtime-1.5` sessions with input transcription enabled and returns ephemeral browser tokens.
     - `gameBuildPipeline.ts` - Per-game dependency install/build and source-path-to-version mapping.
     - `devLiveReload.ts` - Per-version reload-token pathing/writes used by the dev watch loop.
+    - `promptSubmission.ts` - Shared prompt-submit flow (forking, visual attachment validation, session persistence, and tile-snapshot capture) used by Next API handlers.
+    - `serverRuntimeState.ts` - Shared mutable runtime singletons (provider store, login limiter, idea-generation state, and codex runner) used across Next-owned page and API handlers.
+    - `nextBackendHandlers.ts` - Next Node-runtime auth/API handler implementations preserving existing status/security/data contracts.
+    - `nextBridge.ts` - Next server lifecycle wrapper (`prepare`/request handler/close`) used by `src/server.ts` dispatching.
 - `scripts/` - Local automation entrypoints.
-  - `dev.ts` - Initial build, per-version reload-token seeding, backend spawn with dev live-reload flag, and debounced watch rebuild loop.
+  - `dev.ts` - Per-version startup builds, reload-token seeding, backend spawn with dev live-reload flag, and debounced watch rebuild loop.
   - `build-games.ts` - One-shot build for all game directories.
+- `next-app/` - Next.js App Router surface for Next-owned runtime routes.
+  - `app/page.tsx` - Next-owned homepage route that reuses shared homepage-data mapping and admin cookie auth checks.
+  - `app/auth/*/route.ts` - Next-owned auth GET/POST route handlers (`/auth`, `/auth/login`, `/auth/logout`, `/auth/provider`).
+  - `app/api/**/route.ts` - Next-owned API handlers for ideas, codex sessions, game mutations, transcription, and dev reload-token reads.
+  - `app/public/[...assetPath]/route.ts` + `app/games/[versionId]/[...assetPath]/route.ts` + `app/favicon.ico/route.ts` - Next Node-runtime static/fallback handlers for `/public/*`, `/games/*`, and `/favicon.ico` under the explicit Option B GET-only static contract.
+  - `app/layout.tsx` - Next document shell for homepage rendering and shared stylesheet include.
+  - `next.config.ts` - Next configuration enabling `externalDir` for imports from the repo root.
 - `.github/workflows/` - CI/CD workflow automation.
   - `deploy-main.yml` - Deploys `main` to the DigitalOcean server over SSH and restarts/starts `game-space` with PM2.
   - `pr-feature-videos.yml` - PR-scoped, opt-in Playwright video workflow that records selected E2E specs and upserts one PR comment with artifact links.
@@ -53,7 +65,7 @@ Top three features:
     - `src/headless/cli.ts` - Starter-local CLI (`--smoke`, `--script`, `--json`, or stdin JSON via `--stdin` / piped input) for headless runs.
     - `package.json` - Starter-local scripts (`headless`, `headless:install`, `headless:smoke`, `headless:run`) and dev dependencies.
     - `snapshots/` - Timestamped output directories for headless captures (gitignored).
-- `tests/` - Vitest unit/integration coverage for app routes and core services, plus Playwright E2E specs under `tests/e2e/`.
+- `tests/` - Vitest unit/integration coverage for Next handlers and core services, plus Playwright E2E specs under `tests/e2e/`.
 - `playwright.config.ts` - Default E2E runner config (video off unless explicitly enabled).
 - `docs/`
   - `overview.md` - High-level architecture and operational summary.
@@ -65,15 +77,16 @@ Top three features:
 
 # Most important code paths
 
-- Auth flow: `GET /auth` renders `renderAuthView()` with CSRF token and active provider/model details; `POST /auth/login` validates CSRF + password hash + rate limits, sets an iron-session sealed admin cookie, and redirects; `POST /auth/provider` lets admins switch active codegen provider (`codex` or `claude`) with CSRF validation; `POST /auth/logout` validates CSRF and clears the admin cookie.
-- Homepage flow: `GET /` calls `listGameVersions()` and renders `renderHomepage()` with auth-aware top-right CTA (`Login` or `Admin`); logged-out mode filters to favorited versions and favorited tiles render with a yellow border in a minimum three-column grid with full-bleed media + bottom overlaid labels.
-- Game page flow: `GET /game/:versionId` validates availability, renders `renderGameView()` in admin/public mode, and only injects prompt/transcript UI plus CSRF/favorite data attributes for authenticated admins; opening the transcript panel scrolls to the newest visible transcript entry.
-- Favorite toggle flow: `POST /api/games/:versionId/favorite` requires admin + CSRF, flips the `favorite` boolean in `metadata.json`, and returns the new state for `src/public/game-view.js` to reflect in the star button.
+- Request dispatch flow: `src/server.ts` is the single production entrypoint and forwards every request to Next (`nextBridge.handleRequest`) with centralized `502` fallback handling.
+- Auth/homepage/API flow: Next handles `/`, `/_next/*`, `/auth*`, `/api/*`, `/game/*`, `/codex`, `/ideas`, `/public/*`, `/games/*`, and `/favicon.ico`; Node-runtime handlers preserve existing CSRF, rate-limit, cookie, and admin-404 contracts.
+- Game page flow: `next-app/app/game/[versionId]/page.tsx` validates version/bundle availability, renders `GameApp`, and mounts `GamePageClientBootstrap` to start `/games/:versionId/dist/game.js` plus admin/dev client behaviors through Next-managed dynamic imports.
+- Favorite toggle flow: `POST /api/games/:versionId/favorite` requires admin + CSRF, flips the `favorite` boolean in `metadata.json`, and returns the new state for `src/react/legacy/game-view-client.js` to reflect in the star button.
 - Manual tile snapshot flow: admin game pages expose a recorder button (`#game-tab-capture-tile`) in the Edit drawer action row (left of delete) that captures current `#game-canvas` pixels as a PNG data URL; client capture waits for animation frames and retries when the output matches a blank-canvas PNG before posting to `POST /api/games/:versionId/tile-snapshot`, which validates the payload and writes `games/<version-id>/snapshots/tile.png`.
 - Prompt fork flow: `POST /api/games/:versionId/prompts` requires admin + CSRF, forks via `createForkedGameVersion()` (prompt-derived three-word base plus random 10-character lowercase alphanumeric suffix), persists the submitted user prompt in the new fork's `metadata.json`, sets lifecycle state to `created`, composes full prompt, launches the provider-selected runner (`codex` or `claude`) behind `CodexRunner`, persists `codexSessionId` as soon as observed, and transitions lifecycle to `stopped` or `error` when the run settles.
-- Realtime voice transcription flow: `POST /api/transcribe` (admin + CSRF) mints an OpenAI Realtime client secret configured for `gpt-realtime-1.5` and returns a short-lived `clientSecret` plus model; `src/public/game-view.js` then exchanges SDP with `https://api.openai.com/v1/realtime/calls`, streams mic audio over WebRTC, applies `conversation.item.input_audio_transcription.completed` text to the prompt input and full-width in-canvas overlay (top-anchored, left-aligned, auto-following newest text), enables annotation drawing while recording, and on stop submits transcription plus optional annotation PNG (`annotationPngDataUrl`) to `/api/games/:versionId/prompts`; the server validates/decodes that PNG and passes it as an attachment to the active codegen provider (Codex `--image`; Claude stream-json image content block).
-- Codex transcript/runtime flow: `/codex` and `/api/codex-sessions/:versionId` require admin; transcript API resolves metadata, derives runtime `eyeState` via `getCodexTurnInfo()` (task lifecycle for Codex logs, message-balance fallback for Claude logs), reads session JSONL from both `~/.codex/sessions` and `~/.claude/projects`, and returns normalized transcript entries plus lifecycle/runtime state, which clients render anchored at the newest entry.
-- Static/runtime serving flow: `/games/*` first passes `requireRuntimeGameAssetPathMiddleware()` so only runtime-safe `dist` assets are public; sensitive or dev files (including `dist/reload-token.txt`) return `404`.
+- Realtime voice transcription flow: `POST /api/transcribe` (admin + CSRF) mints an OpenAI Realtime client secret configured for `gpt-realtime-1.5` and returns a short-lived `clientSecret` plus model; `src/react/legacy/game-view-client.js` then exchanges SDP with `https://api.openai.com/v1/realtime/calls`, streams mic audio over WebRTC, applies `conversation.item.input_audio_transcription.completed` text to the prompt input and full-width in-canvas overlay (top-anchored, left-aligned, auto-following newest text), enables annotation drawing while recording, and on stop submits transcription plus optional annotation PNG (`annotationPngDataUrl`) to `/api/games/:versionId/prompts`; the server validates/decodes that PNG and passes it as an attachment to the active codegen provider (Codex `--image`; Claude stream-json image content block).
+- Codex transcript/runtime flow: `/codex` and `/api/codex-sessions/:versionId` require admin; `next-app/app/codex/page.tsx` renders `CodexPageClient`, and client state logic loads transcript payloads, preserves status messaging, and auto-scrolls to newest entries.
+- Ideas flow: `/ideas` requires admin; `next-app/app/ideas/page.tsx` renders `IdeasPageClient`, and client logic uses typed API wrappers for generate/build/delete while preserving CSRF/header semantics and redirect-on-build behavior.
+- Static/runtime serving flow: Next route handlers serve `/public/*` and `/games/*`; `/games/*` enforcement still uses `isAllowedGamesRuntimeAssetPath()` so only runtime-safe assets are public and sensitive/dev files (including `dist/reload-token.txt`) return `404`.
 - Dev reload flow: when `GAME_SPACE_DEV_LIVE_RELOAD=1`, `scripts/dev.ts` rewrites per-version `dist/reload-token.txt`; browser polling uses `/api/dev/reload-token/:versionId` instead of direct `/games` file access.
 - Starter headless flow: `games/starter/src/headless/cli.ts` parses a steps-only protocol (`--smoke`, `--script`, `--json`, or stdin JSON), infers the game ID from cwd, and `parseStarterHeadlessProtocol()` enforces fixed headless constraints before launch; `runStarterHeadless()` launches Chromium with SwiftShader-friendly flags, bundles/loads `browserHarness.ts`, then `executeStarterHeadlessProtocol()` applies deterministic steps through `HeadlessFrameScheduler` and `HeadlessInputManager`, and `persistCaptures()` writes ordered PNGs under `games/starter/snapshots/<timestamp>/`.
 
@@ -104,10 +117,13 @@ Top three features:
 # Architecture notes
 
 - Execution isolation: each version owns its own source, dependencies, and built bundle under `games/<version-id>/`.
+- Route-ownership model: Next owns runtime route handling at the public origin for pages (`/`, `/game/:versionId`, `/codex`, `/ideas`, `/auth*`), APIs (`/api/**`), and static/fallback paths (`/public/*`, `/games/*`, `/favicon.ico`); `src/server.ts` no longer has legacy compatibility dispatch branches.
+- Next bridge/build ownership model: `createNextBridge()` prepares Next in-process and serves all requests; failures in request handling return `502 Bad gateway`. Build ownership is split: `npm run build:next` compiles `next-app/`, while `tsc -p tsconfig.build.json` compiles the supporting TypeScript server/runtime modules.
+- Shared runtime-state model: `serverRuntimeState.ts` keeps provider selection, auth login limiter state, idea-generation cancellation state, and codex runner wiring consistent across Next-owned page and API handlers.
 - Admin auth model: iron-session sealed, `HttpOnly`, `Secure`, `SameSite=Strict` session cookie with fixed 3-day TTL; unauthorized protected-route requests return `404`.
 - CSRF model: same-origin enforcement plus double-submit token (cookie + hidden form field or `X-CSRF-Token` header).
 - Realtime voice transcription model: browser never receives `OPENAI_API_KEY`; server mints short-lived client secrets via OpenAI Realtime client-secrets API using `gpt-realtime-1.5` sessions with `gpt-4o-transcribe` input transcription enabled, and the client streams mic audio directly to OpenAI over WebRTC via `/v1/realtime/calls`.
-- Annotation capture model: while recording, `game-view.js` activates the full-stage `#prompt-drawing-canvas` overlay and draws pointer/touch strokes using `CanvasRenderingContext2D`; when prompt submission happens from recorded speech, the client includes `toDataURL('image/png')` output as `annotationPngDataUrl` only if ink was drawn. The server accepts only PNG data URLs, decodes the image bytes, writes a temporary PNG in the fork worktree, and passes that image to both Codex (`--image`) and Claude (`--input-format stream-json` user message with base64 image content block) while also including an attached-image prompt marker.
+- Annotation capture model: while recording, `game-view-client.js` activates the full-stage `#prompt-drawing-canvas` overlay and draws pointer/touch strokes using `CanvasRenderingContext2D`; when prompt submission happens from recorded speech, the client includes `toDataURL('image/png')` output as `annotationPngDataUrl` only if ink was drawn. The server accepts only PNG data URLs, decodes the image bytes, writes a temporary PNG in the fork worktree, and passes that image to both Codex (`--image`) and Claude (`--input-format stream-json` user message with base64 image content block) while also including an attached-image prompt marker.
 - Codegen provider model: `RuntimeCodegenConfigStore` loads env defaults once and keeps a mutable in-memory `provider` setting that `/auth/provider` can update; `SpawnCodegenRunner` reads this setting at run-time and dispatches to either Codex or Claude CLI while preserving the `CodexRunner` API contract.
 - Prompt safety model: user prompt text is never shell-interpolated; provider runners pass full prompt bytes through stdin (`codex exec --json --dangerously-bypass-approvals-and-sandbox -` with optional `--image` file arguments, or `claude --print --output-format stream-json --dangerously-skip-permissions`, switching to `--input-format stream-json` JSONL user-message input when image attachments are provided).
 - Creation prompt persistence model: newly forked game versions persist the submitted creation prompt as `metadata.json.prompt`; existing metadata is not backfilled.
@@ -120,11 +136,12 @@ Top three features:
 - Starter headless protocol model: `protocol.ts` validates steps-only action tapes and enforces fixed runtime constraints (`viewport=360x640@dpr1`, `MAX_TOTAL_FRAMES=120`, `MAX_SNAPSHOTS=1`, `MAX_STEPS=64`, `MAX_INPUT_EVENTS=128`, and runtime ceiling) before launching Chromium.
 - Starter headless orchestration model: `runner.ts` bundles `browserHarness.ts` via esbuild at runtime, boots a canvas in Playwright, executes sequential steps through `executor.ts`, captures only `snap` frames, and persists PNG outputs with stable ordered filenames. `browserHarness.ts` creates WebGL with `preserveDrawingBuffer: true` and calls `gl.finish()` before `toDataURL('image/png')` so captures contain rendered pixels rather than cleared buffers.
 - Favorites model: each game version can be marked favorite in `metadata.json`; the homepage filters to favorites for logged-out users, while authenticated admins can toggle favorite state from the game-page star control.
-- Manual tile snapshot model: admins trigger capture from the Edit drawer action row; `game-view.js` reads `#game-canvas` on animation-frame boundaries, calls `gl.finish()` when available, and retries blank-frame captures before saving to `snapshots/tile.png` through `/api/games/:versionId/tile-snapshot`. `renderGameView()` also forces `preserveDrawingBuffer` for admin game-canvas WebGL context creation so manual captures are stable for legacy games.
+- Manual tile snapshot model: admins trigger capture from the Edit drawer action row; `game-view-client.js` reads `#game-canvas` on animation-frame boundaries, calls `gl.finish()` when available, and retries blank-frame captures before saving to `snapshots/tile.png` through `/api/games/:versionId/tile-snapshot`. `next-app/app/game/[versionId]/page.tsx` forces `preserveDrawingBuffer` for admin game-canvas WebGL context creation so manual captures remain stable.
 - Icon model: server-rendered controls serialize official Lucide icon nodes imported from the `lucide` npm package; ideas rerenders reuse these server-provided SVG strings from `data-idea-build-icon` / `data-idea-delete-icon` so client updates stay in sync with package-backed icons.
 - Tile-color model: `tileColor.ts` generates random `#RRGGBB` colors that satisfy a minimum 4.5:1 contrast ratio with white text (fallback `#1D3557`), and forks/seeded versions persist this value in `metadata.json`.
 - Homepage tile layout model: `.game-grid` uses `repeat(3, minmax(0, 1fr))` so sparse tile sets still render in at least three columns; `.game-tile` media is full-bleed (`.tile-image` absolute inset) and `.tile-id` is bottom-overlaid with a readability gradient.
-- Static serving model: Express serves shared `src/public/*`; `/games/*` is runtime-allowlisted and blocks metadata/source/config/dev artifacts.
+- Static serving model: Next serves shared `src/public/*` and runtime game assets under `/games/*` with allowlist enforcement; static semantics intentionally use Option B (GET-only, no `express.static` HEAD/range/conditional parity).
+- Client build model: Next App Router owns browser client bundling (`next-app/**` + shared `src/react/**` imports) and emits frontend artifacts under `.next/**`; no generated hydration bundles are tracked under `src/public/react`.
 - Dev live-reload model: token file stays on disk under each game `dist/`, but browser access is routed through `/api/dev/reload-token/:versionId` in dev mode.
 - Deployment model: GitHub Actions deploys `main` to DigitalOcean over SSH using repository secrets and PM2 process management.
 - PR video model: Playwright videos are opt-in per PR update; workflow first enforces exactly one PR-body `video-tests` marker block and then resolves selectors from that block before editing a single status comment in place.
@@ -136,6 +153,8 @@ Top three features:
 - Run lint: `npm run lint`
 - Run type checking and lint sequentially (never in parallel) to avoid memory overload.
 - Run tests: `npm run test`
+- Run targeted Phase 2 route-ownership E2E: `npm run test:e2e -- tests/e2e/phase2-next-parallel.spec.ts`
+- Run targeted Phase 3 backend ownership E2E: `npm run test:e2e -- tests/e2e/phase1-react-hydration.spec.ts tests/e2e/phase2-next-parallel.spec.ts tests/e2e/phase3-next-backend.spec.ts`
 - Run starter-local typecheck (includes `src/headless/*`): `npm --prefix games/starter run typecheck`
 - Run starter headless custom protocol JSON directly: `cat /path/to/protocol.json | npm --prefix games/starter run headless`
 - Run starter headless smoke scenario: `npm --prefix games/starter run headless:smoke`

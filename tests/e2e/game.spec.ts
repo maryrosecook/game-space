@@ -1,19 +1,93 @@
-import { expect, test, type Page } from '@playwright/test';
-
-const TEST_ADMIN_PASSWORD = 'correct horse battery staple';
-
-async function loginAsAdmin(page: Page) {
-  await page.goto('/auth');
-  await page.locator('#admin-password').fill(TEST_ADMIN_PASSWORD);
-  await page.getByRole('button', { name: 'Login' }).click();
-  await expect(page.getByText('Admin session is active.')).toBeVisible();
-}
+import { expect, test } from '@playwright/test';
+import { loginAsAdmin } from './helpers/auth';
 
 test('public game page hides manual tile snapshot capture controls', async ({ page }) => {
   await page.goto('/game/starter');
 
   await expect(page.locator('#game-home-button')).toBeVisible();
   await expect(page.locator('#game-tab-capture-tile')).toHaveCount(0);
+});
+
+test('game page does not log a favicon 404 console error on load', async ({ page }) => {
+  const errorMessages: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() !== 'error') {
+      return;
+    }
+
+    errorMessages.push(message.text());
+  });
+
+  await page.goto('/game/starter');
+  await expect(page.locator('#game-canvas')).toBeVisible();
+  expect(
+    errorMessages.some(
+      (message) => message.includes('favicon.ico') && message.includes('404')
+    )
+  ).toBe(false);
+});
+
+test('game page passes a connected canvas to the starter module bootstrap', async ({ page }) => {
+  await page.route('**/games/starter/dist/game.js', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/javascript',
+      body: `
+        export function startGame(canvas) {
+          const windowWithState = window;
+          const isCanvas = canvas instanceof HTMLCanvasElement;
+          windowWithState.__starterStartGameCanvasState = {
+            isCanvas,
+            isConnected: isCanvas ? canvas.isConnected : null,
+            id: isCanvas ? canvas.id : null
+          };
+        }
+      `,
+    });
+  });
+
+  await page.goto('/game/starter');
+
+  await expect.poll(async () => {
+    return await page.evaluate(() => {
+      const windowWithState = window as Window & {
+        __starterStartGameCanvasState?: {
+          isCanvas: boolean;
+          isConnected: boolean | null;
+          id: string | null;
+        };
+      };
+
+      return windowWithState.__starterStartGameCanvasState ?? null;
+    });
+  }).toEqual({
+    isCanvas: true,
+    isConnected: true,
+    id: 'game-canvas',
+  });
+});
+
+test('admin game page does not emit React hydration mismatch errors', async ({ page }) => {
+  await loginAsAdmin(page);
+
+  const errorMessages: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() !== 'error') {
+      return;
+    }
+
+    errorMessages.push(message.text());
+  });
+
+  await page.goto('/game/starter');
+  await expect(page.locator('#prompt-record-button')).toBeVisible();
+  expect(
+    errorMessages.some(
+      (message) =>
+        message.includes('React error #418') ||
+        message.includes("A tree hydrated but some attributes of the server rendered HTML didn't match the client properties")
+    )
+  ).toBe(false);
 });
 
 test('admin game page places tile capture in edit panel and posts tile snapshot data', async ({ page }) => {
@@ -73,6 +147,7 @@ test('admin game page shows a labeled record button with rounded border styling'
 
 
 test('game page initializes yellow annotation stroke color for prompt drawing', async ({ page }) => {
+  await loginAsAdmin(page);
   await page.goto('/game/starter');
 
   const strokeStyle = await page.locator('#prompt-drawing-canvas').evaluate((canvas) => {

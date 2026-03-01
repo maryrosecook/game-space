@@ -312,11 +312,29 @@ class TestHTMLCanvasElement extends TestHTMLElement {
 }
 
 class TestBodyElement extends TestHTMLElement {
-  public readonly dataset: { versionId?: string; csrfToken?: string; gameFavorited?: string; codegenProvider?: string };
+  public readonly dataset: {
+    versionId?: string;
+    csrfToken?: string;
+    gameFavorited?: string;
+    codegenProvider?: string;
+    gameReactHydrated?: string;
+  };
 
-  constructor(versionId: string, csrfToken: string | undefined, gameFavorited: boolean, codegenProvider?: string) {
+  constructor(
+    versionId: string,
+    csrfToken: string | undefined,
+    gameFavorited: boolean,
+    gameReactHydrated: boolean,
+    codegenProvider?: string
+  ) {
     super();
-    this.dataset = { versionId, csrfToken, gameFavorited: gameFavorited ? 'true' : 'false', codegenProvider };
+    this.dataset = {
+      versionId,
+      csrfToken,
+      gameFavorited: gameFavorited ? 'true' : 'false',
+      codegenProvider,
+      gameReactHydrated: gameReactHydrated ? 'true' : 'false'
+    };
   }
 }
 
@@ -324,9 +342,15 @@ class TestDocument extends TestEventTarget {
   public readonly body: TestBodyElement;
   private readonly elements = new Map<string, unknown>();
 
-  constructor(versionId: string, csrfToken: string | undefined, gameFavorited: boolean, codegenProvider?: string) {
+  constructor(
+    versionId: string,
+    csrfToken: string | undefined,
+    gameFavorited: boolean,
+    gameReactHydrated: boolean,
+    codegenProvider?: string
+  ) {
     super();
-    this.body = new TestBodyElement(versionId, csrfToken, gameFavorited, codegenProvider);
+    this.body = new TestBodyElement(versionId, csrfToken, gameFavorited, gameReactHydrated, codegenProvider);
   }
 
   registerElement(id: string, element: unknown): void {
@@ -367,6 +391,7 @@ type GameViewHarness = {
   renderTranscriptCalls: TranscriptRenderCall[];
   getScrollToBottomCalls: () => number;
   intervalCallbacks: Array<() => void>;
+  dispatchWindowEvent: (event: string) => void;
   getPeerConnection: () => TestRTCPeerConnection | null;
   mediaTrack: TestMediaStreamTrack;
   getUserMediaCalls: () => number;
@@ -376,6 +401,7 @@ type RunGameViewOptions = {
   csrfToken?: string | undefined;
   startTranscriptPolling?: boolean;
   gameFavorited?: boolean;
+  gameReactHydrated?: boolean;
   codegenProvider?: string;
 };
 
@@ -409,6 +435,7 @@ async function runGameViewScript(
   const csrfToken = Object.hasOwn(options, 'csrfToken') ? options.csrfToken : 'csrf-token-123';
   const startTranscriptPolling = options.startTranscriptPolling ?? false;
   const gameFavorited = options.gameFavorited ?? false;
+  const gameReactHydrated = options.gameReactHydrated ?? true;
   const codegenProvider = options.codegenProvider;
   const promptPanel = new TestHTMLElement();
   const promptForm = new TestHTMLFormElement();
@@ -425,7 +452,7 @@ async function runGameViewScript(
   const promptDrawingCanvas = new TestHTMLCanvasElement();
   const gameCanvas = new TestHTMLCanvasElement();
 
-  const document = new TestDocument('source-version', csrfToken, gameFavorited, codegenProvider);
+  const document = new TestDocument('source-version', csrfToken, gameFavorited, gameReactHydrated, codegenProvider);
   document.registerElement('prompt-panel', promptPanel);
   document.registerElement('prompt-form', promptForm);
   document.registerElement('prompt-input', promptInput);
@@ -445,6 +472,7 @@ async function runGameViewScript(
   const consoleLogs: unknown[][] = [];
   const assignCalls: string[] = [];
   const intervalCallbacks: Array<() => void> = [];
+  const windowEventListeners = new Map<string, Array<() => void>>();
   const mediaTrack = new TestMediaStreamTrack();
   const mediaStream = new TestMediaStream([mediaTrack]);
   let getUserMediaCalls = 0;
@@ -498,19 +526,24 @@ async function runGameViewScript(
       void id;
     },
     addEventListener(event: string, listener: () => void): void {
-      void event;
-      void listener;
+      const listeners = windowEventListeners.get(event);
+      if (listeners) {
+        listeners.push(listener);
+        return;
+      }
+
+      windowEventListeners.set(event, [listener]);
     }
   };
 
-  const scriptPath = path.join(process.cwd(), 'src/public/game-view.js');
+  const scriptPath = path.join(process.cwd(), 'src/react/legacy/game-view-client.js');
   const source = await readFile(scriptPath, 'utf8');
   const runnableSource = source
     .replace(
       "import { createCodexTranscriptPresenter } from './codex-transcript-presenter.js';\n\n",
       ''
     )
-    .replace(/\nstartTranscriptPolling\(\);\s*$/, startTranscriptPolling ? '\nstartTranscriptPolling();\n' : '\n');
+    .replaceAll('startTranscriptPolling();', startTranscriptPolling ? 'startTranscriptPolling();' : '');
 
   const context = {
     Image,
@@ -575,6 +608,16 @@ async function runGameViewScript(
     renderTranscriptCalls,
     getScrollToBottomCalls: () => scrollToBottomCalls,
     intervalCallbacks,
+    dispatchWindowEvent(event: string): void {
+      const listeners = windowEventListeners.get(event);
+      if (!listeners) {
+        return;
+      }
+
+      for (const listener of listeners) {
+        listener();
+      }
+    },
     getPeerConnection: () => TestRTCPeerConnection.latestInstance,
     mediaTrack,
     getUserMediaCalls: () => getUserMediaCalls
@@ -582,6 +625,23 @@ async function runGameViewScript(
 }
 
 describe('game view prompt submit client', () => {
+  it('waits for the React hydration signal before starting transcript polling', async () => {
+    const harness = await runGameViewScript(
+      async () => ({
+        ok: true,
+        async json() {
+          return { status: 'no-session', eyeState: 'idle' };
+        }
+      }),
+      { gameReactHydrated: false, startTranscriptPolling: true }
+    );
+
+    expect(harness.fetchCalls).toHaveLength(0);
+    harness.dispatchWindowEvent('game-react-hydrated');
+    await flushAsyncOperations();
+    expect(harness.fetchCalls[0]?.url).toBe('/api/codex-sessions/source-version');
+  });
+
   it('redirects to the newly forked game page when prompt submit succeeds', async () => {
     const harness = await runGameViewScript(async () => ({
       ok: true,

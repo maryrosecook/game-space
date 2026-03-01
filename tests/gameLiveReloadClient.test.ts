@@ -61,7 +61,7 @@ async function runLiveReloadScript(fetchImplementation: FetchImplementation): Pr
     encodeURIComponent
   };
 
-  const scriptPath = path.join(process.cwd(), 'src/public/game-live-reload.js');
+  const scriptPath = path.join(process.cwd(), 'src/react/legacy/game-live-reload-client.js');
   const source = await readFile(scriptPath, 'utf8');
   vm.runInNewContext(source, context, { filename: scriptPath });
   await flushAsyncOperations();
