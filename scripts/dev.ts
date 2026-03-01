@@ -42,7 +42,8 @@ async function main(): Promise<void> {
     stdio: 'inherit',
     env: {
       ...process.env,
-      GAME_SPACE_DEV_LIVE_RELOAD: '1'
+      GAME_SPACE_DEV_LIVE_RELOAD: '1',
+      GAME_SPACE_NEXT_DEV: '1'
     }
   });
 

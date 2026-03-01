@@ -1,3 +1,4 @@
+
 function formatRole(role) {
   return role === 'assistant' ? 'Assistant' : 'User';
 }

@@ -4,7 +4,13 @@ const tsPlugin = require('@typescript-eslint/eslint-plugin');
 
 module.exports = [
   {
-    ignores: ['dist/**', 'games/**/dist/**', 'games/**/node_modules/**', 'node_modules/**']
+    ignores: [
+      'dist/**',
+      'next-app/.next/**',
+      'games/**/dist/**',
+      'games/**/node_modules/**',
+      'node_modules/**'
+    ]
   },
   {
     ...eslint.configs.recommended,
@@ -14,7 +20,7 @@ module.exports = [
     }
   },
   {
-    files: ['**/*.ts'],
+    files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {

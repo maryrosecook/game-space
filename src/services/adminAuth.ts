@@ -214,8 +214,18 @@ export async function setAdminSessionCookie(
   sessionSecret: string,
   issuedAtMs: number = Date.now()
 ): Promise<string> {
+  const { sessionToken, cookieHeader } = await createAdminSessionCookieHeader(sessionSecret, issuedAtMs);
+
+  response.append('Set-Cookie', cookieHeader);
+  return sessionToken;
+}
+
+export async function createAdminSessionCookieHeader(
+  sessionSecret: string,
+  issuedAtMs: number = Date.now()
+): Promise<{ sessionToken: string; cookieHeader: string }> {
   const sessionToken = await createAdminSessionToken(sessionSecret, issuedAtMs);
-  const serializedCookie = serializeCookie(ADMIN_SESSION_COOKIE_NAME, sessionToken, {
+  const cookieHeader = serializeCookie(ADMIN_SESSION_COOKIE_NAME, sessionToken, {
     path: '/',
     httpOnly: true,
     secure: true,
@@ -223,12 +233,18 @@ export async function setAdminSessionCookie(
     maxAge: ADMIN_SESSION_TTL_SECONDS
   });
 
-  response.append('Set-Cookie', serializedCookie);
-  return sessionToken;
+  return {
+    sessionToken,
+    cookieHeader
+  };
 }
 
 export function clearAdminSessionCookie(response: Response): void {
-  const serializedCookie = serializeCookie(ADMIN_SESSION_COOKIE_NAME, '', {
+  response.append('Set-Cookie', createClearedAdminSessionCookieHeader());
+}
+
+export function createClearedAdminSessionCookieHeader(): string {
+  return serializeCookie(ADMIN_SESSION_COOKIE_NAME, '', {
     path: '/',
     httpOnly: true,
     secure: true,
@@ -236,8 +252,6 @@ export function clearAdminSessionCookie(response: Response): void {
     maxAge: 0,
     expires: new Date(0)
   });
-
-  response.append('Set-Cookie', serializedCookie);
 }
 
 export async function isAdminAuthenticated(
@@ -245,7 +259,15 @@ export async function isAdminAuthenticated(
   authConfig: AdminAuthConfig,
   nowMs: number = Date.now()
 ): Promise<boolean> {
-  const cookies = parseCookieHeader(request.headers.cookie ?? '');
+  return isAdminAuthenticatedFromCookieHeader(request.headers.cookie, authConfig, nowMs);
+}
+
+export async function isAdminAuthenticatedFromCookieHeader(
+  cookieHeader: string | undefined,
+  authConfig: AdminAuthConfig,
+  nowMs: number = Date.now()
+): Promise<boolean> {
+  const cookies = parseCookieHeader(cookieHeader ?? '');
   const sessionToken = cookies[ADMIN_SESSION_COOKIE_NAME];
   if (typeof sessionToken !== 'string' || sessionToken.length === 0) {
     return false;

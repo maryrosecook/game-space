@@ -1,3 +1,4 @@
+
 import { createCodexTranscriptPresenter } from './codex-transcript-presenter.js';
 
 const promptPanel = document.getElementById('prompt-panel');
@@ -1109,48 +1110,6 @@ async function submitPrompt(prompt, annotationPngDataUrl = null, gameScreenshotP
   window.location.assign(`/game/${encodeURIComponent(payload.forkId)}`);
 }
 
-applyBottomPanelState();
-resizePromptInput();
-updateEditDrawerHeight();
-updateTileCaptureButtonVisualState();
-
-editTab.addEventListener('click', () => {
-  toggleEditPanel();
-});
-
-codexToggle.addEventListener('click', () => {
-  toggleCodexPanelExpanded();
-});
-
-tileCaptureButton.addEventListener('click', () => {
-  void captureTileSnapshot();
-});
-
-promptForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-
-  const prompt = promptInput.value;
-  if (!versionId || prompt.trim().length === 0) {
-    return;
-  }
-
-  void (async () => {
-    const annotationPngDataUrl = readAnnotationPngDataUrl();
-    const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl();
-    await submitPrompt(prompt, annotationPngDataUrl, gameScreenshotPngDataUrl);
-  })().catch(() => {
-    // Keep prompt submit non-blocking if networking or payload parsing fails.
-  });
-
-  promptInput.value = '';
-  resizePromptInput();
-  completedTranscriptionSegments = [];
-  clearTranscriptionDisplayBuffer();
-  clearDrawingCanvas();
-  setAnnotationEnabled(false);
-  focusPromptInput();
-});
-
 function resizePromptInput() {
   if (!(promptInput instanceof HTMLElement) || !('style' in promptInput)) {
     return;
@@ -1170,65 +1129,135 @@ function resizePromptInput() {
   updateEditDrawerHeight();
 }
 
-promptInput.addEventListener('input', () => {
-  resizePromptInput();
-});
+let hasInitializedGameViewControls = false;
 
-promptInput.addEventListener('keydown', (event) => {
-  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-    event.preventDefault();
-    promptForm.requestSubmit();
+function initializeGameViewControls() {
+  if (hasInitializedGameViewControls) {
+    return;
   }
-});
 
-window.addEventListener('resize', () => {
+  hasInitializedGameViewControls = true;
+
+  applyBottomPanelState();
   resizePromptInput();
+  updateEditDrawerHeight();
+  updateTileCaptureButtonVisualState();
+
+  editTab.addEventListener('click', () => {
+    toggleEditPanel();
+  });
+
+  codexToggle.addEventListener('click', () => {
+    toggleCodexPanelExpanded();
+  });
+
+  tileCaptureButton.addEventListener('click', () => {
+    void captureTileSnapshot();
+  });
+
+  promptForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+
+    const prompt = promptInput.value;
+    if (!versionId || prompt.trim().length === 0) {
+      return;
+    }
+
+    void (async () => {
+      const annotationPngDataUrl = readAnnotationPngDataUrl();
+      const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl();
+      await submitPrompt(prompt, annotationPngDataUrl, gameScreenshotPngDataUrl);
+    })().catch(() => {
+      // Keep prompt submit non-blocking if networking or payload parsing fails.
+    });
+
+    promptInput.value = '';
+    resizePromptInput();
+    completedTranscriptionSegments = [];
+    clearTranscriptionDisplayBuffer();
+    clearDrawingCanvas();
+    setAnnotationEnabled(false);
+    focusPromptInput();
+  });
+
+  promptInput.addEventListener('input', () => {
+    resizePromptInput();
+  });
+
+  promptInput.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      promptForm.requestSubmit();
+    }
+  });
+
+  window.addEventListener('resize', () => {
+    resizePromptInput();
+    resizeDrawingCanvas();
+  });
+
+  window.addEventListener(
+    'beforeunload',
+    () => {
+      closeRealtimeConnection();
+      clearOverlayWordDrainLoop();
+    },
+    { once: true }
+  );
+
   resizeDrawingCanvas();
+  setAnnotationEnabled(false);
+
+  promptDrawingCanvas.addEventListener('pointerdown', (event) => {
+    beginAnnotationStroke(event);
+  });
+
+  promptDrawingCanvas.addEventListener('pointermove', (event) => {
+    extendAnnotationStroke(event);
+  });
+
+  promptDrawingCanvas.addEventListener('pointerup', (event) => {
+    endAnnotationStroke(event);
+  });
+
+  promptDrawingCanvas.addEventListener('pointercancel', (event) => {
+    endAnnotationStroke(event);
+  });
+
+  applyEyeState('stopped');
+  updateRecordButtonVisualState();
+  applyFavoriteState();
+
+  recordButton.addEventListener('click', () => {
+    toggleRecording();
+  });
+
+  favoriteButton.addEventListener('click', () => {
+    void toggleFavorite();
+  });
+
+  deleteButton.addEventListener('click', () => {
+    void deleteGameVersion();
+  });
+
+  startTranscriptPolling();
+}
+
+function runAfterReactHydration(callback) {
+  if (document.body.dataset.gameReactHydrated === 'true') {
+    callback();
+    return;
+  }
+
+  window.addEventListener(
+    'game-react-hydrated',
+    () => {
+      callback();
+    },
+    { once: true }
+  );
+}
+
+runAfterReactHydration(() => {
+  initializeGameViewControls();
 });
-
-window.addEventListener(
-  'beforeunload',
-  () => {
-    closeRealtimeConnection();
-    clearOverlayWordDrainLoop();
-  },
-  { once: true }
-);
-
-
-resizeDrawingCanvas();
-setAnnotationEnabled(false);
-
-promptDrawingCanvas.addEventListener('pointerdown', (event) => {
-  beginAnnotationStroke(event);
-});
-
-promptDrawingCanvas.addEventListener('pointermove', (event) => {
-  extendAnnotationStroke(event);
-});
-
-promptDrawingCanvas.addEventListener('pointerup', (event) => {
-  endAnnotationStroke(event);
-});
-
-promptDrawingCanvas.addEventListener('pointercancel', (event) => {
-  endAnnotationStroke(event);
-});
-
-applyEyeState('stopped');
-
-updateRecordButtonVisualState();
-applyFavoriteState();
-
-recordButton.addEventListener('click', () => {
-  toggleRecording();
-});
-
-favoriteButton.addEventListener('click', () => {
-  void toggleFavorite();
-});
-
-deleteButton.addEventListener('click', () => {
-  void deleteGameVersion();
-});
-startTranscriptPolling();

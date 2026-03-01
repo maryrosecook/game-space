@@ -1,3 +1,4 @@
+
 const versionId = document.body.dataset.versionId;
 
 if (typeof versionId === 'string' && versionId.length > 0) {
