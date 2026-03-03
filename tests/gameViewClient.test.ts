@@ -355,6 +355,7 @@ type GameViewHarness = {
   editTab: TestHTMLButtonElement;
   favoriteButton: TestHTMLButtonElement;
   deleteButton: TestHTMLButtonElement;
+  ideaGenerateButton: TestHTMLButtonElement;
   recordButton: TestHTMLButtonElement;
   tileCaptureButton: TestHTMLButtonElement;
   codexToggle: TestHTMLButtonElement;
@@ -416,6 +417,7 @@ async function runGameViewScript(
   const editTab = new TestHTMLButtonElement();
   const favoriteButton = new TestHTMLButtonElement();
   const deleteButton = new TestHTMLButtonElement();
+  const ideaGenerateButton = new TestHTMLButtonElement();
   const recordButton = new TestHTMLButtonElement();
   const tileCaptureButton = new TestHTMLButtonElement();
   const codexToggle = new TestHTMLButtonElement();
@@ -432,6 +434,7 @@ async function runGameViewScript(
   document.registerElement('game-tab-edit', editTab);
   document.registerElement('game-tab-favorite', favoriteButton);
   document.registerElement('game-tab-delete', deleteButton);
+  document.registerElement('game-tab-idea-generate', ideaGenerateButton);
   document.registerElement('prompt-record-button', recordButton);
   document.registerElement('game-tab-capture-tile', tileCaptureButton);
   document.registerElement('game-codex-toggle', codexToggle);
@@ -563,6 +566,7 @@ async function runGameViewScript(
     editTab,
     favoriteButton,
     deleteButton,
+    ideaGenerateButton,
     recordButton,
     tileCaptureButton,
     codexToggle,
@@ -611,6 +615,39 @@ describe('game view prompt submit client', () => {
     expect(harness.promptInput.value).toBe('');
     expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
     expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(true);
+  });
+
+  it('fires ideation request for the current game when the idea button is clicked', async () => {
+    const harness = await runGameViewScript(async (url) => {
+      if (url !== '/api/ideas/generate') {
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      }
+
+      return {
+        ok: true,
+        async json() {
+          return { status: 'ok' };
+        }
+      };
+    });
+
+    harness.ideaGenerateButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    expect(harness.fetchCalls).toEqual([
+      {
+        url: '/api/ideas/generate',
+        init: {
+          method: 'POST',
+          headers: {
+            'X-CSRF-Token': 'csrf-token-123',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ baseGameId: 'source-version' })
+        }
+      }
+    ]);
+    expect(harness.assignCalls).toHaveLength(0);
   });
 
   it('omits the CSRF header when no token exists on the page', async () => {

@@ -9,6 +9,7 @@ const recordButton = document.getElementById('prompt-record-button');
 const tileCaptureButton = document.getElementById('game-tab-capture-tile');
 const codexToggle = document.getElementById('game-codex-toggle');
 const deleteButton = document.getElementById('game-tab-delete');
+const ideaGenerateButton = document.getElementById('game-tab-idea-generate');
 const promptOverlay = document.getElementById('prompt-overlay');
 const promptDrawingCanvas = document.getElementById('prompt-drawing-canvas');
 const gameCanvas = document.getElementById('game-canvas');
@@ -29,6 +30,7 @@ if (
   !(tileCaptureButton instanceof HTMLButtonElement) ||
   !(codexToggle instanceof HTMLButtonElement) ||
   !(deleteButton instanceof HTMLButtonElement) ||
+  !(ideaGenerateButton instanceof HTMLButtonElement) ||
   !(codexTranscript instanceof HTMLElement) ||
   !(gameSessionView instanceof HTMLElement) ||
   !(promptDrawingCanvas instanceof HTMLCanvasElement)
@@ -616,6 +618,23 @@ async function requestRealtimeClientSecret() {
     clientSecret: payload.clientSecret,
     model: payload.model.trim()
   };
+}
+
+function triggerIdeaGenerationFromCurrentGame() {
+  if (!versionId) {
+    return;
+  }
+
+  void fetch('/api/ideas/generate', {
+    method: 'POST',
+    headers: {
+      ...csrfRequestHeaders(),
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ baseGameId: versionId })
+  }).catch(() => {
+    // Fire-and-forget; failures are surfaced when viewing ideas later.
+  });
 }
 
 async function requestRealtimeAnswerSdp(realtimeSession, offerSdp) {
@@ -1230,5 +1249,9 @@ favoriteButton.addEventListener('click', () => {
 
 deleteButton.addEventListener('click', () => {
   void deleteGameVersion();
+});
+
+ideaGenerateButton.addEventListener('click', () => {
+  triggerIdeaGenerationFromCurrentGame();
 });
 startTranscriptPolling();

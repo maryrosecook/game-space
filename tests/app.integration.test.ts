@@ -10,6 +10,7 @@ import { createApp } from '../src/app';
 import { ADMIN_SESSION_COOKIE_NAME, ADMIN_SESSION_TTL_SECONDS } from '../src/services/adminAuth';
 import { CSRF_COOKIE_NAME } from '../src/services/csrf';
 import { reloadTokenPath } from '../src/services/devLiveReload';
+import type { IdeaGenerationBaseGameContext } from '../src/services/ideaGeneration';
 import type { CodexRunOptions, CodexRunResult, CodexRunner } from '../src/services/promptExecution';
 import type {
   OpenAiRealtimeTranscriptionSessionCreator,
@@ -1154,6 +1155,7 @@ describe('express app integration', () => {
     expect(publicView.text).not.toContain('id="game-codex-transcript"');
     expect(publicView.text).not.toContain('id="game-tab-favorite"');
     expect(publicView.text).not.toContain('id="game-tab-delete"');
+    expect(publicView.text).not.toContain('id="game-tab-idea-generate"');
     expect(publicView.text).not.toContain('id="game-tab-edit"');
     expect(publicView.text).toContain('id="game-home-button"');
     expect(publicView.text).not.toContain('/public/game-view.js');
@@ -1185,6 +1187,11 @@ describe('express app integration', () => {
     expect(adminView.text).not.toContain('>Transcript</span>');
     expect(adminView.text).toContain('id="game-tab-favorite"');
     expect(adminView.text).toContain('id="game-tab-delete"');
+    expect(adminView.text).toContain('id="game-tab-idea-generate"');
+    expect(adminView.text).toContain('class="game-view-icon lucide lucide-lightbulb"');
+    expect(adminView.text).toMatch(
+      /id="prompt-submit-button"[\s\S]*id="game-codex-toggle"[\s\S]*id="game-tab-capture-tile"[\s\S]*id="game-tab-idea-generate"[\s\S]*id="game-tab-delete"/
+    );
     expect(adminView.text).toContain('class="game-view-icon lucide lucide-trash-2"');
     expect(adminView.text).toContain('class="game-view-icon lucide lucide-video"');
     expect(adminView.text).toMatch(/id="game-tab-capture-tile"[\s\S]*id="game-tab-delete"/);
@@ -1911,8 +1918,128 @@ describe('express app integration', () => {
       .expect(200);
 
     expect(response.body).toEqual({
-      ideas: [{ prompt: 'idea one', hasBeenBuilt: false }],
+      ideas: [
+        {
+          prompt: 'idea one',
+          hasBeenBuilt: false,
+          baseGame: {
+            id: 'starter',
+            label: 'starter'
+          }
+        }
+      ],
       isGenerating: false
+    });
+  });
+
+  it('rejects ideas generation requests without a base game id', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-ideas-generate-base-game-required-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    const app = createApp({
+      gamesRootPath,
+      ideasPath: path.join(tempDirectoryPath, 'ideas.json'),
+      ideaPromptGenerator: async () => 'unused'
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await request(app)
+      .post('/api/ideas/generate')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .set('Content-Type', 'application/json')
+      .send({})
+      .expect(400);
+
+    expect(response.body).toEqual({ error: 'baseGameId is required' });
+  });
+
+  it('generates ideas from the selected base game and persists base game metadata', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-ideas-generate-base-game-selected-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'starter',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'sparkle-zone',
+        parentId: null,
+        threeWords: 'sparkle-zone-game',
+        prompt: 'existing prompt context',
+        createdTime: '2026-02-02T00:00:00.000Z',
+        favorite: true
+      }
+    });
+
+    const sparkleSnapshotDirectory = path.join(gamesRootPath, 'sparkle-zone', 'snapshots');
+    await fs.mkdir(sparkleSnapshotDirectory, { recursive: true });
+    await fs.writeFile(path.join(sparkleSnapshotDirectory, 'tile.png'), Buffer.from(TEST_PNG_DATA_URL.split(',')[1] ?? '', 'base64'));
+
+    const ideasPath = path.join(tempDirectoryPath, 'ideas.json');
+    const capturedContexts: IdeaGenerationBaseGameContext[] = [];
+    const app = createApp({
+      gamesRootPath,
+      ideasPath,
+      ideaPromptGenerator: async (_buildPromptPath, _ideationPromptPath, _cwd, baseGameContext) => {
+        capturedContexts.push(baseGameContext);
+        return 'create neon paddle duels';
+      }
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await request(app)
+      .post('/api/ideas/generate')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .set('Content-Type', 'application/json')
+      .send({ baseGameId: 'sparkle-zone' })
+      .expect(201);
+
+    expect(capturedContexts).toEqual([
+      {
+        id: 'sparkle-zone',
+        label: 'sparkle zone game',
+        prompt: 'existing prompt context',
+        readme: null
+      }
+    ]);
+    expect(response.body.ideas[0]).toEqual({
+      prompt: 'create neon paddle duels',
+      hasBeenBuilt: false,
+      baseGame: {
+        id: 'sparkle-zone',
+        label: 'sparkle zone game',
+        tileSnapshotPath: '/games/sparkle-zone/snapshots/tile.png'
+      }
+    });
+
+    const persistedIdeas = JSON.parse(await fs.readFile(ideasPath, 'utf8')) as Array<{
+      prompt: string;
+      hasBeenBuilt: boolean;
+      baseGame: { id: string; label: string; tileSnapshotPath?: string };
+    }>;
+    expect(persistedIdeas[0]).toEqual({
+      prompt: 'create neon paddle duels',
+      hasBeenBuilt: false,
+      baseGame: {
+        id: 'sparkle-zone',
+        label: 'sparkle zone game',
+        tileSnapshotPath: '/games/sparkle-zone/snapshots/tile.png'
+      }
     });
   });
 
@@ -1959,6 +2086,9 @@ describe('express app integration', () => {
     expect(ideasView.text).toContain('data-idea-delete-icon="');
     expect(ideasView.text).toContain('lucide-rocket');
     expect(ideasView.text).toContain('lucide-trash-2');
+    expect(ideasView.text).toContain('id="ideas-base-game-toggle"');
+    expect(ideasView.text).toContain('id="ideas-base-game-menu"');
+    expect(ideasView.text).toContain('data-base-game-id="starter"');
   });
 
   it('builds ideas via the same prompt pipeline and marks idea as built', async () => {

@@ -132,10 +132,27 @@ export function renderHomepage(versions: readonly GameVersion[], options: Homepa
 </html>`;
 }
 
+type IdeasViewBaseGame = {
+  id: string;
+  label: string;
+  tileSnapshotPath?: string | null;
+};
+
 type IdeasViewIdea = {
   prompt: string;
   hasBeenBuilt: boolean;
+  baseGame: IdeasViewBaseGame;
 };
+
+function renderIdeasBaseGameThumbnail(baseGame: IdeasViewBaseGame, className: string): string {
+  const baseGameLabel = escapeHtml(baseGame.label);
+  if (typeof baseGame.tileSnapshotPath === 'string' && baseGame.tileSnapshotPath.length > 0) {
+    return `<img class="${className}" src="${escapeHtml(baseGame.tileSnapshotPath)}" alt="${baseGameLabel}" />`;
+  }
+
+  const fallbackGlyph = escapeHtml(baseGame.label.slice(0, 1).toUpperCase() || '?');
+  return `<span class="${className} ${className}--placeholder" aria-hidden="true">${fallbackGlyph}</span>`;
+}
 
 function renderIdeasList(ideas: readonly IdeasViewIdea[]): string {
   if (ideas.length === 0) {
@@ -149,6 +166,9 @@ function renderIdeasList(ideas: readonly IdeasViewIdea[]): string {
         ? '<span class="idea-built-pill" aria-label="Built">Built</span>'
         : '';
       return `<li class="idea-row" data-idea-index="${index}">
+        <div class="idea-base-game">
+          ${renderIdeasBaseGameThumbnail(idea.baseGame, 'idea-base-game-thumbnail')}
+        </div>
         <div class="idea-content">
           <span class="idea-prompt">${prompt}</span>
         </div>
@@ -166,8 +186,59 @@ function renderIdeasList(ideas: readonly IdeasViewIdea[]): string {
     .join('')}</ul>`;
 }
 
+function renderIdeasBaseGameSelector(
+  baseGames: readonly IdeasViewBaseGame[],
+  selectedBaseGameId: string
+): string {
+  const fallbackBaseGame = baseGames[0] ?? {
+    id: 'starter',
+    label: 'starter',
+    tileSnapshotPath: null
+  };
+  const selectedBaseGame = baseGames.find((baseGame) => baseGame.id === selectedBaseGameId) ?? fallbackBaseGame;
+
+  return `<div id="ideas-base-game-control" class="ideas-base-game-control">
+        <input id="ideas-base-game-input" type="hidden" value="${escapeHtml(selectedBaseGame.id)}" required />
+        <button
+          id="ideas-base-game-toggle"
+          class="ideas-base-game-toggle"
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded="false"
+        >
+          ${renderIdeasBaseGameThumbnail(selectedBaseGame, 'ideas-base-game-toggle-thumbnail')}
+          <span id="ideas-base-game-toggle-label">${escapeHtml(selectedBaseGame.label)}</span>
+        </button>
+        <ul id="ideas-base-game-menu" class="ideas-base-game-menu" role="listbox" aria-label="Base game" aria-hidden="true">
+          ${baseGames
+            .map((baseGame) => {
+              const isSelected = baseGame.id === selectedBaseGame.id;
+              const normalizedSnapshotPath =
+                typeof baseGame.tileSnapshotPath === 'string' ? baseGame.tileSnapshotPath : '';
+              return `<li class="ideas-base-game-menu-item">
+                <button
+                  class="ideas-base-game-option${isSelected ? ' ideas-base-game-option--selected' : ''}"
+                  type="button"
+                  role="option"
+                  data-base-game-id="${escapeHtml(baseGame.id)}"
+                  data-base-game-label="${escapeHtml(baseGame.label)}"
+                  data-base-game-tile-snapshot-path="${escapeHtml(normalizedSnapshotPath)}"
+                  aria-selected="${isSelected ? 'true' : 'false'}"
+                >
+                  ${renderIdeasBaseGameThumbnail(baseGame, 'ideas-base-game-option-thumbnail')}
+                  <span class="ideas-base-game-option-label">${escapeHtml(baseGame.label)}</span>
+                </button>
+              </li>`;
+            })
+            .join('')}
+        </ul>
+      </div>`;
+}
+
 export function renderIdeasView(
   ideas: readonly IdeasViewIdea[],
+  baseGames: readonly IdeasViewBaseGame[],
+  selectedBaseGameId: string,
   csrfToken: string,
   isGenerating: boolean = false,
 ): string {
@@ -193,6 +264,7 @@ export function renderIdeasView(
         <a class="codex-home-link" href="/">Back to games</a>
       </header>
       <section class="ideas-controls">
+        ${renderIdeasBaseGameSelector(baseGames, selectedBaseGameId)}
         <button id="ideas-generate-button" class="ideas-generate-button${generatingClass}" type="button" aria-label="Generate idea" aria-busy="${generatingBusyState}">
           ${renderLucideIcon('lightbulb', 'idea-icon')}
           <span>Generate</span>
@@ -419,22 +491,13 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
             <span>Build</span>
           </button>
           <button
-            id="game-tab-favorite"
-            class="prompt-action-button prompt-action-button--icon game-view-icon-tab--favorite${isFavorite ? ' game-view-icon-tab--active' : ''}"
-            type="button"
-            aria-label="${isFavorite ? 'Unfavorite game' : 'Favorite game'}"
-            aria-pressed="${isFavorite ? 'true' : 'false'}"
-          >
-            ${renderLucideIcon('star', 'game-view-icon')}
-          </button>
-          <button
             id="game-codex-toggle"
             class="prompt-action-button prompt-action-button--icon"
             type="button"
             aria-controls="game-codex-transcript"
             aria-expanded="false"
             aria-label="Toggle ${providerLabel} session"
-          >
+            >
             ${renderLucideIcon('bot', 'game-view-icon')}
           </button>
           <button
@@ -446,12 +509,29 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
             ${renderLucideIcon('video', 'game-view-icon')}
           </button>
           <button
+            id="game-tab-idea-generate"
+            class="prompt-action-button prompt-action-button--icon"
+            type="button"
+            aria-label="Generate idea from this game"
+          >
+            ${renderLucideIcon('lightbulb', 'game-view-icon')}
+          </button>
+          <button
             id="game-tab-delete"
             class="prompt-action-button prompt-action-button--icon"
             type="button"
             aria-label="Delete game"
           >
             ${renderLucideIcon('trash-2', 'game-view-icon')}
+          </button>
+          <button
+            id="game-tab-favorite"
+            class="prompt-action-button prompt-action-button--icon game-view-icon-tab--favorite${isFavorite ? ' game-view-icon-tab--active' : ''}"
+            type="button"
+            aria-label="${isFavorite ? 'Unfavorite game' : 'Favorite game'}"
+            aria-pressed="${isFavorite ? 'true' : 'false'}"
+          >
+            ${renderLucideIcon('star', 'game-view-icon')}
           </button>
         </div>
       </form>

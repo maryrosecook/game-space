@@ -10,5 +10,5 @@ Requirements:
 - Be explicit about player inputs and what each input does in moment-to-moment play.
 - Bias toward established genres, while allowing a small chance of a more outlandish genre mashup.
 - Do not suggest endless runners.
-- Assume all generated game builds must start from the `games/starter` game template (see `games/starter/README.md`).
+- The caller will provide base-game context for this ideation run. Ground your idea in that base game instead of assuming starter-only context.
 - Return only the final idea text.

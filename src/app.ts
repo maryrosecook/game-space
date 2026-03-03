@@ -23,12 +23,12 @@ import {
 } from "./services/csrf";
 import { reloadTokenPath } from "./services/devLiveReload";
 import { getCodexTurnInfo } from "./services/codexTurnInfo";
-import { pathExists } from "./services/fsUtils";
+import { hasErrorCode, pathExists } from "./services/fsUtils";
 import { buildAllGames } from "./services/gameBuildPipeline";
 import { requireRuntimeGameAssetPathMiddleware } from "./services/gameAssetAllowlist";
 import { createForkedGameVersion } from "./services/forkGameVersion";
-import { generateIdeaPrompt } from "./services/ideaGeneration";
-import { readIdeasFile, writeIdeasFile } from "./services/ideas";
+import { generateIdeaPrompt, type IdeaGenerationBaseGameContext } from "./services/ideaGeneration";
+import { DEFAULT_IDEA_BASE_GAME_ID, readIdeasFile, writeIdeasFile } from "./services/ideas";
 import {
   composeCodexPrompt,
   readBuildPromptFile,
@@ -63,7 +63,7 @@ import {
   OpenAiRealtimeTranscriptionSessionFactory,
   type OpenAiRealtimeTranscriptionSessionCreator,
 } from "./services/openaiTranscription";
-import type { CodexSessionStatus } from "./types";
+import type { CodexSessionStatus, GameVersion } from "./types";
 
 type ErrorLogger = (message: string, error: unknown) => void;
 
@@ -82,6 +82,7 @@ type AppOptions = {
   shouldBuildGamesOnStartup?: boolean;
   enableGameLiveReload?: boolean;
   openAiRealtimeTranscriptionSessionCreator?: OpenAiRealtimeTranscriptionSessionCreator;
+  ideaPromptGenerator?: typeof generateIdeaPrompt;
 };
 
 const TRANSCRIPTION_MODEL_UNAVAILABLE_PATTERN =
@@ -91,9 +92,6 @@ const GAME_SCREENSHOT_PNG_DATA_URL_PREFIX = "data:image/png;base64,";
 const ANNOTATION_PNG_BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 const MAX_ANNOTATION_PNG_BYTES = 1024 * 1024;
 const MAX_GAME_SCREENSHOT_PNG_BYTES = 3 * 1024 * 1024;
-const IDEAS_STARTER_VERSION_ID = "starter";
-
-
 const TILE_SNAPSHOT_PROTOCOL = {
   steps: [{ run: 120 }, { snap: "tile" }],
 };
@@ -189,6 +187,82 @@ function requestRateLimitKey(request: express.Request): string {
   }
 
   return "unknown";
+}
+
+type IdeaBaseGameOption = {
+  id: string;
+  label: string;
+  tileSnapshotPath: string | null;
+};
+
+function ideaBaseGameLabel(version: GameVersion): string {
+  if (typeof version.threeWords === "string" && version.threeWords.trim().length > 0) {
+    return version.threeWords.trim().replaceAll("-", " ");
+  }
+
+  return version.id;
+}
+
+function toIdeaBaseGameOption(version: GameVersion): IdeaBaseGameOption {
+  return {
+    id: version.id,
+    label: ideaBaseGameLabel(version),
+    tileSnapshotPath: typeof version.tileSnapshotPath === "string" ? version.tileSnapshotPath : null,
+  };
+}
+
+function compareIdeaBaseGames(left: IdeaBaseGameOption, right: IdeaBaseGameOption): number {
+  const labelComparison = left.label.localeCompare(right.label);
+  if (labelComparison !== 0) {
+    return labelComparison;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function buildIdeasBaseGameOptions(versions: readonly GameVersion[]): IdeaBaseGameOption[] {
+  const optionsById = new Map<string, IdeaBaseGameOption>();
+
+  for (const version of versions) {
+    if (version.id !== DEFAULT_IDEA_BASE_GAME_ID && version.favorite !== true) {
+      continue;
+    }
+
+    optionsById.set(version.id, toIdeaBaseGameOption(version));
+  }
+
+  if (!optionsById.has(DEFAULT_IDEA_BASE_GAME_ID)) {
+    optionsById.set(DEFAULT_IDEA_BASE_GAME_ID, {
+      id: DEFAULT_IDEA_BASE_GAME_ID,
+      label: DEFAULT_IDEA_BASE_GAME_ID,
+      tileSnapshotPath: null,
+    });
+  }
+
+  const starterOption = optionsById.get(DEFAULT_IDEA_BASE_GAME_ID);
+  const otherOptions = [...optionsById.values()]
+    .filter((option) => option.id !== DEFAULT_IDEA_BASE_GAME_ID)
+    .sort(compareIdeaBaseGames);
+
+  return starterOption ? [starterOption, ...otherOptions] : otherOptions;
+}
+
+function findVersionById(versions: readonly GameVersion[], versionId: string): GameVersion | null {
+  return versions.find((version) => version.id === versionId) ?? null;
+}
+
+function toIdeaGenerationBaseGameContext(
+  baseGameId: string,
+  baseGameOption: IdeaBaseGameOption,
+  baseGameVersion: GameVersion | null,
+  baseGameReadme: string | null
+): IdeaGenerationBaseGameContext {
+  return {
+    id: baseGameId,
+    label: baseGameOption.label,
+    prompt: typeof baseGameVersion?.prompt === "string" ? baseGameVersion.prompt : null,
+    readme: baseGameReadme,
+  };
 }
 
 function renderAuthPage(
@@ -529,6 +603,7 @@ export function createApp(options: AppOptions = {}): express.Express {
     (process.env.OPENAI_API_KEY
       ? new OpenAiRealtimeTranscriptionSessionFactory()
       : null);
+  const ideaPromptGenerator = options.ideaPromptGenerator ?? generateIdeaPrompt;
 
   const authConfig = readAdminAuthConfigFromEnv();
   const requireAdmin = requireAdminOr404(authConfig);
@@ -730,13 +805,26 @@ export function createApp(options: AppOptions = {}): express.Express {
 
   app.get("/ideas", requireAdmin, async (request, response, next) => {
     try {
-      const ideas = await readIdeasFile(ideasPath);
+      const [ideas, versions] = await Promise.all([
+        readIdeasFile(ideasPath),
+        listGameVersions(gamesRootPath),
+      ]);
+      const baseGames = buildIdeasBaseGameOptions(versions);
+      const selectedBaseGameId = baseGames[0]?.id ?? DEFAULT_IDEA_BASE_GAME_ID;
       const csrfToken = ensureCsrfToken(request, response);
       const isIdeaGenerationActive = activeIdeaGeneration !== null;
       response
         .status(200)
         .type("html")
-        .send(renderIdeasView(ideas, csrfToken, isIdeaGenerationActive));
+        .send(
+          renderIdeasView(
+            ideas,
+            baseGames,
+            selectedBaseGameId,
+            csrfToken,
+            isIdeaGenerationActive,
+          ),
+        );
     } catch (error: unknown) {
       next(error);
     }
@@ -755,7 +843,24 @@ export function createApp(options: AppOptions = {}): express.Express {
     "/api/ideas/generate",
     requireAdmin,
     requireValidCsrf,
-    async (_request, response, next) => {
+    async (request, response, next) => {
+      const baseGameIdInput = request.body?.baseGameId;
+      if (typeof baseGameIdInput !== "string") {
+        response.status(400).json({ error: "baseGameId is required" });
+        return;
+      }
+
+      const baseGameId = baseGameIdInput.trim();
+      if (baseGameId.length === 0 || !isSafeVersionId(baseGameId)) {
+        response.status(400).json({ error: "baseGameId is invalid" });
+        return;
+      }
+
+      if (!(await hasGameDirectory(gamesRootPath, baseGameId))) {
+        response.status(404).json({ error: "Base game was not found" });
+        return;
+      }
+
       const requestId = nextIdeaGenerationRequestId;
       nextIdeaGenerationRequestId += 1;
 
@@ -770,21 +875,63 @@ export function createApp(options: AppOptions = {}): express.Express {
       };
 
       try {
-        const prompt = await generateIdeaPrompt(
+        const versions = await listGameVersions(gamesRootPath);
+        const baseGameVersion = findVersionById(versions, baseGameId);
+        const baseGameOption = baseGameVersion
+          ? toIdeaBaseGameOption(baseGameVersion)
+          : {
+              id: baseGameId,
+              label: baseGameId,
+              tileSnapshotPath: null,
+            };
+        const baseGameReadmePath = path.join(gamesRootPath, baseGameId, "README.md");
+        const baseGameReadme = await fs.readFile(baseGameReadmePath, "utf8").catch((error: unknown) => {
+          if (hasErrorCode(error, "ENOENT")) {
+            return null;
+          }
+
+          throw error;
+        });
+        const baseGameContext = toIdeaGenerationBaseGameContext(
+          baseGameId,
+          baseGameOption,
+          baseGameVersion,
+          baseGameReadme,
+        );
+        const prompt = await ideaPromptGenerator(
           buildPromptPath,
           ideationPromptPath,
           repoRootPath,
+          baseGameContext,
           abortController.signal,
         );
 
         const ideas = await readIdeasFile(ideasPath);
-        const nextIdeas = [{ prompt, hasBeenBuilt: false }, ...ideas];
+        const nextIdeas = [
+          {
+            prompt,
+            hasBeenBuilt: false,
+            baseGame: {
+              id: baseGameOption.id,
+              label: baseGameOption.label,
+              ...(baseGameOption.tileSnapshotPath
+                ? { tileSnapshotPath: baseGameOption.tileSnapshotPath }
+                : {}),
+            },
+          },
+          ...ideas,
+        ];
         await writeIdeasFile(ideasPath, nextIdeas);
 
         response.status(201).json({ prompt, ideas: nextIdeas });
       } catch (error: unknown) {
-        if (error instanceof Error && error.message === "codex ideation command aborted") {
+        if (error instanceof Error && error.message === "claude ideation command aborted") {
           response.status(409).json({ error: "Idea generation replaced by newer request" });
+          return;
+        }
+
+        if (error instanceof Error && error.message.startsWith("claude ideation command failed")) {
+          response.status(502).json({ error: error.message });
           return;
         }
 
@@ -809,12 +956,6 @@ export function createApp(options: AppOptions = {}): express.Express {
           return;
         }
 
-        const versionId = IDEAS_STARTER_VERSION_ID;
-        if (!(await hasGameDirectory(gamesRootPath, versionId))) {
-          response.status(503).json({ error: "Starter game is not available" });
-          return;
-        }
-
         const ideas = await readIdeasFile(ideasPath);
         if (ideaIndex >= ideas.length) {
           response.status(404).json({ error: "Idea not found" });
@@ -824,6 +965,12 @@ export function createApp(options: AppOptions = {}): express.Express {
         const idea = ideas[ideaIndex];
         if (!idea) {
           response.status(404).json({ error: "Idea not found" });
+          return;
+        }
+
+        const versionId = idea.baseGame.id;
+        if (!(await hasGameDirectory(gamesRootPath, versionId))) {
+          response.status(503).json({ error: "Base game is not available" });
           return;
         }
 

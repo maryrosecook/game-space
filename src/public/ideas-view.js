@@ -1,11 +1,23 @@
 const listRoot = document.getElementById('ideas-list-root');
 const generateButton = document.getElementById('ideas-generate-button');
-if (!(listRoot instanceof HTMLElement) || !(generateButton instanceof HTMLButtonElement)) {
+const baseGameControl = document.getElementById('ideas-base-game-control');
+const baseGameInput = document.getElementById('ideas-base-game-input');
+const baseGameToggle = document.getElementById('ideas-base-game-toggle');
+const baseGameMenu = document.getElementById('ideas-base-game-menu');
+if (
+  !(listRoot instanceof HTMLElement) ||
+  !(generateButton instanceof HTMLButtonElement) ||
+  !(baseGameControl instanceof HTMLElement) ||
+  !(baseGameInput instanceof HTMLInputElement) ||
+  !(baseGameToggle instanceof HTMLButtonElement) ||
+  !(baseGameMenu instanceof HTMLElement)
+) {
   throw new Error('Ideas view controls missing from page');
 }
 
 const csrfToken = document.body.dataset.csrfToken;
 let activeGenerationRequest = null;
+let baseGameMenuOpen = false;
 
 function csrfHeaders() {
   const headers = {};
@@ -25,14 +37,107 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function normalizeBaseGame(baseGameValue) {
+  if (!baseGameValue || typeof baseGameValue !== 'object') {
+    return {
+      id: 'starter',
+      label: 'starter',
+      tileSnapshotPath: null
+    };
+  }
+
+  const baseGameId = typeof baseGameValue.id === 'string' && baseGameValue.id.trim().length > 0
+    ? baseGameValue.id.trim()
+    : 'starter';
+  const baseGameLabel =
+    typeof baseGameValue.label === 'string' && baseGameValue.label.trim().length > 0
+      ? baseGameValue.label.trim()
+      : baseGameId;
+  const tileSnapshotPath =
+    typeof baseGameValue.tileSnapshotPath === 'string' && baseGameValue.tileSnapshotPath.trim().length > 0
+      ? baseGameValue.tileSnapshotPath.trim()
+      : null;
+
+  return {
+    id: baseGameId,
+    label: baseGameLabel,
+    tileSnapshotPath
+  };
+}
+
+function renderBaseGameThumbnail(baseGame, className) {
+  if (typeof baseGame.tileSnapshotPath === 'string' && baseGame.tileSnapshotPath.length > 0) {
+    return `<img class="${className}" src="${escapeHtml(baseGame.tileSnapshotPath)}" alt="${escapeHtml(baseGame.label)}" />`;
+  }
+
+  const fallbackGlyph = escapeHtml((baseGame.label.slice(0, 1) || '?').toUpperCase());
+  return `<span class="${className} ${className}--placeholder" aria-hidden="true">${fallbackGlyph}</span>`;
+}
+
+function updateBaseGameToggle(baseGame) {
+  baseGameToggle.innerHTML = `${renderBaseGameThumbnail(baseGame, 'ideas-base-game-toggle-thumbnail')}<span id="ideas-base-game-toggle-label">${escapeHtml(baseGame.label)}</span>`;
+}
+
+function optionButtons() {
+  return Array.from(baseGameMenu.querySelectorAll('button.ideas-base-game-option'));
+}
+
+function selectedBaseGameId() {
+  const value = baseGameInput.value.trim();
+  return value.length > 0 ? value : null;
+}
+
+function applyBaseGameSelection(baseGame) {
+  baseGameInput.value = baseGame.id;
+  updateBaseGameToggle(baseGame);
+
+  const selectedId = baseGame.id;
+  for (const button of optionButtons()) {
+    const buttonBaseGameId = typeof button.dataset.baseGameId === 'string' ? button.dataset.baseGameId : '';
+    const isSelected = buttonBaseGameId === selectedId;
+    button.classList.toggle('ideas-base-game-option--selected', isSelected);
+    button.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+  }
+}
+
+function baseGameFromOptionButton(optionButton) {
+  const baseGameId = typeof optionButton.dataset.baseGameId === 'string' ? optionButton.dataset.baseGameId.trim() : '';
+  if (baseGameId.length === 0) {
+    return null;
+  }
+
+  const baseGameLabel =
+    typeof optionButton.dataset.baseGameLabel === 'string' && optionButton.dataset.baseGameLabel.trim().length > 0
+      ? optionButton.dataset.baseGameLabel.trim()
+      : baseGameId;
+  const tileSnapshotPath =
+    typeof optionButton.dataset.baseGameTileSnapshotPath === 'string' &&
+    optionButton.dataset.baseGameTileSnapshotPath.trim().length > 0
+      ? optionButton.dataset.baseGameTileSnapshotPath.trim()
+      : null;
+
+  return {
+    id: baseGameId,
+    label: baseGameLabel,
+    tileSnapshotPath
+  };
+}
+
+function setBaseGameMenuOpen(nextIsOpen) {
+  baseGameMenuOpen = nextIsOpen;
+  baseGameControl.classList.toggle('ideas-base-game-control--open', nextIsOpen);
+  baseGameToggle.setAttribute('aria-expanded', nextIsOpen ? 'true' : 'false');
+  baseGameMenu.setAttribute('aria-hidden', nextIsOpen ? 'false' : 'true');
+}
+
 const ideaBuildIconMarkup = document.body.dataset.ideaBuildIcon ?? '';
 const ideaDeleteIconMarkup = document.body.dataset.ideaDeleteIcon ?? '';
 
 function applyGenerateState(isGenerating) {
   generateButton.classList.toggle('ideas-generate-button--generating', isGenerating);
   generateButton.setAttribute('aria-busy', isGenerating ? 'true' : 'false');
+  generateButton.disabled = isGenerating;
 }
-
 
 async function syncIdeasState() {
   try {
@@ -63,7 +168,11 @@ function renderIdeas(ideas) {
   listRoot.innerHTML = `<ul class="ideas-list" role="list">${ideas
     .map((idea, index) => {
       const builtBadge = idea.hasBeenBuilt ? '<span class="idea-built-pill" aria-label="Built">Built</span>' : '';
+      const baseGame = normalizeBaseGame(idea.baseGame);
       return `<li class="idea-row" data-idea-index="${index}">
+        <div class="idea-base-game">
+          ${renderBaseGameThumbnail(baseGame, 'idea-base-game-thumbnail')}
+        </div>
         <div class="idea-content">
           <span class="idea-prompt">${escapeHtml(idea.prompt)}</span>
         </div>
@@ -82,6 +191,11 @@ function renderIdeas(ideas) {
 }
 
 async function generateIdea() {
+  const baseGameId = selectedBaseGameId();
+  if (!baseGameId) {
+    return;
+  }
+
   if (activeGenerationRequest) {
     activeGenerationRequest.abort();
   }
@@ -93,10 +207,25 @@ async function generateIdea() {
   try {
     const response = await fetch('/api/ideas/generate', {
       method: 'POST',
-      headers: csrfHeaders(),
+      headers: {
+        ...csrfHeaders(),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ baseGameId }),
       signal: requestController.signal
     });
     if (!response.ok) {
+      let errorMessage = 'Idea generation failed.';
+      try {
+        const payload = await response.json();
+        if (payload && typeof payload === 'object' && typeof payload.error === 'string' && payload.error.trim().length > 0) {
+          errorMessage = payload.error;
+        }
+      } catch {
+        // Fall back to generic error when payload parsing fails.
+      }
+
+      window.alert(errorMessage);
       return;
     }
 
@@ -110,6 +239,11 @@ async function generateIdea() {
     if (error instanceof DOMException && error.name === 'AbortError') {
       return;
     }
+
+    if (typeof console !== 'undefined' && typeof console.error === 'function') {
+      console.error('Idea generation request failed', error);
+    }
+    window.alert('Idea generation failed. Please try again.');
   } finally {
     if (activeGenerationRequest === requestController) {
       activeGenerationRequest = null;
@@ -158,6 +292,49 @@ async function buildIdea(ideaIndex) {
   }
 }
 
+baseGameToggle.addEventListener('click', () => {
+  setBaseGameMenuOpen(!baseGameMenuOpen);
+});
+
+baseGameMenu.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return;
+  }
+
+  const optionButton = target.closest('button.ideas-base-game-option');
+  if (!(optionButton instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  const nextBaseGame = baseGameFromOptionButton(optionButton);
+  if (!nextBaseGame) {
+    return;
+  }
+
+  applyBaseGameSelection(nextBaseGame);
+  setBaseGameMenuOpen(false);
+});
+
+document.addEventListener('click', (event) => {
+  if (!baseGameMenuOpen) {
+    return;
+  }
+
+  const target = event.target;
+  if (!(target instanceof Node) || baseGameControl.contains(target)) {
+    return;
+  }
+
+  setBaseGameMenuOpen(false);
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    setBaseGameMenuOpen(false);
+  }
+});
+
 generateButton.addEventListener('click', () => {
   void generateIdea();
 });
@@ -189,6 +366,17 @@ listRoot.addEventListener('click', (event) => {
   }
 });
 
+const initialSelectedBaseGameId = selectedBaseGameId();
+const initiallySelectedOption = optionButtons().find((optionButton) => {
+  const optionBaseGameId = typeof optionButton.dataset.baseGameId === 'string' ? optionButton.dataset.baseGameId.trim() : '';
+  return optionBaseGameId === initialSelectedBaseGameId;
+}) ?? optionButtons().find((optionButton) => optionButton.getAttribute('aria-selected') === 'true');
+if (initiallySelectedOption) {
+  const initialBaseGame = baseGameFromOptionButton(initiallySelectedOption);
+  if (initialBaseGame) {
+    applyBaseGameSelection(initialBaseGame);
+  }
+}
 
 window.addEventListener('pageshow', () => {
   void syncIdeasState();

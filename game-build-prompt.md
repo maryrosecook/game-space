@@ -17,6 +17,7 @@ The host page will load and run your game with this fixed contract:
 - The host provides a `<canvas id="game-canvas">` and calls `startGame(canvas)`.
 - Your game must run fully client-side in the browser.
 - Read `[pwd]/README.md` for more details on the available game engine API.
+- Keep `[pwd]/README.md` section `## The Game` up to date with a terse, high-level outline of gameplay, graphics, and input whenever behavior changes.
 - If a prompt includes an `[annotation_overlay_png_data_url]` image, that image is a screenshot captured from the live game canvas at prompt time.
 - Any yellow drawings visible on that screenshot are creator annotations highlighting what they are describing in the spoken or typed prompt.
 - The headless runner always uses a fixed viewport of `360x640` at `dpr=1`.

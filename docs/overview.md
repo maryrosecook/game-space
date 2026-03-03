@@ -5,21 +5,22 @@ Local-first game version browser and editor where every version is playable, for
 Top three features:
 - Filesystem-backed version catalog rendered as responsive homepage tiles (`Fountain`) with a minimum three-column grid, edge-to-edge tile media, overlaid labels, hyphen-normalized names, and favorite highlighting; logged-out users see only favorites while direct non-favorite game URLs still load.
 - Cookie-authenticated admin workflow (`/auth`) that unlocks prompt execution and transcript access, including runtime switching between Codex and Claude codegen providers, while keeping public gameplay (`/` and `/game/:versionId`) available without login.
-- Starter now supports deterministic headless runs (Playwright + SwiftShader flags) driven by a bounded JSON action protocol (`run` / `input` / `snap`) with PNG capture output via a local CLI workflow (`npm run headless`).
+- Base-game-aware ideation workflow (`/ideas` + `/api/ideas/generate`) that can generate from `starter`, starred games, or the current game via an in-game lightbulb action, while persisting base-game thumbnail metadata per idea.
 
 # Repo structure
 
 - `src/` - Backend app, HTML rendering, browser assets, and service modules.
-  - `app.ts` - Express app factory, route wiring, auth/CSRF enforcement, runtime-state API shaping, and static asset gating.
+  - `app.ts` - Express app factory, route wiring, auth/CSRF enforcement, ideas generation/build APIs, runtime-state API shaping, and static asset gating.
   - `server.ts` - HTTP server bootstrap and dotenv loading.
-  - `views.ts` - Homepage/auth/game/codex HTML rendering.
+  - `views.ts` - Homepage/auth/game/codex/ideas HTML rendering (including ideas base-game selector + thumbnail rows and game-page lightbulb ideation button markup).
   - `types.ts` - Shared metadata/version TypeScript types.
   - `public/` - Static browser assets.
-    - `styles.css` - Homepage/game/auth styling, including minimum three-column homepage tile layout with full-bleed media + overlaid labels, favorite tile/button states, admin/public game states, provider selector controls on `/auth`, transcript layouts, and Edit-tab generating spinner animation.
-    - `game-view.js` - Admin game-page Build prompt submission, favorite toggle API calls, Edit-drawer tile snapshot capture (`#game-canvas` pixels -> `/api/games/:versionId/tile-snapshot`) with animation-frame retry against blank frames, realtime voice transcription (session mint + WebRTC stream + transcript events), recording-time annotation drawing (mouse/touch pointer strokes on an overlay canvas), PNG annotation attachment in prompt-submit payloads, bottom-tab behavior, transcript polling, transcript auto-scroll on panel open and new entries, provider-specific transcript heading labels (`Codex Transcript` or `Claude Transcript`), and Edit-tab generating-state class toggling from server `eyeState`.
+    - `styles.css` - Homepage/game/auth/ideas styling, including minimum three-column homepage tile layout with full-bleed media + overlaid labels, ideas base-game selector/menu thumbnails, ideas row thumbnail-first layout, favorite tile/button states, admin/public game states, provider selector controls on `/auth`, transcript layouts, and Edit-tab generating spinner animation.
+    - `game-view.js` - Admin game-page Build prompt submission, in-panel lightbulb ideation trigger (`/api/ideas/generate` fire-and-forget with current game base id), favorite toggle API calls, Edit-drawer tile snapshot capture (`#game-canvas` pixels -> `/api/games/:versionId/tile-snapshot`) with animation-frame retry against blank frames, realtime voice transcription (session mint + WebRTC stream + transcript events), recording-time annotation drawing (mouse/touch pointer strokes on an overlay canvas), PNG annotation attachment in prompt-submit payloads, bottom-tab behavior, transcript polling, transcript auto-scroll on panel open and new entries, provider-specific transcript heading labels (`Codex Transcript` or `Claude Transcript`), and Edit-tab generating-state class toggling from server `eyeState`.
     - `game-live-reload.js` - Dev-only game-page polling via `/api/dev/reload-token/:versionId`.
     - `codex-view.js` - `/codex` selector wiring and transcript loading with provider-specific heading labels and initial render auto-scroll to newest messages.
     - `codex-transcript-presenter.js` - Shared transcript presenter used by `/codex` and game pages, with configurable transcript title text.
+    - `ideas-view.js` - Ideas page selector dropdown behavior (thumbnail options), generate/build/delete requests, and thumbnail-first idea list rerendering.
   - `services/` - Filesystem, auth, build, provider-configurable prompt execution, and session/transcript orchestration.
     - `fsUtils.ts` - Shared fs/object/error helpers.
     - `adminAuth.ts` - Admin password verification, iron-session sealed cookies, fixed TTL, and login rate limiter.
@@ -29,6 +30,8 @@ Top three features:
     - `gameVersions.ts` - Version ID validation, metadata parsing/writing (including `favorite` and optional creation `prompt`), lifecycle status normalization, and version listing.
     - `forkGameVersion.ts` - Fork copy + lineage metadata creation.
     - `tileColor.ts` - Shared readable tile-color generator used for fork metadata and backfills.
+    - `ideaGeneration.ts` - Claude ideation prompt composition (build prompt + ideation template + base-game context), `claude --print` spawn lifecycle, and cancellation/error handling.
+    - `ideas.ts` - `ideas.json` normalization/read/write with backward-compatible base-game metadata defaults.
     - `promptExecution.ts` - Build-prompt loading, prompt composition, and provider-specific non-interactive runners (`codex exec --json` with optional `--image` attachment files and `claude --print --output-format stream-json`, including `--input-format stream-json` multimodal user-message payloads when image attachments are present) behind the existing `CodexRunner` interface.
     - `codexSessions.ts` - Session-file lookup plus JSONL parsing/normalization for Codex and Claude transcript entries, including user/assistant text, Codex task lifecycle events, and Claude tool call/result events.
     - `codexTurnInfo.ts` - Per-worktree runtime-state tracker that scans latest matching session JSONL by worktree cwd metadata (`session_meta.payload.cwd` or top-level `cwd`), reads append-only bytes, and derives `eyeState` from task lifecycle events (with message-balance fallback).
@@ -71,6 +74,8 @@ Top three features:
 - Favorite toggle flow: `POST /api/games/:versionId/favorite` requires admin + CSRF, flips the `favorite` boolean in `metadata.json`, and returns the new state for `src/public/game-view.js` to reflect in the star button.
 - Manual tile snapshot flow: admin game pages expose a recorder button (`#game-tab-capture-tile`) in the Edit drawer action row (left of delete) that captures current `#game-canvas` pixels as a PNG data URL; client capture waits for animation frames and retries when the output matches a blank-canvas PNG before posting to `POST /api/games/:versionId/tile-snapshot`, which validates the payload and writes `games/<version-id>/snapshots/tile.png`.
 - Prompt fork flow: `POST /api/games/:versionId/prompts` requires admin + CSRF, forks via `createForkedGameVersion()` (prompt-derived three-word base plus random 10-character lowercase alphanumeric suffix), persists the submitted user prompt in the new fork's `metadata.json`, sets lifecycle state to `created`, composes full prompt, launches the provider-selected runner (`codex` or `claude`) behind `CodexRunner`, persists `codexSessionId` as soon as observed, and transitions lifecycle to `stopped` or `error` when the run settles.
+- Ideas flow: `GET /ideas` renders thumbnail-aware idea rows and a required base-game selector (starter + starred games), `POST /api/ideas/generate` requires `baseGameId`, runs Claude ideation with base-game metadata/README context, persists the new entry at the top of `ideas.json`, and `POST /api/ideas/:ideaIndex/build` forks from that idea's persisted `baseGame.id` instead of hard-coding starter.
+- In-game ideation quick-action flow: authenticated game pages expose `#game-tab-idea-generate` beside `Build`; clicking it issues a fire-and-forget `POST /api/ideas/generate` with the current `versionId` as `baseGameId`, so new ideas appear later on `/ideas`.
 - Realtime voice transcription flow: `POST /api/transcribe` (admin + CSRF) mints an OpenAI Realtime client secret configured for `gpt-realtime-1.5` and returns a short-lived `clientSecret` plus model; `src/public/game-view.js` then exchanges SDP with `https://api.openai.com/v1/realtime/calls`, streams mic audio over WebRTC, applies `conversation.item.input_audio_transcription.completed` text to the prompt input and full-width in-canvas overlay (top-anchored, left-aligned, auto-following newest text), enables annotation drawing while recording, and on stop submits transcription plus optional annotation PNG (`annotationPngDataUrl`) to `/api/games/:versionId/prompts`; the server validates/decodes that PNG and passes it as an attachment to the active codegen provider (Codex `--image`; Claude stream-json image content block).
 - Codex transcript/runtime flow: `/codex` and `/api/codex-sessions/:versionId` require admin; transcript API resolves metadata, derives runtime `eyeState` via `getCodexTurnInfo()` (task lifecycle for Codex logs, message-balance fallback for Claude logs), reads session JSONL from both `~/.codex/sessions` and `~/.claude/projects`, and returns normalized transcript entries plus lifecycle/runtime state, which clients render anchored at the newest entry.
 - Static/runtime serving flow: `/games/*` first passes `requireRuntimeGameAssetPathMiddleware()` so only runtime-safe `dist` assets are public; sensitive or dev files (including `dist/reload-token.txt`) return `404`.
@@ -86,6 +91,9 @@ Top three features:
     - `dist/game.js` - Built runtime bundle served to clients.
     - `dist/reload-token.txt` - Dev-only rebuild token (read through `/api/dev/reload-token/:versionId` when dev live reload is enabled).
     - `node_modules/` - Per-version installed dependencies.
+- `ideas.json` - Persisted ideas queue for `/ideas`.
+  - `[index]`
+    - `{ prompt: string, hasBeenBuilt: boolean, baseGame: { id: string, label: string, tileSnapshotPath?: string } }`
 - `games/starter/snapshots/` - Starter headless capture output (timestamped directories, gitignored).
   - `<timestamp>/`
     - `<index>-<label>.png` - Snapshot captured at a deterministic frame.
@@ -100,6 +108,7 @@ Top three features:
   - `CODEGEN_PROVIDER` - Active codegen provider (`codex` or `claude`), defaults to `codex`.
   - `CODEGEN_CLAUDE_MODEL` - Claude model name used by provider-selected prompt execution, defaults to `claude-sonnet-4-6`.
   - `CODEGEN_CLAUDE_THINKING` - Claude thinking mode hint appended to provider-selected runs, defaults to `adaptive`.
+  - `IDEATION_MODEL` - Claude model alias/name used only for ideation runs, defaults to `opus`.
 
 # Architecture notes
 
@@ -110,6 +119,8 @@ Top three features:
 - Annotation capture model: while recording, `game-view.js` activates the full-stage `#prompt-drawing-canvas` overlay and draws pointer/touch strokes using `CanvasRenderingContext2D`; when prompt submission happens from recorded speech, the client includes `toDataURL('image/png')` output as `annotationPngDataUrl` only if ink was drawn. The server accepts only PNG data URLs, decodes the image bytes, writes a temporary PNG in the fork worktree, and passes that image to both Codex (`--image`) and Claude (`--input-format stream-json` user message with base64 image content block) while also including an attached-image prompt marker.
 - Codegen provider model: `RuntimeCodegenConfigStore` loads env defaults once and keeps a mutable in-memory `provider` setting that `/auth/provider` can update; `SpawnCodegenRunner` reads this setting at run-time and dispatches to either Codex or Claude CLI while preserving the `CodexRunner` API contract.
 - Prompt safety model: user prompt text is never shell-interpolated; provider runners pass full prompt bytes through stdin (`codex exec --json --dangerously-bypass-approvals-and-sandbox -` with optional `--image` file arguments, or `claude --print --output-format stream-json --dangerously-skip-permissions`, switching to `--input-format stream-json` JSONL user-message input when image attachments are provided).
+- Ideation model: idea generation always runs through Claude (`claude --print`) with an appended max-thinking single-turn system instruction; the composed prompt includes build-prompt guard rails plus selected base-game context (`id`, label, optional creation prompt, and README `## The Game` excerpt when present).
+- Ideas persistence model: `ideas.json` entries are normalized on read so legacy records default to `baseGame.id = "starter"`; new entries persist explicit base-game metadata (including tile snapshot path when available) so ideas rows can render source thumbnails without additional lookup.
 - Creation prompt persistence model: newly forked game versions persist the submitted creation prompt as `metadata.json.prompt`; existing metadata is not backfilled.
 - Metadata persistence model: `writeMetadataFile()` normalizes metadata fields, serializes writes per `metadata.json` path, and writes through a temp-file rename to avoid partial/corrupted JSON during concurrent updates.
 - Fork ID model: default fork IDs use a descriptive three-word base derived from the prompt (or `new-arcade-game` fallback) and append a random 10-character lowercase alphanumeric suffix to reduce collisions.

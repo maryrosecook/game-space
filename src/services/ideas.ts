@@ -2,10 +2,66 @@ import { promises as fs } from 'node:fs';
 
 import { hasErrorCode, isObjectRecord } from './fsUtils';
 
+export const DEFAULT_IDEA_BASE_GAME_ID = 'starter';
+
+export type IdeaBaseGame = {
+  id: string;
+  label: string;
+  tileSnapshotPath?: string;
+};
+
 export type GameIdea = {
   prompt: string;
   hasBeenBuilt: boolean;
+  baseGame: IdeaBaseGame;
 };
+
+function normalizeIdeaBaseGame(value: unknown): IdeaBaseGame | null {
+  if (!isObjectRecord(value)) {
+    return null;
+  }
+
+  const id = value.id;
+  if (typeof id !== 'string' || id.trim().length === 0) {
+    return null;
+  }
+
+  const normalizedId = id.trim();
+  const label = value.label;
+  const normalizedLabel = typeof label === 'string' && label.trim().length > 0 ? label.trim() : normalizedId;
+  const tileSnapshotPath = value.tileSnapshotPath;
+  const normalizedTileSnapshotPath =
+    typeof tileSnapshotPath === 'string' && tileSnapshotPath.trim().length > 0 ? tileSnapshotPath.trim() : undefined;
+
+  return {
+    id: normalizedId,
+    label: normalizedLabel,
+    ...(normalizedTileSnapshotPath ? { tileSnapshotPath: normalizedTileSnapshotPath } : {})
+  };
+}
+
+function normalizeLegacyIdeaBaseGame(value: Record<string, unknown>): IdeaBaseGame | null {
+  const baseGameId = value.baseGameId;
+  if (typeof baseGameId !== 'string' || baseGameId.trim().length === 0) {
+    return null;
+  }
+
+  const normalizedId = baseGameId.trim();
+  const baseGameLabel = value.baseGameLabel;
+  const normalizedLabel =
+    typeof baseGameLabel === 'string' && baseGameLabel.trim().length > 0 ? baseGameLabel.trim() : normalizedId;
+  const baseGameTileSnapshotPath = value.baseGameTileSnapshotPath;
+  const normalizedTileSnapshotPath =
+    typeof baseGameTileSnapshotPath === 'string' && baseGameTileSnapshotPath.trim().length > 0
+      ? baseGameTileSnapshotPath.trim()
+      : undefined;
+
+  return {
+    id: normalizedId,
+    label: normalizedLabel,
+    ...(normalizedTileSnapshotPath ? { tileSnapshotPath: normalizedTileSnapshotPath } : {})
+  };
+}
 
 function normalizeIdea(value: unknown): GameIdea | null {
   if (!isObjectRecord(value)) {
@@ -28,9 +84,17 @@ function normalizeIdea(value: unknown): GameIdea | null {
     return null;
   }
 
+  const baseGame =
+    normalizeIdeaBaseGame(value.baseGame) ??
+    normalizeLegacyIdeaBaseGame(value) ?? {
+      id: DEFAULT_IDEA_BASE_GAME_ID,
+      label: DEFAULT_IDEA_BASE_GAME_ID
+    };
+
   return {
     prompt: normalizedPrompt,
-    hasBeenBuilt
+    hasBeenBuilt,
+    baseGame
   };
 }
 
