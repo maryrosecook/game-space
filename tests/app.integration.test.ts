@@ -1293,11 +1293,12 @@ describe('express app integration', () => {
       .send({ tilePngDataUrl: TEST_PNG_DATA_URL })
       .expect(200);
 
-    expect(response.body).toEqual({
+    expect(response.body).toMatchObject({
       status: 'ok',
-      versionId: 'v1',
-      tileSnapshotPath: '/games/v1/snapshots/tile.png'
+      versionId: 'v1'
     });
+    expect(response.body.tileSnapshotPath).toMatch(/^\/games\/v1\/snapshots\/tile\.png\?v=/);
+
 
     const persistedTilePath = path.join(gamesRootPath, 'v1', 'snapshots', 'tile.png');
     const persistedTile = await fs.readFile(persistedTilePath);

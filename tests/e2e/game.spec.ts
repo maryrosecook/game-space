@@ -60,6 +60,22 @@ test('admin game page places tile capture in edit panel and posts tile snapshot 
 });
 
 
+test('manual tile capture refreshes homepage tile snapshot URL', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.goto('/game/starter');
+  await page.locator('#game-tab-edit').click();
+  await page.locator('#game-tab-capture-tile').click();
+
+  await page.goto('/');
+  await expect
+    .poll(async () =>
+      page
+        .locator('.game-tile[data-version-id="starter"] .tile-image')
+        .getAttribute('src')
+    )
+    .toMatch(/^\/games\/starter\/snapshots\/tile\.png\?v=/);
+});
+
 test('admin game page shows a labeled record button with rounded border styling', async ({ page }) => {
   await loginAsAdmin(page);
   await page.goto('/game/starter');

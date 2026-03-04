@@ -113,6 +113,10 @@ async function captureTileSnapshotForGame(gameDirectoryPath: string): Promise<vo
   await fs.copyFile(capture.path, targetPath);
 }
 
+function buildCacheBustedTileSnapshotPath(versionId: string): string {
+  return `/games/${encodeURIComponent(versionId)}/snapshots/tile.png?v=${randomUUID()}`;
+}
+
 async function runHeadlessSnapshotScript(gameDirectoryPath: string, protocol: unknown): Promise<HeadlessSnapshotResult> {
   const args = ["run", "headless", "--", "--json", JSON.stringify(protocol)];
 
@@ -1326,13 +1330,26 @@ export function createApp(options: AppOptions = {}): express.Express {
         const targetDirectoryPath = gameDirectoryPath(gamesRootPath, versionId);
         const snapshotsDirectoryPath = path.join(targetDirectoryPath, "snapshots");
         const tileSnapshotPath = path.join(snapshotsDirectoryPath, "tile.png");
+        const cacheBustedTileSnapshotPath = buildCacheBustedTileSnapshotPath(versionId);
         await fs.mkdir(snapshotsDirectoryPath, { recursive: true });
         await fs.writeFile(tileSnapshotPath, tilePngBytes);
+
+        const metadataPath = path.join(targetDirectoryPath, "metadata.json");
+        const currentMetadata = await readMetadataFile(metadataPath);
+        if (!currentMetadata) {
+          response.status(404).json({ error: "Game metadata not found" });
+          return;
+        }
+
+        await writeMetadataFile(metadataPath, {
+          ...currentMetadata,
+          tileSnapshotPath: cacheBustedTileSnapshotPath,
+        });
 
         response.status(200).json({
           status: "ok",
           versionId,
-          tileSnapshotPath: `/games/${encodeURIComponent(versionId)}/snapshots/tile.png`,
+          tileSnapshotPath: cacheBustedTileSnapshotPath,
         });
       } catch (error: unknown) {
         next(error);
