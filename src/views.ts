@@ -96,9 +96,8 @@ export function renderHomepage(versions: readonly GameVersion[], options: Homepa
         ? `<img class="tile-image" src="${tileSnapshotPath}" alt="${displayId}" loading="lazy" decoding="async" />`
         : '<span class="tile-image tile-image--placeholder" aria-hidden="true"></span>';
       return `
-        <a class="game-tile${favoriteClassName}" href="/game/${encodeURIComponent(version.id)}" data-version-id="${id}" data-tile-color="${tileColorEscaped}" style="--tile-color: ${tileColorEscaped};">
+        <a class="game-tile${favoriteClassName}" href="/game/${encodeURIComponent(version.id)}" data-version-id="${id}" data-tile-color="${tileColorEscaped}" style="--tile-color: ${tileColorEscaped};" aria-label="${displayId}">
           ${tileMedia}
-          <span class="tile-id">${displayId}</span>
         </a>
       `;
     })
