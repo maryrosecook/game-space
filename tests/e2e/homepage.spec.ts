@@ -22,8 +22,7 @@ async function injectHomepageTile(page: Page): Promise<void> {
     grid.setAttribute('role', 'list');
     grid.innerHTML = `<a class="game-tile" href="/game/starter" data-version-id="starter" data-tile-color="#1D3557" style="--tile-color: #1D3557;">
       <img class="tile-image" src="${imageDataUrl}" alt="starter" />
-      <span class="tile-id">starter</span>
-    </a>`;
+      </a>`;
     shell.appendChild(grid);
   }, ONE_BY_ONE_PNG_DATA_URL);
 }
@@ -129,30 +128,26 @@ test('homepage keeps at least three tile columns when only one tile is shown', a
   expect(gridLayout.firstTileWidth).toBeLessThan(gridLayout.gridWidth / 2);
 });
 
-test('homepage tiles render edge-to-edge media with overlaid labels', async ({ page }) => {
+test('homepage tiles render edge-to-edge media without labels', async ({ page }) => {
   await injectHomepageTile(page);
   const tile = page.locator('.game-tile[data-version-id="starter"]');
   await expect(tile).toBeVisible();
   await expect(tile).toHaveCSS('padding', '0px');
   await expect(tile.locator('.tile-image')).toHaveCSS('position', 'absolute');
-  await expect(tile.locator('.tile-id')).toHaveCSS('position', 'absolute');
+  await expect(tile.locator('.tile-id')).toHaveCount(0);
 
   const mediaCoverage = await tile.evaluate((tileElement) => {
     const image = tileElement.querySelector('.tile-image');
-    const label = tileElement.querySelector('.tile-id');
-    if (!(image instanceof HTMLElement) || !(label instanceof HTMLElement)) {
+    if (!(image instanceof HTMLElement)) {
       return null;
     }
 
     const imageRect = image.getBoundingClientRect();
-    const labelRect = label.getBoundingClientRect();
     return {
       tileInnerWidth: tileElement.clientWidth,
       tileInnerHeight: tileElement.clientHeight,
       imageWidth: imageRect.width,
       imageHeight: imageRect.height,
-      labelWithinTile:
-        labelRect.top >= imageRect.top - 0.5 && labelRect.bottom <= imageRect.bottom + 0.5,
     };
   });
 
@@ -163,5 +158,4 @@ test('homepage tiles render edge-to-edge media with overlaid labels', async ({ p
 
   expect(Math.abs(mediaCoverage.tileInnerWidth - mediaCoverage.imageWidth)).toBeLessThan(1);
   expect(Math.abs(mediaCoverage.tileInnerHeight - mediaCoverage.imageHeight)).toBeLessThan(1);
-  expect(mediaCoverage.labelWithinTile).toBe(true);
 });
