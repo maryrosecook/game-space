@@ -251,6 +251,38 @@ describe('generateIdeaPrompt', () => {
     );
   });
 
+
+  it('normalizes spawn errors to claude ideation failure messages', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-idea-generation-spawn-error-');
+    const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
+    const ideationPromptPath = path.join(tempDirectoryPath, 'ideation.md');
+
+    await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
+    await fs.writeFile(ideationPromptPath, 'IDEATE\n', 'utf8');
+
+    const spawnedProcess = createMockSpawnedProcess();
+    const spawnStub = spawnStubFor(spawnedProcess.processEmitter);
+
+    const generationPromise = generateIdeaPrompt(
+      buildPromptPath,
+      ideationPromptPath,
+      tempDirectoryPath,
+      {
+        id: 'starter',
+        label: 'starter',
+        prompt: null,
+        readme: null
+      },
+      undefined,
+      spawnStub
+    );
+
+    await waitForSpawnCall(spawnStub);
+    spawnedProcess.processEmitter.emit('error', new Error('spawn claude ENOENT'));
+
+    await expect(generationPromise).rejects.toThrow('claude ideation command failed: spawn claude ENOENT');
+  });
+
   it('retries with CODEGEN_CLAUDE_MODEL when the primary ideation model fails for model access', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-idea-generation-fallback-model-');
     const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');

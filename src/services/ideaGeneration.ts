@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 
+
 const CLAUDE_IDEATION_SYSTEM_PROMPT =
   'Use maximum thinking depth for ideation. You have exactly one turn. Return only the final idea text.';
 
@@ -230,7 +231,10 @@ function runIdeaGenerationForModel(
     childProcess.on('error', (error) => {
       rejectIfPending({
         reason: 'failed',
-        message: error instanceof Error ? error.message : 'claude ideation command failed'
+        message:
+          error instanceof Error
+            ? `claude ideation command failed: ${error.message}`
+            : 'claude ideation command failed'
       });
     });
 

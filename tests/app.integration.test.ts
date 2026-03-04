@@ -1958,6 +1958,42 @@ describe('express app integration', () => {
     expect(response.body).toEqual({ error: 'baseGameId is required' });
   });
 
+  it('returns 502 when ideation command execution fails before producing an idea', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-ideas-generate-spawn-failure-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'starter',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const app = createApp({
+      gamesRootPath,
+      ideasPath: path.join(tempDirectoryPath, 'ideas.json'),
+      ideaPromptGenerator: async () => {
+        throw new Error('claude ideation command failed: spawn claude ENOENT');
+      }
+    });
+
+    const authSession = await loginAsAdmin(app);
+    const response = await request(app)
+      .post('/api/ideas/generate')
+      .set('Host', TEST_HOST)
+      .set('Origin', TEST_ORIGIN)
+      .set('Cookie', authSession.cookieHeader)
+      .set('X-CSRF-Token', authSession.csrfToken)
+      .set('Content-Type', 'application/json')
+      .send({ baseGameId: 'starter' })
+      .expect(502);
+
+    expect(response.body).toEqual({ error: 'claude ideation command failed: spawn claude ENOENT' });
+  });
+
   it('generates ideas from the selected base game and persists base game metadata', async () => {
     const tempDirectoryPath = await createTempDirectory('game-space-app-ideas-generate-base-game-selected-');
     const gamesRootPath = path.join(tempDirectoryPath, 'games');
