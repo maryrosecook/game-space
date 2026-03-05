@@ -278,9 +278,63 @@ describe('generateIdeaPrompt', () => {
     );
 
     await waitForSpawnCall(spawnStub);
-    spawnedProcess.processEmitter.emit('error', new Error('spawn claude ENOENT'));
+    spawnedProcess.processEmitter.emit('error', new Error('spawn claude EACCES'));
 
-    await expect(generationPromise).rejects.toThrow('claude ideation command failed: spawn claude ENOENT');
+    await expect(generationPromise).rejects.toThrow('claude ideation command failed: spawn claude EACCES');
+  });
+
+
+  it('falls back to codex when claude executable is unavailable', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-idea-generation-fallback-codex-');
+    const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
+    const ideationPromptPath = path.join(tempDirectoryPath, 'ideation.md');
+
+    await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
+    await fs.writeFile(ideationPromptPath, 'IDEATE\n', 'utf8');
+
+    const claudeAttempt = createMockSpawnedProcess();
+    const codexAttempt = createMockSpawnedProcess();
+    const spawnStub = vi
+      .fn()
+      .mockImplementationOnce(() => claudeAttempt.processEmitter)
+      .mockImplementationOnce(() => codexAttempt.processEmitter);
+
+    const generationPromise = generateIdeaPrompt(
+      buildPromptPath,
+      ideationPromptPath,
+      tempDirectoryPath,
+      {
+        id: 'starter',
+        label: 'starter',
+        prompt: null,
+        readme: null
+      },
+      undefined,
+      spawnStub as unknown as IdeationSpawnProcess
+    );
+
+    await waitForSpawnCall(spawnStub);
+    claudeAttempt.processEmitter.emit('error', new Error('spawn claude ENOENT'));
+    await waitForSpawnCallCount(spawnStub, 2);
+    codexAttempt.stdout.write(
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'codex-generated fallback idea' }]
+        }
+      }) + '\n'
+    );
+    codexAttempt.processEmitter.emit('close', 0);
+
+    await expect(generationPromise).resolves.toBe('codex-generated fallback idea');
+
+    expect(spawnStub).toHaveBeenCalledTimes(2);
+    const firstCommand = spawnStub.mock.calls[0]?.[0] as string;
+    const secondCommand = spawnStub.mock.calls[1]?.[0] as string;
+    expect(firstCommand).toBe('claude');
+    expect(secondCommand).toBe('codex');
   });
 
   it('retries with CODEGEN_CLAUDE_MODEL when the primary ideation model fails for model access', async () => {
