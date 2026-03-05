@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { constants as fsConstants, promises as fs } from 'node:fs';
+import path from 'node:path';
 
 
 const CLAUDE_IDEATION_SYSTEM_PROMPT =
@@ -43,18 +44,52 @@ function readIdeationModelFromEnv(): string {
   return normalizedModel;
 }
 
-function readIdeationFallbackModel(primaryModel: string): string | null {
-  const fallback = process.env.CODEGEN_CLAUDE_MODEL;
-  if (typeof fallback !== 'string') {
+function readClaudeIdeationCommandOverrideFromEnv(): string | null {
+  const override = process.env.CLAUDE_CLI_PATH;
+  if (typeof override !== 'string') {
     return null;
   }
 
-  const normalizedFallback = fallback.trim();
-  if (normalizedFallback.length === 0 || normalizedFallback === primaryModel) {
+  const normalizedOverride = override.trim();
+  if (normalizedOverride.length === 0) {
     return null;
   }
 
-  return normalizedFallback;
+  return normalizedOverride;
+}
+
+async function canExecute(commandPath: string): Promise<boolean> {
+  try {
+    await fs.access(commandPath, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveClaudeIdeationCommand(): Promise<string> {
+  const commandOverride = readClaudeIdeationCommandOverrideFromEnv();
+  if (commandOverride) {
+    return commandOverride;
+  }
+
+  const absoluteCandidates = [
+    '/usr/local/bin/claude',
+    '/opt/homebrew/bin/claude',
+    path.join(process.env.HOME ?? '', '.local', 'bin', 'claude')
+  ];
+
+  for (const candidate of absoluteCandidates) {
+    if (candidate.length === 0) {
+      continue;
+    }
+
+    if (await canExecute(candidate)) {
+      return candidate;
+    }
+  }
+
+  return 'claude';
 }
 
 function extractTheGameSection(readmeText: string): string | null {
@@ -98,9 +133,6 @@ export function buildClaudeIdeationArgs(model: string, sessionId: string): strin
   ];
 }
 
-function shouldRetryWithFallbackModel(message: string): boolean {
-  return /model|does not have access|model_not_found|unsupported|unknown model/i.test(message);
-}
 
 function composeIdeationPrompt(
   gameBuildPrompt: string,
@@ -145,25 +177,13 @@ export async function generateIdeaPrompt(
 
   const fullPrompt = composeIdeationPrompt(gameBuildPrompt, ideationPrompt, baseGameContext);
   const model = readIdeationModelFromEnv();
-  const fallbackModel = readIdeationFallbackModel(model);
+  const command = await resolveClaudeIdeationCommand();
 
-  try {
-    return await runIdeaGenerationForModel(model, fullPrompt, cwd, signal, spawnProcess);
-  } catch (error: unknown) {
-    if (
-      !fallbackModel ||
-      !(error instanceof Error) ||
-      error.message === 'claude ideation command aborted' ||
-      !shouldRetryWithFallbackModel(error.message)
-    ) {
-      throw error;
-    }
-
-    return runIdeaGenerationForModel(fallbackModel, fullPrompt, cwd, signal, spawnProcess);
-  }
+  return runIdeaGenerationForModel(command, model, fullPrompt, cwd, signal, spawnProcess);
 }
 
 function runIdeaGenerationForModel(
+  command: string,
   model: string,
   fullPrompt: string,
   cwd: string,
@@ -171,7 +191,7 @@ function runIdeaGenerationForModel(
   spawnProcess: IdeationSpawnProcess
 ): Promise<string> {
   return new Promise<string>((resolve, reject) => {
-    const childProcess = spawnProcess('claude', buildClaudeIdeationArgs(model, randomUUID()), {
+    const childProcess = spawnProcess(command, buildClaudeIdeationArgs(model, randomUUID()), {
       cwd,
       stdio: ['pipe', 'pipe', 'pipe']
     });
