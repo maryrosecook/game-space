@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 
+import { parseCodexResponseMessageEvent } from './codexSessions';
+
 
 const CLAUDE_IDEATION_SYSTEM_PROMPT =
   'Use maximum thinking depth for ideation. You have exactly one turn. Return only the final idea text.';
@@ -98,6 +100,10 @@ export function buildClaudeIdeationArgs(model: string, sessionId: string): strin
   ];
 }
 
+export function buildCodexIdeationArgs(): string[] {
+  return ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', '-'];
+}
+
 function shouldRetryWithFallbackModel(message: string): boolean {
   return /model|does not have access|model_not_found|unsupported|unknown model/i.test(message);
 }
@@ -150,6 +156,10 @@ export async function generateIdeaPrompt(
   try {
     return await runIdeaGenerationForModel(model, fullPrompt, cwd, signal, spawnProcess);
   } catch (error: unknown) {
+    if (error instanceof Error && error.message.includes('spawn claude ENOENT')) {
+      return runCodexIdeaGeneration(fullPrompt, cwd, signal, spawnProcess);
+    }
+
     if (
       !fallbackModel ||
       !(error instanceof Error) ||
@@ -161,6 +171,115 @@ export async function generateIdeaPrompt(
 
     return runIdeaGenerationForModel(fallbackModel, fullPrompt, cwd, signal, spawnProcess);
   }
+}
+
+function runCodexIdeaGeneration(
+  fullPrompt: string,
+  cwd: string,
+  signal: AbortSignal | undefined,
+  spawnProcess: IdeationSpawnProcess
+): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const childProcess = spawnProcess('codex', buildCodexIdeationArgs(), {
+      cwd,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+    let settled = false;
+
+    function rejectIfPending(message: string): void {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      reject(new Error(message));
+    }
+
+    function resolveIfPending(prompt: string): void {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      resolve(prompt);
+    }
+
+    function abortGeneration(): void {
+      childProcess.kill('SIGTERM');
+      rejectIfPending('claude ideation command aborted');
+    }
+
+    if (signal) {
+      if (signal.aborted) {
+        abortGeneration();
+        return;
+      }
+
+      signal.addEventListener('abort', abortGeneration, { once: true });
+      childProcess.on('close', () => {
+        signal.removeEventListener('abort', abortGeneration);
+      });
+    }
+
+    let stdoutText = '';
+    let stderrText = '';
+    let latestAssistantText: string | null = null;
+
+    childProcess.stdout.setEncoding('utf8');
+    childProcess.stdout.on('data', (chunk: string) => {
+      stdoutText += chunk;
+      const lines = stdoutText.split('\n');
+      stdoutText = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (trimmedLine.length === 0) {
+          continue;
+        }
+
+        try {
+          const parsedLine = JSON.parse(trimmedLine) as unknown;
+          const responseMessage = parseCodexResponseMessageEvent(parsedLine);
+          if (responseMessage?.role === 'assistant' && responseMessage.text.trim().length > 0) {
+            latestAssistantText = responseMessage.text;
+          }
+        } catch {
+          // Ignore non-JSON lines from CLI output.
+        }
+      }
+    });
+
+    childProcess.stderr.setEncoding('utf8');
+    childProcess.stderr.on('data', (chunk: string) => {
+      stderrText += chunk;
+    });
+
+    childProcess.on('error', (error) => {
+      rejectIfPending(
+        error instanceof Error
+          ? `codex ideation command failed: ${error.message}`
+          : 'codex ideation command failed'
+      );
+    });
+
+    childProcess.on('close', (exitCode) => {
+      if (exitCode !== 0) {
+        const detailsSource = stderrText.trim();
+        const details = detailsSource.length > 0 ? `: ${detailsSource}` : '';
+        rejectIfPending(`codex ideation command failed with exit code ${exitCode ?? 'unknown'}${details}`);
+        return;
+      }
+
+      const normalized = normalizeIdeaOutput(latestAssistantText ?? '');
+      if (!normalized) {
+        rejectIfPending('codex ideation command returned an empty idea');
+        return;
+      }
+
+      resolveIfPending(normalized);
+    });
+
+    childProcess.stdin.end(fullPrompt);
+  });
 }
 
 function runIdeaGenerationForModel(

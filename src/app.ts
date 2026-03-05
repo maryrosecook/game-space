@@ -934,7 +934,11 @@ export function createApp(options: AppOptions = {}): express.Express {
           return;
         }
 
-        if (error instanceof Error && error.message.startsWith("claude ideation command failed")) {
+        if (
+          error instanceof Error &&
+          (error.message.startsWith("claude ideation command failed") ||
+            error.message.startsWith("codex ideation command failed"))
+        ) {
           response.status(502).json({ error: error.message });
           return;
         }
