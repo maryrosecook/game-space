@@ -139,10 +139,17 @@ function composeIdeationPrompt(
   ideationPrompt: string,
   baseGameContext: IdeaGenerationBaseGameContext
 ): string {
+  const ideationDirective =
+    baseGameContext.id === 'starter'
+      ? 'Because the base game is starter, propose a fully fleshed-out game concept that includes a core loop, player input, win/loss conditions, player instructions, and a concrete art style.'
+      : 'Because the base game is not starter, propose exactly one meaningful mechanics change that makes the gameplay more compelling or meaningfully better.';
+
   const promptParts = [
     gameBuildPrompt.trimEnd(),
     '',
     ideationPrompt.trimEnd(),
+    '',
+    ideationDirective,
     '',
     'Base game context for this ideation run:',
     `- id: ${baseGameContext.id}`,
