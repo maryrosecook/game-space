@@ -10,22 +10,12 @@ async function readGameSource(relativePath: string): Promise<string> {
 }
 
 describe('game runtime source', () => {
-  it('keeps starter movement bounds camera-aware without viewport globals', async () => {
+  it('defines a blank starter scene with no game objects or particles', async () => {
     const source = await readGameSource(starterGameSourcePath);
 
-    expect(source).toContain('const minX = camera.x;');
-    expect(source).toContain('const maxX = camera.x + screen.width - (thing.width ?? 0);');
-    expect(source).toContain('const maxY = camera.y + screen.height - (thing.height ?? 0);');
-    expect(source).not.toContain('window.innerWidth');
-    expect(source).not.toContain('window.innerHeight');
-  });
-
-  it('spawns fire-colored rain particles in starter runtime updates', async () => {
-    const source = await readGameSource(starterGameSourcePath);
-
-    expect(source).toContain("const FIRE_COLOR_PALETTE = ['#ff2d00', '#ff4a00', '#ff6a00', '#ff8d00', '#ffb300', '#ffd24a'];");
-    expect(source).toContain('spawnFireRain(game, nextRainRandom);');
-    expect(source).toContain('const spawnCount = nextRandom() > 0.68 ? 2 : 1;');
-    expect(source).toContain('game.spawnParticle({');
+    expect(source).toContain('things: [],');
+    expect(source).toContain('blueprints: [],');
+    expect(source).not.toContain('spawnParticle(');
+    expect(source).not.toContain('player-orb');
   });
 });

@@ -9,6 +9,33 @@ async function loginAsAdmin(page: Page) {
   await expect(page.getByText('Admin session is active.')).toBeVisible();
 }
 
+
+
+test('starter canvas remains background-only with no things or particles', async ({ page }) => {
+  await page.goto('/game/starter');
+
+  await page.waitForTimeout(120);
+
+  const sample = await page.locator('#game-canvas').evaluate((canvas) => {
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      return null;
+    }
+
+    const gl = canvas.getContext('webgl');
+    if (!gl) {
+      return null;
+    }
+
+    const centerX = Math.floor(gl.drawingBufferWidth / 2);
+    const centerY = Math.floor(gl.drawingBufferHeight / 2);
+    const pixel = new Uint8Array(4);
+    gl.readPixels(centerX, centerY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+
+    return Array.from(pixel);
+  });
+
+  expect(sample).toEqual([2, 6, 23, 255]);
+});
 test('public game page hides manual tile snapshot capture controls', async ({ page }) => {
   await page.goto('/game/starter');
 
