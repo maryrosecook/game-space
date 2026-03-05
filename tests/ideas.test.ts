@@ -22,6 +22,7 @@ describe('ideas file persistence', () => {
       {
         prompt: 'legacy idea',
         hasBeenBuilt: false,
+        isArchived: false,
         baseGame: {
           id: 'starter',
           label: 'starter'
@@ -38,6 +39,7 @@ describe('ideas file persistence', () => {
       {
         prompt: 'new idea',
         hasBeenBuilt: true,
+        isArchived: false,
         baseGame: {
           id: 'sparkle-zone',
           label: 'sparkle zone',
@@ -80,6 +82,7 @@ describe('ideas file persistence', () => {
       {
         prompt: 'legacy with base game id',
         hasBeenBuilt: false,
+        isArchived: false,
         baseGame: {
           id: 'custom-game',
           label: 'custom game',

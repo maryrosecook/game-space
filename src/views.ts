@@ -1,4 +1,5 @@
 import {
+  Archive,
   Bot,
   ChevronLeft,
   Lightbulb,
@@ -40,7 +41,8 @@ type LucideIconName =
   | 'settings'
   | 'star'
   | 'trash-2'
-  | 'video';
+  | 'video'
+  | 'archive';
 
 const LUCIDE_ICON_NODES: Record<LucideIconName, IconNode> = {
   bot: Bot,
@@ -51,7 +53,8 @@ const LUCIDE_ICON_NODES: Record<LucideIconName, IconNode> = {
   settings: Settings,
   star: Star,
   'trash-2': Trash2,
-  video: Video
+  video: Video,
+  archive: Archive
 };
 
 function renderLucideNode(iconNode: IconNode): string {
@@ -140,6 +143,7 @@ type IdeasViewBaseGame = {
 type IdeasViewIdea = {
   prompt: string;
   hasBeenBuilt: boolean;
+  isArchived?: boolean;
   baseGame: IdeasViewBaseGame;
 };
 
@@ -154,11 +158,12 @@ function renderIdeasBaseGameThumbnail(baseGame: IdeasViewBaseGame, className: st
 }
 
 function renderIdeasList(ideas: readonly IdeasViewIdea[]): string {
-  if (ideas.length === 0) {
+  const visibleIdeas = ideas.filter((idea) => idea.isArchived !== true);
+  if (visibleIdeas.length === 0) {
     return '<p class="codex-empty">No ideas yet. Generate one to get started.</p>';
   }
 
-  return `<ul class="ideas-list" role="list">${ideas
+  return `<ul class="ideas-list" role="list">${visibleIdeas
     .map((idea, index) => {
       const prompt = escapeHtml(idea.prompt);
       const builtBadge = idea.hasBeenBuilt
@@ -176,7 +181,7 @@ function renderIdeasList(ideas: readonly IdeasViewIdea[]): string {
           <button class="idea-action-button" type="button" data-action="build" data-idea-index="${index}" aria-label="Build from idea">
             ${renderLucideIcon('rocket', 'idea-icon')}
           </button>
-          <button class="idea-action-button idea-action-button--danger" type="button" data-action="delete" data-idea-index="${index}" aria-label="Delete idea">
+          <button class="idea-action-button idea-action-button--danger" type="button" data-action="archive" data-idea-index="${index}" aria-label="Archive idea">
             ${renderLucideIcon('trash-2', 'idea-icon')}
           </button>
         </div>
@@ -242,7 +247,7 @@ export function renderIdeasView(
   isGenerating: boolean = false,
 ): string {
   const rocketIdeaIcon = renderLucideIcon('rocket', 'idea-icon');
-  const trashIdeaIcon = renderLucideIcon('trash-2', 'idea-icon');
+  const archiveIdeaIcon = renderLucideIcon('archive', 'idea-icon');
   const generatingClass = isGenerating
     ? " ideas-generate-button--generating"
     : "";
@@ -256,7 +261,7 @@ export function renderIdeasView(
     <title>Ideas</title>
     <link rel="stylesheet" href="/public/styles.css" />
   </head>
-  <body class="codex-page" data-csrf-token="${escapeHtml(csrfToken)}" data-idea-build-icon="${escapeHtml(rocketIdeaIcon)}" data-idea-delete-icon="${escapeHtml(trashIdeaIcon)}">
+  <body class="codex-page" data-csrf-token="${escapeHtml(csrfToken)}" data-idea-build-icon="${escapeHtml(rocketIdeaIcon)}" data-idea-archive-icon="${escapeHtml(archiveIdeaIcon)}">
     <main class="codex-shell">
       <header class="page-header codex-header">
         <h1>Ideas</h1>

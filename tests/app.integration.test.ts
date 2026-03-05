@@ -1923,6 +1923,7 @@ describe('express app integration', () => {
         {
           prompt: 'idea one',
           hasBeenBuilt: false,
+          isArchived: false,
           baseGame: {
             id: 'starter',
             label: 'starter'
@@ -2057,6 +2058,7 @@ describe('express app integration', () => {
     expect(response.body.ideas[0]).toEqual({
       prompt: 'create neon paddle duels',
       hasBeenBuilt: false,
+      isArchived: false,
       baseGame: {
         id: 'sparkle-zone',
         label: 'sparkle zone game',
@@ -2072,6 +2074,7 @@ describe('express app integration', () => {
     expect(persistedIdeas[0]).toEqual({
       prompt: 'create neon paddle duels',
       hasBeenBuilt: false,
+      isArchived: false,
       baseGame: {
         id: 'sparkle-zone',
         label: 'sparkle zone game',
@@ -2120,9 +2123,9 @@ describe('express app integration', () => {
       .expect(200);
     expect(ideasView.text).toContain('class="idea-icon lucide lucide-lightbulb"');
     expect(ideasView.text).toContain('data-idea-build-icon="');
-    expect(ideasView.text).toContain('data-idea-delete-icon="');
+    expect(ideasView.text).toContain('data-idea-archive-icon="');
     expect(ideasView.text).toContain('lucide-rocket');
-    expect(ideasView.text).toContain('lucide-trash-2');
+    expect(ideasView.text).toContain('lucide-archive');
     expect(ideasView.text).toContain('id="ideas-base-game-toggle"');
     expect(ideasView.text).toContain('id="ideas-base-game-menu"');
     expect(ideasView.text).toContain('data-base-game-id="starter"');
@@ -2157,7 +2160,7 @@ describe('express app integration', () => {
     const ideasPath = path.join(tempDirectoryPath, 'ideas.json');
     await fs.writeFile(
       ideasPath,
-      `${JSON.stringify([{ prompt: 'create gravity flipping pinball', hasBeenBuilt: false }], null, 2)}\n`,
+      `${JSON.stringify([{ prompt: 'create gravity flipping pinball', hasBeenBuilt: false, isArchived: false }], null, 2)}\n`,
       'utf8'
     );
 
@@ -2193,8 +2196,8 @@ describe('express app integration', () => {
     expect(ideasAfterBuild[0]?.hasBeenBuilt).toBe(true);
   });
 
-  it('deletes ideas entries through the protected delete endpoint', async () => {
-    const tempDirectoryPath = await createTempDirectory('game-space-app-ideas-delete-');
+  it('archives ideas entries through the protected delete endpoint', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-app-ideas-archive-');
     const gamesRootPath = path.join(tempDirectoryPath, 'games');
     await fs.mkdir(gamesRootPath, { recursive: true });
 
@@ -2227,9 +2230,11 @@ describe('express app integration', () => {
       .set('X-CSRF-Token', authSession.csrfToken)
       .expect(200);
 
-    const ideasAfterDelete = JSON.parse(await fs.readFile(ideasPath, 'utf8')) as Array<{ prompt: string }>;
-    expect(ideasAfterDelete).toHaveLength(1);
-    expect(ideasAfterDelete[0]?.prompt).toBe('idea two');
+    const ideasAfterArchive = JSON.parse(await fs.readFile(ideasPath, 'utf8')) as Array<{ prompt: string; isArchived?: boolean }>;
+    expect(ideasAfterArchive).toHaveLength(2);
+    expect(ideasAfterArchive[0]?.prompt).toBe('idea one');
+    expect(ideasAfterArchive[0]?.isArchived).toBe(true);
+    expect(ideasAfterArchive[1]?.prompt).toBe('idea two');
   });
 
 });

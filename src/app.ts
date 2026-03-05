@@ -809,10 +809,11 @@ export function createApp(options: AppOptions = {}): express.Express {
 
   app.get("/ideas", requireAdmin, async (request, response, next) => {
     try {
-      const [ideas, versions] = await Promise.all([
+      const [storedIdeas, versions] = await Promise.all([
         readIdeasFile(ideasPath),
         listGameVersions(gamesRootPath),
       ]);
+      const ideas = storedIdeas.filter((idea) => !idea.isArchived);
       const baseGames = buildIdeasBaseGameOptions(versions);
       const selectedBaseGameId = baseGames[0]?.id ?? DEFAULT_IDEA_BASE_GAME_ID;
       const csrfToken = ensureCsrfToken(request, response);
@@ -836,7 +837,8 @@ export function createApp(options: AppOptions = {}): express.Express {
 
   app.get("/api/ideas", requireAdmin, async (_request, response, next) => {
     try {
-      const ideas = await readIdeasFile(ideasPath);
+      const storedIdeas = await readIdeasFile(ideasPath);
+      const ideas = storedIdeas.filter((idea) => !idea.isArchived);
       response.status(200).json({ ideas, isGenerating: activeIdeaGeneration !== null });
     } catch (error: unknown) {
       next(error);
@@ -915,6 +917,7 @@ export function createApp(options: AppOptions = {}): express.Express {
           {
             prompt,
             hasBeenBuilt: false,
+            isArchived: false,
             baseGame: {
               id: baseGameOption.id,
               label: baseGameOption.label,
@@ -1024,10 +1027,17 @@ export function createApp(options: AppOptions = {}): express.Express {
           return;
         }
 
-        const nextIdeas = ideas.filter((_entry, index) => index !== ideaIndex);
+        const nextIdeas = ideas.map((entry, index) =>
+          index === ideaIndex
+            ? {
+                ...entry,
+                isArchived: true,
+              }
+            : entry,
+        );
         await writeIdeasFile(ideasPath, nextIdeas);
 
-        response.status(200).json({ ideas: nextIdeas });
+        response.status(200).json({ ideas: nextIdeas.filter((idea) => !idea.isArchived) });
       } catch (error: unknown) {
         next(error);
       }
