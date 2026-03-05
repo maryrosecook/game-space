@@ -288,6 +288,55 @@ test('ideas page resets generate button state after generation failure', async (
 });
 
 
+
+test('ideas page archives ideas from the list without deleting persisted history', async ({ page }) => {
+  const originalIdeas = await fs.readFile(IDEAS_PATH, 'utf8').catch(() => null);
+  await fs.writeFile(
+    IDEAS_PATH,
+    `${JSON.stringify([
+      {
+        prompt: 'archive me',
+        hasBeenBuilt: false,
+        isArchived: false,
+        baseGame: { id: 'starter', label: 'starter' }
+      }
+    ], null, 2)}
+`,
+    'utf8'
+  );
+
+  try {
+    await loginAsAdmin(page);
+    await page.goto('/ideas');
+    await expect(page.getByText('archive me')).toBeVisible();
+
+    let deleteRequestCount = 0;
+    await page.route('**/api/ideas/0', async (route) => {
+      deleteRequestCount += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ideas: [] })
+      });
+    });
+
+    page.on('dialog', async (dialog) => {
+      await dialog.accept();
+    });
+
+    await page.getByRole('button', { name: 'Archive idea' }).click();
+
+    await expect.poll(() => deleteRequestCount).toBe(1);
+    await expect(page.getByText('No ideas yet. Generate one to get started.')).toBeVisible();
+  } finally {
+    if (typeof originalIdeas === 'string') {
+      await fs.writeFile(IDEAS_PATH, originalIdeas, 'utf8');
+    } else {
+      await fs.rm(IDEAS_PATH, { force: true });
+    }
+  }
+});
+
 test('ideas page surfaces configured claude cli path failures', async ({ page }) => {
   await loginAsAdmin(page);
   await page.goto('/ideas');

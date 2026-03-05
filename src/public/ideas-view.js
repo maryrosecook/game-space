@@ -131,7 +131,7 @@ function setBaseGameMenuOpen(nextIsOpen) {
 }
 
 const ideaBuildIconMarkup = document.body.dataset.ideaBuildIcon ?? '';
-const ideaDeleteIconMarkup = document.body.dataset.ideaDeleteIcon ?? '';
+const ideaArchiveIconMarkup = document.body.dataset.ideaArchiveIcon ?? '';
 
 function applyGenerateState(isGenerating) {
   generateButton.classList.toggle('ideas-generate-button--generating', isGenerating);
@@ -160,12 +160,13 @@ async function syncIdeasState() {
 }
 
 function renderIdeas(ideas) {
-  if (!Array.isArray(ideas) || ideas.length === 0) {
+  const visibleIdeas = Array.isArray(ideas) ? ideas.filter((idea) => idea && idea.isArchived !== true) : [];
+  if (visibleIdeas.length === 0) {
     listRoot.innerHTML = '<p class="codex-empty">No ideas yet. Generate one to get started.</p>';
     return;
   }
 
-  listRoot.innerHTML = `<ul class="ideas-list" role="list">${ideas
+  listRoot.innerHTML = `<ul class="ideas-list" role="list">${visibleIdeas
     .map((idea, index) => {
       const builtBadge = idea.hasBeenBuilt ? '<span class="idea-built-pill" aria-label="Built">Built</span>' : '';
       const baseGame = normalizeBaseGame(idea.baseGame);
@@ -181,8 +182,8 @@ function renderIdeas(ideas) {
           <button class="idea-action-button" type="button" data-action="build" data-idea-index="${index}" aria-label="Build from idea">
             ${ideaBuildIconMarkup}
           </button>
-          <button class="idea-action-button idea-action-button--danger" type="button" data-action="delete" data-idea-index="${index}" aria-label="Delete idea">
-            ${ideaDeleteIconMarkup}
+          <button class="idea-action-button idea-action-button--danger" type="button" data-action="archive" data-idea-index="${index}" aria-label="Archive idea">
+            ${ideaArchiveIconMarkup}
           </button>
         </div>
       </li>`;
@@ -252,8 +253,8 @@ async function generateIdea() {
   }
 }
 
-async function deleteIdea(ideaIndex) {
-  const confirmed = window.confirm('Delete this idea?');
+async function archiveIdea(ideaIndex) {
+  const confirmed = window.confirm('Archive this idea?');
   if (!confirmed) {
     return;
   }
@@ -356,8 +357,8 @@ listRoot.addEventListener('click', (event) => {
     return;
   }
 
-  if (action === 'delete') {
-    void deleteIdea(ideaIndex);
+  if (action === 'archive') {
+    void archiveIdea(ideaIndex);
     return;
   }
 

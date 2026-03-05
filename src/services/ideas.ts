@@ -13,6 +13,7 @@ export type IdeaBaseGame = {
 export type GameIdea = {
   prompt: string;
   hasBeenBuilt: boolean;
+  isArchived: boolean;
   baseGame: IdeaBaseGame;
 };
 
@@ -70,6 +71,7 @@ function normalizeIdea(value: unknown): GameIdea | null {
 
   const prompt = value.prompt;
   const hasBeenBuilt = value.hasBeenBuilt;
+  const isArchived = value.isArchived;
 
   if (typeof prompt !== 'string') {
     return null;
@@ -84,6 +86,8 @@ function normalizeIdea(value: unknown): GameIdea | null {
     return null;
   }
 
+  const normalizedIsArchived = typeof isArchived === 'boolean' ? isArchived : false;
+
   const baseGame =
     normalizeIdeaBaseGame(value.baseGame) ??
     normalizeLegacyIdeaBaseGame(value) ?? {
@@ -94,6 +98,7 @@ function normalizeIdea(value: unknown): GameIdea | null {
   return {
     prompt: normalizedPrompt,
     hasBeenBuilt,
+    isArchived: normalizedIsArchived,
     baseGame
   };
 }
