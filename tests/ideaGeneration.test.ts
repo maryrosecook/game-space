@@ -130,12 +130,51 @@ describe('generateIdeaPrompt', () => {
     const serializedPrompt = spawnedProcess.readStdinText();
     expect(serializedPrompt).toContain('BASE PROMPT');
     expect(serializedPrompt).toContain('IDEATE');
+    expect(serializedPrompt).toContain('Because the base game is not starter, propose exactly one meaningful mechanics change that makes the gameplay more compelling or meaningfully better.');
     expect(serializedPrompt).toContain('Base game context for this ideation run:');
     expect(serializedPrompt).toContain('- id: sparkle-zone');
     expect(serializedPrompt).toContain('- label: sparkle zone game');
     expect(serializedPrompt).toContain('- creation prompt: existing base prompt');
     expect(serializedPrompt).toContain('Fast balls and particle trails.');
     expect(serializedPrompt).not.toContain('Ignore this part.');
+  });
+
+
+  it('adds a starter-specific ideation directive when starter is the selected base game', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-idea-generation-starter-directive-');
+    const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
+    const ideationPromptPath = path.join(tempDirectoryPath, 'ideation.md');
+
+    await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
+    await fs.writeFile(ideationPromptPath, 'IDEATE\n', 'utf8');
+
+    const spawnedProcess = createMockSpawnedProcess();
+    const spawnStub = spawnStubFor(spawnedProcess.processEmitter);
+
+    const generationPromise = generateIdeaPrompt(
+      buildPromptPath,
+      ideationPromptPath,
+      tempDirectoryPath,
+      {
+        id: 'starter',
+        label: 'starter',
+        prompt: null,
+        readme: null
+      },
+      undefined,
+      spawnStub
+    );
+
+    await waitForSpawnCall(spawnStub);
+    spawnedProcess.stdout.write('starter idea');
+    spawnedProcess.processEmitter.emit('close', 0);
+
+    await expect(generationPromise).resolves.toBe('starter idea');
+
+    const serializedPrompt = spawnedProcess.readStdinText();
+    expect(serializedPrompt).toContain(
+      'Because the base game is starter, propose a fully fleshed-out game concept that includes a core loop, player input, win/loss conditions, player instructions, and a concrete art style.'
+    );
   });
 
   it('aborts the running claude ideation command when the signal aborts', async () => {
