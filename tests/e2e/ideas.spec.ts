@@ -286,3 +286,29 @@ test('ideas page resets generate button state after generation failure', async (
   await expect(generateButton).toBeEnabled();
   await expect(generateButton).toHaveAttribute('aria-busy', 'false');
 });
+
+
+test('ideas page surfaces configured claude cli path failures', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.goto('/ideas');
+
+  await page.route('**/api/ideas/generate', async (route) => {
+    await route.fulfill({
+      status: 502,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'claude ideation command failed: spawn /custom/bin/claude ENOENT' })
+    });
+  });
+
+  let dialogMessage: string | null = null;
+  page.on('dialog', async (dialog) => {
+    dialogMessage = dialog.message();
+    await dialog.accept();
+  });
+
+  await page.locator('#ideas-generate-button').click();
+
+  await expect.poll(() => dialogMessage).toBe(
+    'claude ideation command failed: spawn /custom/bin/claude ENOENT'
+  );
+});

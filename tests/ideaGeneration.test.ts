@@ -62,27 +62,14 @@ async function waitForSpawnCall(spawnStub: ReturnType<typeof vi.fn>): Promise<vo
   throw new Error('Expected spawn to be called');
 }
 
-async function waitForSpawnCallCount(spawnStub: ReturnType<typeof vi.fn>, count: number): Promise<void> {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    if (spawnStub.mock.calls.length >= count) {
-      return;
-    }
-
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, 0);
-    });
-  }
-
-  throw new Error(`Expected spawn to be called ${count} times`);
-}
 
 describe('generateIdeaPrompt', () => {
   const originalIdeationModel = process.env.IDEATION_MODEL;
-  const originalCodegenClaudeModel = process.env.CODEGEN_CLAUDE_MODEL;
+  const originalClaudeCliPath = process.env.CLAUDE_CLI_PATH;
 
   beforeEach(() => {
     delete process.env.IDEATION_MODEL;
-    delete process.env.CODEGEN_CLAUDE_MODEL;
+    delete process.env.CLAUDE_CLI_PATH;
   });
 
   afterEach(() => {
@@ -92,10 +79,10 @@ describe('generateIdeaPrompt', () => {
       delete process.env.IDEATION_MODEL;
     }
 
-    if (typeof originalCodegenClaudeModel === 'string') {
-      process.env.CODEGEN_CLAUDE_MODEL = originalCodegenClaudeModel;
+    if (typeof originalClaudeCliPath === 'string') {
+      process.env.CLAUDE_CLI_PATH = originalClaudeCliPath;
     } else {
-      delete process.env.CODEGEN_CLAUDE_MODEL;
+      delete process.env.CLAUDE_CLI_PATH;
     }
   });
 
@@ -283,23 +270,18 @@ describe('generateIdeaPrompt', () => {
     await expect(generationPromise).rejects.toThrow('claude ideation command failed: spawn claude ENOENT');
   });
 
-  it('retries with CODEGEN_CLAUDE_MODEL when the primary ideation model fails for model access', async () => {
-    const tempDirectoryPath = await createTempDirectory('game-space-idea-generation-fallback-model-');
+  it('uses CLAUDE_CLI_PATH when provided', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-idea-generation-cli-override-');
     const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
     const ideationPromptPath = path.join(tempDirectoryPath, 'ideation.md');
 
     await fs.writeFile(buildPromptPath, 'BASE PROMPT\n', 'utf8');
     await fs.writeFile(ideationPromptPath, 'IDEATE\n', 'utf8');
 
-    process.env.IDEATION_MODEL = 'opus';
-    process.env.CODEGEN_CLAUDE_MODEL = 'claude-sonnet-4-6';
+    process.env.CLAUDE_CLI_PATH = '/custom/bin/claude';
 
-    const firstAttempt = createMockSpawnedProcess();
-    const secondAttempt = createMockSpawnedProcess();
-    const spawnStub = vi
-      .fn()
-      .mockImplementationOnce(() => firstAttempt.processEmitter)
-      .mockImplementationOnce(() => secondAttempt.processEmitter);
+    const spawnedProcess = createMockSpawnedProcess();
+    const spawnStub = spawnStubFor(spawnedProcess.processEmitter);
 
     const generationPromise = generateIdeaPrompt(
       buildPromptPath,
@@ -312,21 +294,15 @@ describe('generateIdeaPrompt', () => {
         readme: null
       },
       undefined,
-      spawnStub as unknown as IdeationSpawnProcess
+      spawnStub
     );
 
     await waitForSpawnCall(spawnStub);
-    firstAttempt.stderr.write('does not have access to model opus');
-    firstAttempt.processEmitter.emit('close', 1);
-    await waitForSpawnCallCount(spawnStub, 2);
-    secondAttempt.stdout.write('fallback idea text');
-    secondAttempt.processEmitter.emit('close', 0);
+    spawnedProcess.stdout.write('idea from override path');
+    spawnedProcess.processEmitter.emit('close', 0);
 
-    await expect(generationPromise).resolves.toBe('fallback idea text');
-    expect(spawnStub).toHaveBeenCalledTimes(2);
-    const firstArgs = spawnStub.mock.calls[0]?.[1] as string[];
-    const secondArgs = spawnStub.mock.calls[1]?.[1] as string[];
-    expect(firstArgs).toContain('opus');
-    expect(secondArgs).toContain('claude-sonnet-4-6');
+    await expect(generationPromise).resolves.toBe('idea from override path');
+    expect(spawnStub).toHaveBeenCalledTimes(1);
+    expect(spawnStub.mock.calls[0]?.[0]).toBe('/custom/bin/claude');
   });
 });
