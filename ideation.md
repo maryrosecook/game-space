@@ -8,6 +8,6 @@ Requirements:
 - Bias toward established genres, while allowing a small chance of a more outlandish genre mashup.
 - Do not suggest endless runners.
 - The caller will provide base-game context for this ideation run. Ground your idea in that base game instead of assuming starter-only context.
-- If the base game id is `starter`, propose a fully fleshed-out game with a clear core loop, player input mapping, win/loss conditions, player instructions, and art style direction.
-- If the base game id is not `starter`, propose exactly one meaningful mechanics change that makes the gameplay more compelling or meaningfully better.
+- If the base game id is `starter`, suggest a single-sentence outline for a creative mobile arcade-style game that would be really fun and successful.
+- If the base game id is not `starter`, suggest one off-the-wall single-sentence change or addition that uses the current game as the starting point and would make it much better.
 - Return only the final idea text.
