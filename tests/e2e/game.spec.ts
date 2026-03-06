@@ -63,6 +63,7 @@ test('admin game page places tile capture in edit panel and posts tile snapshot 
   expect(tileCaptureIndex).toBeGreaterThanOrEqual(0);
   expect(deleteIndex).toBeGreaterThanOrEqual(0);
   expect(tileCaptureIndex).toBeLessThan(deleteIndex);
+  expect(deleteIndex).toBe(actionButtonIds.length - 1);
 
   let tileCaptureRequestBody: string | null = null;
   await page.route('**/api/games/starter/tile-snapshot', async (route) => {

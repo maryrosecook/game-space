@@ -521,14 +521,6 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
             ${renderLucideIcon('lightbulb', 'game-view-icon')}
           </button>
           <button
-            id="game-tab-delete"
-            class="prompt-action-button prompt-action-button--icon"
-            type="button"
-            aria-label="Delete game"
-          >
-            ${renderLucideIcon('trash-2', 'game-view-icon')}
-          </button>
-          <button
             id="game-tab-favorite"
             class="prompt-action-button prompt-action-button--icon game-view-icon-tab--favorite${isFavorite ? ' game-view-icon-tab--active' : ''}"
             type="button"
@@ -536,6 +528,14 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
             aria-pressed="${isFavorite ? 'true' : 'false'}"
           >
             ${renderLucideIcon('star', 'game-view-icon')}
+          </button>
+          <button
+            id="game-tab-delete"
+            class="prompt-action-button prompt-action-button--icon"
+            type="button"
+            aria-label="Delete game"
+          >
+            ${renderLucideIcon('trash-2', 'game-view-icon')}
           </button>
         </div>
       </form>
