@@ -1203,6 +1203,20 @@ describe('game view prompt submit client', () => {
     expect(harness.promptOverlay.scrollLeft).toBe(480);
 
     harness.recordButton.dispatchEvent('click', createEvent());
+
+    expect(harness.recordButton.classList.contains('game-view-icon-tab--recording')).toBe(true);
+    expect(harness.recordButton.classList.contains('game-view-icon-tab--busy')).toBe(true);
+    expect(harness.recordButton.disabled).toBe(true);
+
+    peerConnection?.dataChannel.dispatchEvent(
+      'message',
+      createEvent({
+        data: JSON.stringify({
+          type: 'response.done'
+        })
+      })
+    );
+
     await flushAsyncOperations();
 
     expect(harness.promptInput.value).toBe('');
