@@ -10,7 +10,7 @@ import { GameFile } from './engine/types';
 
 let activeEngine: GameEngine | null = null;
 
-export function startGame(canvas: HTMLCanvasElement): void {
+export function startGame(canvas: HTMLCanvasElement): () => void {
   if (activeEngine) {
     activeEngine.destroy();
     activeEngine = null;
@@ -19,24 +19,21 @@ export function startGame(canvas: HTMLCanvasElement): void {
   const engine = createStarterEngine();
   activeEngine = engine;
 
+  const teardown = () => {
+    if (activeEngine !== engine) {
+      return;
+    }
+
+    engine.destroy();
+    activeEngine = null;
+  };
+
   void engine.initialize(canvas, 'starter').catch((error) => {
     console.error('Failed to initialize starter game engine', error);
-    engine.destroy();
-    if (activeEngine === engine) {
-      activeEngine = null;
-    }
+    teardown();
   });
 
-  window.addEventListener(
-    'pagehide',
-    () => {
-      engine.destroy();
-      if (activeEngine === engine) {
-        activeEngine = null;
-      }
-    },
-    { once: true }
-  );
+  return teardown;
 }
 
 export type StarterEngineOptions = Pick<

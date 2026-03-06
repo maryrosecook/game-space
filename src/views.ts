@@ -633,6 +633,34 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
       import { startGame } from '/games/${encodedVersionId}/dist/game.js';
       const canvas = document.getElementById('game-canvas');
       if (canvas instanceof HTMLCanvasElement) {
+        const teardownStateKey = '__fountainGameTeardown';
+        const teardownHost = window;
+        const priorTeardown = teardownHost[teardownStateKey];
+        if (typeof priorTeardown === 'function') {
+          try {
+            priorTeardown();
+          } catch {
+            // Suppress teardown failures to avoid blocking fresh game startup.
+          }
+        }
+
+        let teardownGame = null;
+        const clearGlobalTeardown = () => {
+          teardownHost[teardownStateKey] = null;
+        };
+        const runTeardown = () => {
+          if (typeof teardownGame !== 'function') {
+            clearGlobalTeardown();
+            return;
+          }
+
+          try {
+            teardownGame();
+          } finally {
+            teardownGame = null;
+            clearGlobalTeardown();
+          }
+        };
         const forcePreservedDrawingBuffer = ${isAdmin ? 'true' : 'false'};
         if (forcePreservedDrawingBuffer) {
           const originalGetContext = canvas.getContext.bind(canvas);
@@ -648,7 +676,17 @@ export function renderGameView(versionId: string, options: GameViewRenderOptions
             return originalGetContext(contextId, contextAttributes);
           };
         }
-        startGame(canvas);
+
+        const startResult = startGame(canvas);
+        if (typeof startResult === 'function') {
+          teardownGame = startResult;
+          teardownHost[teardownStateKey] = runTeardown;
+        } else {
+          clearGlobalTeardown();
+        }
+
+        window.addEventListener('pagehide', runTeardown, { once: true });
+        window.addEventListener('beforeunload', runTeardown, { once: true });
       }
     </script>${gameViewScriptMarkup}
 ${liveReloadScript}
