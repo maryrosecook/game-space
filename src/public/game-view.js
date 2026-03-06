@@ -175,6 +175,10 @@ function writeDraftPromptToStorage(value) {
   }
 }
 
+function persistDraftPromptFromInput() {
+  writeDraftPromptToStorage(promptInput.value);
+}
+
 
 function drawingContext() {
   const context = promptDrawingCanvas.getContext('2d');
@@ -1272,18 +1276,17 @@ promptForm.addEventListener('submit', (event) => {
     const annotationPngDataUrl = readAnnotationPngDataUrl();
     const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl();
     await submitPrompt(prompt, annotationPngDataUrl, gameScreenshotPngDataUrl);
+    writeDraftPromptToStorage('');
+    promptInput.value = '';
+    resizePromptInput();
+    completedTranscriptionSegments = [];
+    clearTranscriptionDisplayBuffer();
+    clearDrawingCanvas();
+    setAnnotationEnabled(false);
+    focusPromptInput();
   })().catch(() => {
     // Keep prompt submit non-blocking if networking or payload parsing fails.
   });
-
-  promptInput.value = '';
-  writeDraftPromptToStorage('');
-  resizePromptInput();
-  completedTranscriptionSegments = [];
-  clearTranscriptionDisplayBuffer();
-  clearDrawingCanvas();
-  setAnnotationEnabled(false);
-  focusPromptInput();
 });
 
 function resizePromptInput() {
@@ -1306,7 +1309,7 @@ function resizePromptInput() {
 }
 
 promptInput.addEventListener('input', () => {
-  writeDraftPromptToStorage(promptInput.value);
+  persistDraftPromptFromInput();
   resizePromptInput();
 });
 
@@ -1325,11 +1328,24 @@ window.addEventListener('resize', () => {
 window.addEventListener(
   'beforeunload',
   () => {
+    persistDraftPromptFromInput();
     closeRealtimeConnection();
     clearOverlayWordDrainLoop();
   },
   { once: true }
 );
+
+window.addEventListener('pagehide', () => {
+  persistDraftPromptFromInput();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'hidden') {
+    return;
+  }
+
+  persistDraftPromptFromInput();
+});
 
 
 resizeDrawingCanvas();
