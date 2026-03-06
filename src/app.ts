@@ -93,7 +93,18 @@ const ANNOTATION_PNG_BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 const MAX_ANNOTATION_PNG_BYTES = 1024 * 1024;
 const MAX_GAME_SCREENSHOT_PNG_BYTES = 3 * 1024 * 1024;
 const TILE_SNAPSHOT_PROTOCOL = {
-  steps: [{ run: 120 }, { snap: "tile" }],
+  steps: [
+    { run: 240 },
+    { touch: { id: 1, phase: "start", x: 160, y: 220 } },
+    { run: 12 },
+    { touch: { id: 1, phase: "end", x: 160, y: 220 } },
+    { run: 24 },
+    { touch: { id: 2, phase: "start", x: 480, y: 220 } },
+    { run: 12 },
+    { touch: { id: 2, phase: "end", x: 480, y: 220 } },
+    { run: 24 },
+    { snap: "tile" },
+  ],
 };
 
 type HeadlessSnapshotResult = {
