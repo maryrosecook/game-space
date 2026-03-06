@@ -141,8 +141,8 @@ function composeIdeationPrompt(
 ): string {
   const ideationDirective =
     baseGameContext.id === 'starter'
-      ? 'Because the base game is starter, propose a fully fleshed-out game concept that includes a core loop, player input, win/loss conditions, player instructions, and a concrete art style.'
-      : 'Because the base game is not starter, propose exactly one meaningful mechanics change that makes the gameplay more compelling or meaningfully better.';
+      ? 'Because the base game is starter, suggest a single-sentence outline for a creative mobile arcade-style game that would be really fun and successful.'
+      : 'Because the base game is not starter, look at the current game as the starting point and suggest one off-the-wall single-sentence change or addition that would make it much better.';
 
   const promptParts = [
     gameBuildPrompt.trimEnd(),

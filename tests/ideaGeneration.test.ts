@@ -130,7 +130,7 @@ describe('generateIdeaPrompt', () => {
     const serializedPrompt = spawnedProcess.readStdinText();
     expect(serializedPrompt).toContain('BASE PROMPT');
     expect(serializedPrompt).toContain('IDEATE');
-    expect(serializedPrompt).toContain('Because the base game is not starter, propose exactly one meaningful mechanics change that makes the gameplay more compelling or meaningfully better.');
+    expect(serializedPrompt).toContain('Because the base game is not starter, look at the current game as the starting point and suggest one off-the-wall single-sentence change or addition that would make it much better.');
     expect(serializedPrompt).toContain('Base game context for this ideation run:');
     expect(serializedPrompt).toContain('- id: sparkle-zone');
     expect(serializedPrompt).toContain('- label: sparkle zone game');
@@ -173,7 +173,7 @@ describe('generateIdeaPrompt', () => {
 
     const serializedPrompt = spawnedProcess.readStdinText();
     expect(serializedPrompt).toContain(
-      'Because the base game is starter, propose a fully fleshed-out game concept that includes a core loop, player input, win/loss conditions, player instructions, and a concrete art style.'
+      'Because the base game is starter, suggest a single-sentence outline for a creative mobile arcade-style game that would be really fun and successful.'
     );
   });
 
