@@ -120,6 +120,10 @@ function dispatchUiState(action) {
 let realtimePeerConnection = null;
 let realtimeDataChannel = null;
 let realtimeAudioStream = null;
+let realtimeStopAwaitingFinalTranscription = false;
+let realtimeStopReceivedFinalSignal = false;
+let realtimeStopResolveFinalized = null;
+let realtimeStopFinalizeTimeoutId = null;
 let completedTranscriptionSegments = [];
 const pendingOverlayWords = [];
 let displayedOverlayWords = [];
@@ -439,6 +443,57 @@ function stopAudioStream(stream) {
   }
 }
 
+function clearRealtimeStopFinalizeTimeout() {
+  if (typeof realtimeStopFinalizeTimeoutId !== 'number') {
+    return;
+  }
+
+  window.clearTimeout(realtimeStopFinalizeTimeoutId);
+  realtimeStopFinalizeTimeoutId = null;
+}
+
+function resetRealtimeStopAwaitState() {
+  realtimeStopAwaitingFinalTranscription = false;
+  realtimeStopReceivedFinalSignal = false;
+  realtimeStopResolveFinalized = null;
+  clearRealtimeStopFinalizeTimeout();
+}
+
+function resolveRealtimeStopAwaitState() {
+  if (typeof realtimeStopResolveFinalized === 'function') {
+    realtimeStopResolveFinalized();
+  }
+
+  resetRealtimeStopAwaitState();
+}
+
+function maybeResolveRealtimeStopAwaitState() {
+  if (!realtimeStopAwaitingFinalTranscription) {
+    return;
+  }
+
+  if (!realtimeStopReceivedFinalSignal || pendingOverlayWords.length > 0) {
+    return;
+  }
+
+  resolveRealtimeStopAwaitState();
+}
+
+async function waitForRealtimeStopTranscriptionFlush() {
+  if (!realtimeStopAwaitingFinalTranscription) {
+    return;
+  }
+
+  await new Promise((resolve) => {
+    realtimeStopResolveFinalized = resolve;
+    clearRealtimeStopFinalizeTimeout();
+    realtimeStopFinalizeTimeoutId = window.setTimeout(() => {
+      resolveRealtimeStopAwaitState();
+    }, 4000);
+    maybeResolveRealtimeStopAwaitState();
+  });
+}
+
 function closeRealtimeConnection() {
   if (realtimeDataChannel && typeof realtimeDataChannel.close === 'function') {
     realtimeDataChannel.close();
@@ -455,6 +510,7 @@ function closeRealtimeConnection() {
   realtimePeerConnection = null;
   realtimeDataChannel = null;
   realtimeAudioStream = null;
+  resetRealtimeStopAwaitState();
 }
 
 function updatePromptOverlay() {
@@ -498,6 +554,7 @@ function drainOverlayWord() {
 
   displayedOverlayWords.push(nextWord);
   updatePromptOverlay();
+  maybeResolveRealtimeStopAwaitState();
 }
 
 function ensureOverlayWordDrainLoop() {
@@ -523,6 +580,7 @@ function clearTranscriptionDisplayBuffer() {
   pendingOverlayWords.length = 0;
   displayedOverlayWords = [];
   updatePromptOverlay();
+  maybeResolveRealtimeStopAwaitState();
 }
 
 function appendCompletedTranscriptSegment(transcriptSegment) {
@@ -558,6 +616,18 @@ function handleRealtimeDataChannelMessage(event) {
   }
 
   if (!payload || typeof payload !== 'object' || typeof payload.type !== 'string') {
+    return;
+  }
+
+  const finalTranscriptionTypes = new Set([
+    'input_audio_buffer.committed',
+    'response.done',
+    'response.completed'
+  ]);
+
+  if (finalTranscriptionTypes.has(payload.type)) {
+    realtimeStopReceivedFinalSignal = true;
+    maybeResolveRealtimeStopAwaitState();
     return;
   }
 
@@ -833,16 +903,16 @@ async function stopRealtimeRecording() {
 
   try {
     if (realtimeDataChannel && realtimeDataChannel.readyState === 'open') {
+      realtimeStopAwaitingFinalTranscription = true;
+      realtimeStopReceivedFinalSignal = false;
       realtimeDataChannel.send(
         JSON.stringify({
           type: 'input_audio_buffer.commit'
         })
       );
-    }
 
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, 200);
-    });
+      await waitForRealtimeStopTranscriptionFlush();
+    }
 
     const transcribedPrompt = completedTranscriptionSegments.join(' ').trim();
     const annotationPngDataUrl = readAnnotationPngDataUrl();

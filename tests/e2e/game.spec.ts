@@ -211,6 +211,125 @@ test('admin game page shows a labeled record button with rounded border styling'
   await expect(recordButton).toHaveCSS('border-top-width', '1px');
 });
 
+test('stop recording keeps the mic button disabled until realtime transcription finalizes', async ({ page }) => {
+  await page.addInitScript(() => {
+    class FakeTrack {
+      stop() {}
+    }
+
+    class FakeStream {
+      getTracks() {
+        return [new FakeTrack()];
+      }
+    }
+
+    class FakeDataChannel {
+      readyState = 'open';
+      #messageListener: ((event: { data: string }) => void) | null = null;
+
+      addEventListener(type: string, listener: (event: { data: string }) => void) {
+        if (type === 'message') {
+          this.#messageListener = listener;
+        }
+      }
+
+      send(message: string) {
+        void message;
+      }
+
+      close() {
+        this.readyState = 'closed';
+      }
+
+      emit(payload: unknown) {
+        if (!this.#messageListener) {
+          return;
+        }
+
+        this.#messageListener({ data: JSON.stringify(payload) });
+      }
+    }
+
+    class FakeRTCPeerConnection {
+      dataChannel = new FakeDataChannel();
+
+      createDataChannel() {
+        (window as typeof window & { __fakeRealtimeDataChannel?: FakeDataChannel }).__fakeRealtimeDataChannel =
+          this.dataChannel;
+        return this.dataChannel;
+      }
+
+      addTrack() {}
+
+      async createOffer() {
+        return { type: 'offer', sdp: 'fake-offer-sdp' };
+      }
+
+      async setLocalDescription() {}
+
+      async setRemoteDescription() {}
+
+      close() {}
+    }
+
+    (window as typeof window & { __emitRealtimeFinal?: () => void }).__emitRealtimeFinal = () => {
+      (window as typeof window & { __fakeRealtimeDataChannel?: FakeDataChannel }).__fakeRealtimeDataChannel?.emit({
+        type: 'response.done'
+      });
+    };
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        async getUserMedia() {
+          return new FakeStream();
+        }
+      }
+    });
+
+    Object.defineProperty(window, 'RTCPeerConnection', {
+      configurable: true,
+      writable: true,
+      value: FakeRTCPeerConnection
+    });
+  });
+
+  await page.route('**/api/transcribe', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' })
+    });
+  });
+
+  await page.route('https://api.openai.com/v1/realtime/calls', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/sdp',
+      body: 'fake-answer-sdp'
+    });
+  });
+
+  await loginAsAdmin(page);
+  await page.goto('/game/starter');
+
+  const recordButton = page.locator('#prompt-record-button');
+  await recordButton.click();
+  await expect(recordButton).toHaveAttribute('aria-label', 'Stop voice recording');
+
+  await recordButton.click();
+  await expect(recordButton).toBeDisabled();
+  await expect(recordButton).toHaveClass(/game-view-icon-tab--recording/);
+  await expect(recordButton).toHaveClass(/game-view-icon-tab--busy/);
+
+  await page.evaluate(() => {
+    (window as typeof window & { __emitRealtimeFinal?: () => void }).__emitRealtimeFinal?.();
+  });
+
+  await expect(recordButton).toBeEnabled();
+  await expect(recordButton).toHaveAttribute('aria-label', 'Start voice recording');
+});
+
 
 test('game page initializes yellow annotation stroke color for prompt drawing', async ({ page }) => {
   await page.goto('/game/starter');
