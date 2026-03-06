@@ -379,3 +379,49 @@ test('admin game panel toggles keep aria-expanded attributes in sync', async ({ 
   await expect(editToggle).toHaveAttribute('aria-expanded', 'false');
   await expect(promptPanel).toHaveAttribute('aria-hidden', 'true');
 });
+
+test('admin game prompt draft persists per game in local storage and clears on submit', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.goto('/game/starter');
+  await page.locator('#game-tab-edit').click();
+
+  const promptInput = page.locator('#prompt-input');
+  await promptInput.fill('persist me');
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.localStorage.getItem('game-space:draft-prompt:starter'))
+    )
+    .toBe('persist me');
+
+  await page.reload();
+  await page.locator('#game-tab-edit').click();
+  await expect(promptInput).toHaveValue('persist me');
+
+  await expect(
+    await page.evaluate(() => Object.keys(window.localStorage))
+  ).toContain('game-space:draft-prompt:starter');
+
+
+  await page.route('**/api/games/starter/prompts', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ forkId: 'starter-submitted' })
+    });
+  });
+
+  await promptInput.fill('submit and clear');
+  await page.locator('#prompt-form').press('Meta+Enter');
+
+  await expect(page).toHaveURL('**/game/starter-submitted');
+  await page.goto('/game/starter');
+  await page.locator('#game-tab-edit').click();
+  await expect(page.locator('#prompt-input')).toHaveValue('');
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.localStorage.getItem('game-space:draft-prompt:starter'))
+    )
+    .toBeNull();
+});

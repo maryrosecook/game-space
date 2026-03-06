@@ -50,6 +50,7 @@ const transcriptPollIntervalMs = 2000;
 const generatingClassName = 'game-view-tab--generating';
 const annotationStrokeColor = 'rgba(250, 204, 21, 0.95)';
 const annotationStrokeWidth = 4;
+const draftPromptStorageKeyPrefix = 'game-space:draft-prompt:';
 let transcriptStatusKey = '';
 let transcriptSignature = '';
 let transcriptRequestInFlight = false;
@@ -133,6 +134,46 @@ let annotationPointerId = null;
 let annotationStrokeInProgress = false;
 let annotationHasInk = false;
 let recordingStartGameScreenshotPngDataUrl = null;
+
+function draftPromptStorageKey() {
+  if (typeof versionId !== 'string' || versionId.trim().length === 0) {
+    return null;
+  }
+
+  return `${draftPromptStorageKeyPrefix}${versionId}`;
+}
+
+function readDraftPromptFromStorage() {
+  const storageKey = draftPromptStorageKey();
+  if (!storageKey) {
+    return '';
+  }
+
+  try {
+    const storedValue = window?.localStorage?.getItem(storageKey);
+    return typeof storedValue === 'string' ? storedValue : '';
+  } catch {
+    return '';
+  }
+}
+
+function writeDraftPromptToStorage(value) {
+  const storageKey = draftPromptStorageKey();
+  if (!storageKey) {
+    return;
+  }
+
+  try {
+    if (typeof value !== 'string' || value.length === 0) {
+      window?.localStorage?.removeItem(storageKey);
+      return;
+    }
+
+    window?.localStorage?.setItem(storageKey, value);
+  } catch {
+    // Ignore localStorage failures (disabled or unavailable).
+  }
+}
 
 
 function drawingContext() {
@@ -1199,6 +1240,10 @@ async function submitPrompt(prompt, annotationPngDataUrl = null, gameScreenshotP
 }
 
 applyBottomPanelState();
+const storedDraftPrompt = readDraftPromptFromStorage();
+if (storedDraftPrompt.length > 0) {
+  promptInput.value = storedDraftPrompt;
+}
 resizePromptInput();
 updateEditDrawerHeight();
 updateTileCaptureButtonVisualState();
@@ -1232,6 +1277,7 @@ promptForm.addEventListener('submit', (event) => {
   });
 
   promptInput.value = '';
+  writeDraftPromptToStorage('');
   resizePromptInput();
   completedTranscriptionSegments = [];
   clearTranscriptionDisplayBuffer();
@@ -1260,6 +1306,7 @@ function resizePromptInput() {
 }
 
 promptInput.addEventListener('input', () => {
+  writeDraftPromptToStorage(promptInput.value);
   resizePromptInput();
 });
 
