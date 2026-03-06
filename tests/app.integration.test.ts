@@ -1200,6 +1200,13 @@ describe('express app integration', () => {
     expect(adminView.text).toContain('aria-label="Favorite game"');
     expect(adminView.text).toContain('aria-pressed="false"');
     expect(adminView.text).toContain('/public/game-view.js');
+    expect(adminView.text).toContain("const teardownStateKey = '__fountainGameTeardown';");
+    expect(adminView.text).toContain('const priorTeardown = teardownHost[teardownStateKey];');
+    expect(adminView.text).toContain('const runTeardown = () => {');
+    expect(adminView.text).toContain('const startResult = startGame(canvas);');
+    expect(adminView.text).toContain('teardownHost[teardownStateKey] = runTeardown;');
+    expect(adminView.text).toContain("window.addEventListener('pagehide', runTeardown, { once: true });");
+    expect(adminView.text).toContain("window.addEventListener('beforeunload', runTeardown, { once: true });");
     expect(adminView.text).toContain('const forcePreservedDrawingBuffer = true;');
     expect(adminView.text).toContain('data-csrf-token="');
     expect(adminView.text).toContain('data-game-favorited="false"');

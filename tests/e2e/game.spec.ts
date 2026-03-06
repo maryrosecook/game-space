@@ -36,6 +36,102 @@ test('starter canvas remains background-only with no things or particles', async
 
   expect(sample).toEqual([2, 6, 23, 255]);
 });
+
+
+test('game page teardown runs on refresh for games that return cleanup handlers', async ({ page }) => {
+  await page.route('**/games/starter/dist/game.js', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/javascript',
+      body: `
+        globalThis.__refreshCleanupStats = globalThis.__refreshCleanupStats ?? { starts: 0, cleanups: 0 };
+        export function startGame() {
+          globalThis.__refreshCleanupStats.starts += 1;
+          return () => {
+            globalThis.__refreshCleanupStats.cleanups += 1;
+          };
+        }
+      `
+    });
+  });
+
+  await page.goto('/game/starter');
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const stats = (globalThis as typeof globalThis & {
+          __refreshCleanupStats?: { starts: number; cleanups: number };
+        }).__refreshCleanupStats;
+        return stats ? { ...stats } : null;
+      })
+    )
+    .toEqual({ starts: 1, cleanups: 0 });
+
+  await page.reload();
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const stats = (globalThis as typeof globalThis & {
+          __refreshCleanupStats?: { starts: number; cleanups: number };
+        }).__refreshCleanupStats;
+        return stats ? { ...stats } : null;
+      })
+    )
+    .toEqual({ starts: 2, cleanups: 1 });
+});
+
+
+test('game page stores a reusable teardown handler on window during runtime', async ({ page }) => {
+  await page.route('**/games/starter/dist/game.js', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/javascript',
+      body: `
+        globalThis.__windowTeardownStats = globalThis.__windowTeardownStats ?? { starts: 0, cleanups: 0 };
+        export function startGame() {
+          globalThis.__windowTeardownStats.starts += 1;
+          return () => {
+            globalThis.__windowTeardownStats.cleanups += 1;
+          };
+        }
+      `
+    });
+  });
+
+  await page.goto('/game/starter');
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const teardown = (globalThis as typeof globalThis & {
+          __fountainGameTeardown?: unknown;
+        }).__fountainGameTeardown;
+        return typeof teardown;
+      })
+    )
+    .toBe('function');
+
+  await page.evaluate(() => {
+    const teardown = (globalThis as typeof globalThis & {
+      __fountainGameTeardown?: (() => void) | null;
+    }).__fountainGameTeardown;
+    if (typeof teardown === 'function') {
+      teardown();
+    }
+  });
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const stats = (globalThis as typeof globalThis & {
+          __windowTeardownStats?: { starts: number; cleanups: number };
+        }).__windowTeardownStats;
+        return stats ? { ...stats } : null;
+      })
+    )
+    .toEqual({ starts: 1, cleanups: 1 });
+});
 test('public game page hides manual tile snapshot capture controls', async ({ page }) => {
   await page.goto('/game/starter');
 
