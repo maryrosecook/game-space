@@ -425,3 +425,34 @@ test('admin game prompt draft persists per game in local storage and clears on s
     )
     .toBeNull();
 });
+
+test('admin game prompt draft remains after failed submit and restores after reload', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.goto('/game/starter');
+  await page.locator('#game-tab-edit').click();
+
+  const promptInput = page.locator('#prompt-input');
+  await promptInput.fill('keep me after failure');
+
+  await page.route('**/api/games/starter/prompts', async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'fail' })
+    });
+  });
+
+  await page.locator('#prompt-form').press('Meta+Enter');
+
+  await expect(page).toHaveURL('**/game/starter');
+  await expect(promptInput).toHaveValue('keep me after failure');
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.localStorage.getItem('game-space:draft-prompt:starter'))
+    )
+    .toBe('keep me after failure');
+
+  await page.reload();
+  await page.locator('#game-tab-edit').click();
+  await expect(page.locator('#prompt-input')).toHaveValue('keep me after failure');
+});
