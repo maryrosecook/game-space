@@ -178,12 +178,20 @@ export async function fetchIdeas(csrfToken: string): Promise<{ ok: boolean; stat
   };
 }
 
-export async function generateIdea(csrfToken: string, signal: AbortSignal): Promise<{ ok: boolean; status: number; ideas: IdeasIdea[] | null }> {
+export async function generateIdea(
+  csrfToken: string,
+  signal: AbortSignal,
+  baseGameVersionId: string,
+): Promise<{ ok: boolean; status: number; ideas: IdeasIdea[] | null }> {
   let response: Response;
   try {
     response = await fetch("/api/ideas/generate", {
       method: "POST",
-      headers: csrfHeaders(csrfToken),
+      headers: {
+        ...csrfHeaders(csrfToken),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ baseGameVersionId }),
       signal,
     });
   } catch {

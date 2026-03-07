@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 
+const IDEAS_STARTER_VERSION_ID = 'starter';
+
 function normalizeIdeaOutput(rawOutput: string): string | null {
   const cleaned = rawOutput.trim().replaceAll(/\s+/g, ' ');
   if (cleaned.length === 0) {
@@ -10,10 +12,35 @@ function normalizeIdeaOutput(rawOutput: string): string | null {
   return cleaned;
 }
 
+export function buildIdeationDirective(baseGameVersionId: string): string {
+  if (baseGameVersionId === IDEAS_STARTER_VERSION_ID) {
+    return [
+      `Base game for ideation: \`${IDEAS_STARTER_VERSION_ID}\`.`,
+      'Ideation mode: full game concept.',
+      'Generate one original game concept that can be built from the starter template.',
+    ].join('\n');
+  }
+
+  return [
+    `Base game for ideation: \`${baseGameVersionId}\`.`,
+    'Ideation mode: focused mechanics improvement.',
+    `Generate one focused mechanics improvement for the existing \`${baseGameVersionId}\` game.`,
+  ].join('\n');
+}
+
+export function buildIdeaGenerationInput(options: {
+  gameBuildPrompt: string;
+  ideationPrompt: string;
+  baseGameVersionId: string;
+}): string {
+  return `${options.gameBuildPrompt.trimEnd()}\n\n${buildIdeationDirective(options.baseGameVersionId)}\n\n${options.ideationPrompt.trimEnd()}`;
+}
+
 export async function generateIdeaPrompt(
   gameBuildPromptPath: string,
   ideationPromptPath: string,
   cwd: string,
+  baseGameVersionId: string,
   signal?: AbortSignal
 ): Promise<string> {
   const [gameBuildPrompt, ideationPrompt] = await Promise.all([
@@ -21,7 +48,11 @@ export async function generateIdeaPrompt(
     fs.readFile(ideationPromptPath, 'utf8')
   ]);
 
-  const fullPrompt = `${gameBuildPrompt.trimEnd()}\n\n${ideationPrompt.trimEnd()}`;
+  const fullPrompt = buildIdeaGenerationInput({
+    gameBuildPrompt,
+    ideationPrompt,
+    baseGameVersionId,
+  });
 
   return new Promise<string>((resolve, reject) => {
     const childProcess = spawn('codex', ['exec', '--dangerously-bypass-approvals-and-sandbox', '-'], {

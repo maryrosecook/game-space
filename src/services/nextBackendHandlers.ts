@@ -25,6 +25,7 @@ import {
   gameDirectoryPath,
   hasGameDirectory,
   isSafeVersionId,
+  listGameVersions,
   readMetadataFile,
   resolveCodexSessionStatus,
   writeMetadataFile,
@@ -621,6 +622,46 @@ function parseIdeaIndex(ideaIndex: string): number | null {
   return parsedIdeaIndex;
 }
 
+function readRequestedBaseGameVersionId(payload: Record<string, unknown>): string | null {
+  const baseGameVersionId = payload.baseGameVersionId;
+  if (typeof baseGameVersionId !== 'string') {
+    return null;
+  }
+
+  const normalizedVersionId = baseGameVersionId.trim();
+  if (normalizedVersionId.length === 0 || !isSafeVersionId(normalizedVersionId)) {
+    return null;
+  }
+
+  return normalizedVersionId;
+}
+
+function resolveAllowedIdeationBaseGameIds(versions: readonly { id: string; favorite?: boolean }[]): Set<string> {
+  const allowedBaseGameIds = new Set<string>([IDEAS_STARTER_VERSION_ID]);
+  for (const version of versions) {
+    if (version.favorite === true) {
+      allowedBaseGameIds.add(version.id);
+    }
+  }
+
+  return allowedBaseGameIds;
+}
+
+function resolveIdeationBaseGameVersionId(
+  requestedBaseGameVersionId: string | null,
+  allowedBaseGameIds: ReadonlySet<string>,
+): string | null {
+  if (requestedBaseGameVersionId === null) {
+    return IDEAS_STARTER_VERSION_ID;
+  }
+
+  if (!allowedBaseGameIds.has(requestedBaseGameVersionId)) {
+    return null;
+  }
+
+  return requestedBaseGameVersionId;
+}
+
 function readHeaderToken(request: Request): string | null {
   const headerToken = request.headers.get('x-csrf-token');
   if (typeof headerToken !== 'string') {
@@ -667,7 +708,19 @@ export async function handleApiIdeasGeneratePost(request: Request): Promise<Resp
     return authFailureResponse;
   }
 
+  const requestBody = await readJsonBody(request);
   const runtimePaths = readRuntimePaths();
+  const versions = await listGameVersions(runtimePaths.gamesRootPath);
+  const allowedBaseGameIds = resolveAllowedIdeationBaseGameIds(versions);
+  const requestedBaseGameVersionId = readRequestedBaseGameVersionId(requestBody);
+  const baseGameVersionId = resolveIdeationBaseGameVersionId(
+    requestedBaseGameVersionId,
+    allowedBaseGameIds,
+  );
+  if (baseGameVersionId === null) {
+    return jsonResponse(400, { error: 'Base game is not available for ideation' });
+  }
+
   const ideaGenerationRuntimeState = readSharedIdeaGenerationRuntimeState();
   const { requestId, abortController } = ideaGenerationRuntimeState.startRequest();
 
@@ -676,6 +729,7 @@ export async function handleApiIdeasGeneratePost(request: Request): Promise<Resp
       runtimePaths.buildPromptPath,
       runtimePaths.ideationPromptPath,
       runtimePaths.repoRootPath,
+      baseGameVersionId,
       abortController.signal,
     );
 

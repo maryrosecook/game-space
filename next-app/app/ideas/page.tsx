@@ -5,7 +5,7 @@ import { cookies, headers } from 'next/headers';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import type { IdeasPageData } from '../../../src/react/types';
+import type { IdeasBaseGameOption, IdeasPageData } from '../../../src/react/types';
 import {
   ADMIN_SESSION_TTL_SECONDS,
   isAdminAuthenticatedFromCookieHeader,
@@ -15,8 +15,10 @@ import {
   CSRF_COOKIE_NAME,
   ensureCsrfTokenFromCookieHeader,
 } from '../../../src/services/csrf';
+import { listGameVersions } from '../../../src/services/gameVersions';
 import { readIdeasFile } from '../../../src/services/ideas';
 import { readSharedIdeaGenerationRuntimeState } from '../../../src/services/serverRuntimeState';
+import type { GameVersion } from '../../../src/types';
 import { IdeasPageClient } from './IdeasPageClient';
 
 export const runtime = 'nodejs';
@@ -27,6 +29,9 @@ export const metadata: Metadata = {
 };
 
 type LucideIconName = 'lightbulb' | 'rocket' | 'trash-2';
+
+const IDEAS_STARTER_VERSION_ID = 'starter';
+const DEFAULT_TILE_COLOR = '#1D3557';
 
 const LUCIDE_ICON_NODES: Record<LucideIconName, IconNode> = {
   lightbulb: Lightbulb,
@@ -118,6 +123,43 @@ function renderBodySetupScript(options: {
   })();`;
 }
 
+function toIdeasBaseGameOption(version: GameVersion): IdeasBaseGameOption {
+  return {
+    id: version.id,
+    displayName: (version.threeWords ?? version.id).replaceAll('-', ' '),
+    tileColor: typeof version.tileColor === 'string' ? version.tileColor : DEFAULT_TILE_COLOR,
+    tileSnapshotPath:
+      typeof version.tileSnapshotPath === 'string' && version.tileSnapshotPath.length > 0
+        ? version.tileSnapshotPath
+        : null,
+  };
+}
+
+function buildIdeasBaseGameOptions(versions: readonly GameVersion[]): IdeasBaseGameOption[] {
+  const starterVersion = versions.find((version) => version.id === IDEAS_STARTER_VERSION_ID);
+  const favoriteNonStarterVersions = versions.filter(
+    (version) => version.favorite === true && version.id !== IDEAS_STARTER_VERSION_ID,
+  );
+
+  const options: IdeasBaseGameOption[] = [];
+  if (starterVersion) {
+    options.push(toIdeasBaseGameOption(starterVersion));
+  } else {
+    options.push({
+      id: IDEAS_STARTER_VERSION_ID,
+      displayName: IDEAS_STARTER_VERSION_ID,
+      tileColor: DEFAULT_TILE_COLOR,
+      tileSnapshotPath: null,
+    });
+  }
+
+  for (const version of favoriteNonStarterVersions) {
+    options.push(toIdeasBaseGameOption(version));
+  }
+
+  return options;
+}
+
 export default async function IdeasPage() {
   const requestHeaders = await headers();
   const cookieHeader = requestHeaders.get('cookie') ?? undefined;
@@ -130,10 +172,14 @@ export default async function IdeasPage() {
 
   const csrfToken = await ensurePageCsrfToken(cookieHeader);
   const ideas = await readIdeasFile(path.join(process.cwd(), 'ideas.json'));
+  const versions = await listGameVersions(path.join(process.cwd(), 'games'));
+  const baseGameOptions = buildIdeasBaseGameOptions(versions);
   const ideasData: IdeasPageData = {
     csrfToken,
     ideas,
     isGenerating: readSharedIdeaGenerationRuntimeState().isGenerating(),
+    baseGameOptions,
+    initialBaseGameVersionId: IDEAS_STARTER_VERSION_ID,
     lightbulbIdeaIcon: renderLucideIcon('lightbulb', 'idea-icon'),
     rocketIdeaIcon: renderLucideIcon('rocket', 'idea-icon'),
     trashIdeaIcon: renderLucideIcon('trash-2', 'idea-icon'),

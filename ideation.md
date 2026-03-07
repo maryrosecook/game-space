@@ -1,7 +1,11 @@
-Generate one original mobile web game idea.
+Generate one mobile web game idea based on the provided base-game context and ideation mode.
 
 Requirements:
 
+- Follow the provided ideation mode exactly:
+  - `full game concept` means create one new game concept.
+  - `focused mechanics improvement` means propose one focused improvement for the selected existing game.
+- Ground the idea in the selected base game context.
 - Return exactly one idea in 1-2 sentences and no more than 30 words total.
 - The game must be a 2D web game rendered in a WebGL canvas.
 - The game is played on a phone and only touch interactions are available.

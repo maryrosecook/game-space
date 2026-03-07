@@ -1,11 +1,23 @@
+import type { CSSProperties, RefObject } from "react";
+
 import { IconMarkup } from "./IconMarkup";
-import type { IdeasIdea, IdeasPageData } from "../types";
+import type { IdeasBaseGameOption, IdeasIdea, IdeasPageData } from "../types";
+
+const IDEAS_STARTER_VERSION_ID = "starter";
+
+type IdeasAppData = IdeasPageData & {
+  baseGameVersionId: string;
+};
 
 type IdeasAppProps = {
-  data: IdeasPageData;
+  data: IdeasAppData;
   onGenerate?: () => void;
+  onSelectBaseGame?: (baseGameVersionId: string) => void;
+  onToggleBaseGameSelector?: () => void;
   onBuild?: (ideaIndex: number) => void;
   onDelete?: (ideaIndex: number) => void;
+  baseGameSelectorRef?: RefObject<HTMLDivElement | null>;
+  isBaseGameSelectorOpen?: boolean;
 };
 
 function renderIdeasList(
@@ -53,7 +65,72 @@ function renderIdeasList(
   );
 }
 
-export function IdeasApp({ data, onGenerate, onBuild, onDelete }: IdeasAppProps) {
+function findBaseGameOption(
+  options: readonly IdeasBaseGameOption[],
+  baseGameVersionId: string,
+): IdeasBaseGameOption {
+  const selectedOption = options.find((option) => option.id === baseGameVersionId);
+  if (selectedOption) {
+    return selectedOption;
+  }
+
+  return (
+    options[0] ?? {
+      id: IDEAS_STARTER_VERSION_ID,
+      displayName: IDEAS_STARTER_VERSION_ID,
+      tileColor: "#1D3557",
+      tileSnapshotPath: null,
+    }
+  );
+}
+
+function renderBaseGameTile(
+  option: IdeasBaseGameOption,
+  imageClassName: string,
+  placeholderClassName: string,
+) {
+  if (option.tileSnapshotPath) {
+    return (
+      <img
+        className={imageClassName}
+        src={option.tileSnapshotPath}
+        alt=""
+        loading="lazy"
+        decoding="async"
+      />
+    );
+  }
+
+  return (
+    <span
+      className={placeholderClassName}
+      style={{ "--tile-color": option.tileColor } as CSSProperties}
+      aria-hidden="true"
+    />
+  );
+}
+
+function ideationGuidanceText(displayName: string, baseGameVersionId: string): string {
+  if (baseGameVersionId === IDEAS_STARTER_VERSION_ID) {
+    return "Generating from starter creates one full game concept.";
+  }
+
+  return `Generating from ${displayName} creates one focused mechanics improvement.`;
+}
+
+export function IdeasApp({
+  data,
+  onGenerate,
+  onSelectBaseGame,
+  onToggleBaseGameSelector,
+  onBuild,
+  onDelete,
+  baseGameSelectorRef,
+  isBaseGameSelectorOpen,
+}: IdeasAppProps) {
+  const selectedBaseGameOption = findBaseGameOption(data.baseGameOptions, data.baseGameVersionId);
+  const guidanceText = ideationGuidanceText(selectedBaseGameOption.displayName, selectedBaseGameOption.id);
+
   return (
     <main className="codex-shell">
       <header className="page-header codex-header">
@@ -63,6 +140,47 @@ export function IdeasApp({ data, onGenerate, onBuild, onDelete }: IdeasAppProps)
         </a>
       </header>
       <section className="ideas-controls">
+        <div ref={baseGameSelectorRef} className="ideas-base-game-selector">
+          <button
+            id="ideas-base-game-toggle"
+            className="ideas-base-game-toggle"
+            type="button"
+            aria-label="Select base game"
+            aria-expanded={isBaseGameSelectorOpen ? "true" : "false"}
+            aria-haspopup="listbox"
+            aria-controls="ideas-base-game-listbox"
+            onClick={onToggleBaseGameSelector}
+          >
+            {renderBaseGameTile(
+              selectedBaseGameOption,
+              "ideas-base-game-toggle-image",
+              "ideas-base-game-toggle-image ideas-base-game-toggle-image--placeholder",
+            )}
+            <span className="ideas-base-game-toggle-name">{selectedBaseGameOption.displayName}</span>
+          </button>
+          {isBaseGameSelectorOpen ? (
+            <ul id="ideas-base-game-listbox" className="ideas-base-game-options" role="listbox">
+              {data.baseGameOptions.map((option) => (
+                <li key={option.id}>
+                  <button
+                    type="button"
+                    className={`ideas-base-game-option${option.id === selectedBaseGameOption.id ? " ideas-base-game-option--selected" : ""}`}
+                    role="option"
+                    aria-selected={option.id === selectedBaseGameOption.id ? "true" : "false"}
+                    onClick={() => onSelectBaseGame?.(option.id)}
+                  >
+                    {renderBaseGameTile(
+                      option,
+                      "ideas-base-game-option-image",
+                      "ideas-base-game-option-image ideas-base-game-option-image--placeholder",
+                    )}
+                    <span className="ideas-base-game-option-name">{option.displayName}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
         <button
           id="ideas-generate-button"
           className={`ideas-generate-button${data.isGenerating ? " ideas-generate-button--generating" : ""}`}
@@ -76,6 +194,7 @@ export function IdeasApp({ data, onGenerate, onBuild, onDelete }: IdeasAppProps)
           <span className="ideas-generate-spinner" aria-hidden="true"></span>
         </button>
       </section>
+      <p className="ideas-guidance">{guidanceText}</p>
       <section id="ideas-list-root" aria-live="polite">
         {renderIdeasList(
           data.ideas,

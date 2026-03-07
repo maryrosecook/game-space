@@ -42,10 +42,19 @@ export type IdeasIdea = {
   hasBeenBuilt: boolean;
 };
 
+export type IdeasBaseGameOption = {
+  id: string;
+  displayName: string;
+  tileColor: string;
+  tileSnapshotPath: string | null;
+};
+
 export type IdeasPageData = {
   csrfToken: string;
   ideas: readonly IdeasIdea[];
   isGenerating: boolean;
+  baseGameOptions: readonly IdeasBaseGameOption[];
+  initialBaseGameVersionId: string;
   lightbulbIdeaIcon: string;
   rocketIdeaIcon: string;
   trashIdeaIcon: string;

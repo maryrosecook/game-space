@@ -4,6 +4,8 @@ import path from 'node:path';
 import { loginAsAdmin, logoutAsAdmin } from './helpers/auth';
 
 const IDEAS_PATH = path.resolve('ideas.json');
+const ONE_BY_ONE_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aQ0QAAAAASUVORK5CYII=';
 
 type GameIdea = {
   prompt: string;
@@ -48,6 +50,31 @@ async function removeGameVersionDirectory(versionId: string | null): Promise<voi
   }
 
   await fs.rm(path.resolve('games', versionId), { recursive: true, force: true });
+}
+
+async function createFavoritedGameVersion(versionId: string): Promise<void> {
+  const gameDirectoryPath = path.resolve('games', versionId);
+  await fs.mkdir(path.join(gameDirectoryPath, 'snapshots'), { recursive: true });
+  await fs.writeFile(
+    path.join(gameDirectoryPath, 'metadata.json'),
+    `${JSON.stringify(
+      {
+        id: versionId,
+        threeWords: 'phase0 selector game',
+        parentId: 'starter',
+        createdTime: '2026-03-07T00:00:00.000Z',
+        tileColor: '#204A87',
+        favorite: true,
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  await fs.writeFile(
+    path.join(gameDirectoryPath, 'snapshots', 'tile.png'),
+    Buffer.from(ONE_BY_ONE_PNG_BASE64, 'base64'),
+  );
 }
 
 async function waitForForkSessionStatusToSettle(versionId: string | null): Promise<void> {
@@ -102,50 +129,71 @@ test('dedicated login/logout flow toggles admin-only visibility and access', asy
   await expect(page.getByText(/could not be found/i)).toBeVisible();
 });
 
-test('ideas generate action sends csrf and renders returned ideas', async ({ page }) => {
-  await loginAsAdmin(page);
-
-  await page.route('**/api/ideas', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        ideas: [{ prompt: 'phase0 baseline idea', hasBeenBuilt: false }],
-        isGenerating: false,
-      }),
-    });
-  });
-
-  let generateCsrfHeaderLength = 0;
-  await page.route('**/api/ideas/generate', async (route) => {
-    const csrfHeader = route.request().headers()['x-csrf-token'];
-    generateCsrfHeaderLength = typeof csrfHeader === 'string' ? csrfHeader.length : 0;
-
-    await route.fulfill({
-      status: 201,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        prompt: 'phase0 generated idea',
-        ideas: [
-          { prompt: 'phase0 generated idea', hasBeenBuilt: false },
-          { prompt: 'phase0 baseline idea', hasBeenBuilt: false },
-        ],
-      }),
-    });
-  });
-
+test('ideas generate action sends csrf, selected base game, and renders returned ideas', async ({
+  page,
+}) => {
+  const favoritedVersionId = `phase0-selector-${Date.now().toString(36)}`;
   try {
+    await createFavoritedGameVersion(favoritedVersionId);
+    await loginAsAdmin(page);
+
+    await page.route('**/api/ideas', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ideas: [{ prompt: 'phase0 baseline idea', hasBeenBuilt: false }],
+          isGenerating: false,
+        }),
+      });
+    });
+
+    let generateCsrfHeaderLength = 0;
+    let generateBaseGameVersionId: string | null = null;
+    await page.route('**/api/ideas/generate', async (route) => {
+      const csrfHeader = route.request().headers()['x-csrf-token'];
+      generateCsrfHeaderLength = typeof csrfHeader === 'string' ? csrfHeader.length : 0;
+      try {
+        const payload = JSON.parse(route.request().postData() ?? '{}') as {
+          baseGameVersionId?: unknown;
+        };
+        generateBaseGameVersionId =
+          typeof payload.baseGameVersionId === 'string' ? payload.baseGameVersionId : null;
+      } catch {
+        generateBaseGameVersionId = null;
+      }
+
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          prompt: 'phase0 generated idea',
+          ideas: [
+            { prompt: 'phase0 generated idea', hasBeenBuilt: false },
+            { prompt: 'phase0 baseline idea', hasBeenBuilt: false },
+          ],
+        }),
+      });
+    });
+
     await page.goto('/ideas');
     await expect(page.getByRole('heading', { level: 1, name: 'Ideas' })).toBeVisible();
     await expect(page.locator('.idea-row')).toHaveCount(1);
+    await page.locator('#ideas-base-game-toggle').click();
+    await page
+      .locator('.ideas-base-game-option')
+      .filter({ hasText: 'phase0 selector game' })
+      .click();
 
     await page.locator('#ideas-generate-button').click();
     await expect.poll(() => generateCsrfHeaderLength).toBeGreaterThan(0);
+    await expect.poll(() => generateBaseGameVersionId).toBe(favoritedVersionId);
     await expect(page.locator('.idea-row')).toHaveCount(2);
     await expect(page.locator('.idea-row').first().locator('.idea-prompt')).toHaveText('phase0 generated idea');
   } finally {
     await page.unroute('**/api/ideas/generate');
     await page.unroute('**/api/ideas');
+    await removeGameVersionDirectory(favoritedVersionId);
   }
 });
 
