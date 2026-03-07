@@ -1232,15 +1232,16 @@ async function submitPrompt(prompt, annotationPngDataUrl = null, gameScreenshotP
   });
 
   if (!response.ok) {
-    return;
+    return false;
   }
 
   const payload = await response.json();
   if (!payload || typeof payload !== 'object' || typeof payload.forkId !== 'string') {
-    return;
+    return false;
   }
 
   window.location.assign(`/game/${encodeURIComponent(payload.forkId)}`);
+  return true;
 }
 
 applyBottomPanelState();
@@ -1275,7 +1276,11 @@ promptForm.addEventListener('submit', (event) => {
   void (async () => {
     const annotationPngDataUrl = readAnnotationPngDataUrl();
     const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl();
-    await submitPrompt(prompt, annotationPngDataUrl, gameScreenshotPngDataUrl);
+    const didSubmitPrompt = await submitPrompt(prompt, annotationPngDataUrl, gameScreenshotPngDataUrl);
+    if (!didSubmitPrompt) {
+      return;
+    }
+
     writeDraftPromptToStorage('');
     promptInput.value = '';
     resizePromptInput();

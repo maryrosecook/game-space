@@ -380,7 +380,7 @@ test('admin game panel toggles keep aria-expanded attributes in sync', async ({ 
   await expect(promptPanel).toHaveAttribute('aria-hidden', 'true');
 });
 
-test('admin game prompt draft persists per game in local storage and clears on submit', async ({ page }) => {
+test('admin game prompt draft persists after closing and reopening the game page tab and clears on submit', async ({ page, context }) => {
   await loginAsAdmin(page);
   await page.goto('/game/starter');
   await page.locator('#game-tab-edit').click();
@@ -394,16 +394,19 @@ test('admin game prompt draft persists per game in local storage and clears on s
     )
     .toBe('persist me');
 
-  await page.reload();
-  await page.locator('#game-tab-edit').click();
-  await expect(promptInput).toHaveValue('persist me');
+  await page.close();
+
+  const reopenedPage = await context.newPage();
+  await reopenedPage.goto('/game/starter');
+  await reopenedPage.locator('#game-tab-edit').click();
+  await expect(reopenedPage.locator('#prompt-input')).toHaveValue('persist me');
 
   await expect(
-    await page.evaluate(() => Object.keys(window.localStorage))
+    await reopenedPage.evaluate(() => Object.keys(window.localStorage))
   ).toContain('game-space:draft-prompt:starter');
 
 
-  await page.route('**/api/games/starter/prompts', async (route) => {
+  await reopenedPage.route('**/api/games/starter/prompts', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -411,17 +414,17 @@ test('admin game prompt draft persists per game in local storage and clears on s
     });
   });
 
-  await promptInput.fill('submit and clear');
-  await page.locator('#prompt-form').press('Meta+Enter');
+  await reopenedPage.locator('#prompt-input').fill('submit and clear');
+  await reopenedPage.locator('#prompt-form').press('Meta+Enter');
 
-  await expect(page).toHaveURL('**/game/starter-submitted');
-  await page.goto('/game/starter');
-  await page.locator('#game-tab-edit').click();
-  await expect(page.locator('#prompt-input')).toHaveValue('');
+  await expect(reopenedPage).toHaveURL('**/game/starter-submitted');
+  await reopenedPage.goto('/game/starter');
+  await reopenedPage.locator('#game-tab-edit').click();
+  await expect(reopenedPage.locator('#prompt-input')).toHaveValue('');
 
   await expect
     .poll(() =>
-      page.evaluate(() => window.localStorage.getItem('game-space:draft-prompt:starter'))
+      reopenedPage.evaluate(() => window.localStorage.getItem('game-space:draft-prompt:starter'))
     )
     .toBeNull();
 });
