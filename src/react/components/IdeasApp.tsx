@@ -112,10 +112,10 @@ function renderBaseGameTile(
 
 function ideationGuidanceText(displayName: string, baseGameVersionId: string): string {
   if (baseGameVersionId === IDEAS_STARTER_VERSION_ID) {
-    return "Generating from starter creates one full game concept.";
+    return "Generating from starter creates one creative, single-sentence arcade-style game concept.";
   }
 
-  return `Generating from ${displayName} creates one focused mechanics improvement.`;
+  return `Generating from ${displayName} creates one off-the-wall, single-sentence improvement grounded in current game context.`;
 }
 
 export function IdeasApp({

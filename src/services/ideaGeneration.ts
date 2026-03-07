@@ -3,28 +3,44 @@ import { promises as fs } from 'node:fs';
 
 const IDEAS_STARTER_VERSION_ID = 'starter';
 
-function normalizeIdeaOutput(rawOutput: string): string | null {
+function extractFirstSentence(output: string): string {
+  const sentenceBoundaryMatch = output.match(/^(.+?[.!?])(?=(?:\s|$))/);
+  if (sentenceBoundaryMatch) {
+    const matchedSentence = sentenceBoundaryMatch[1];
+    if (typeof matchedSentence === 'string') {
+      return matchedSentence;
+    }
+  }
+
+  return output;
+}
+
+export function normalizeIdeaOutput(rawOutput: string): string | null {
   const cleaned = rawOutput.trim().replaceAll(/\s+/g, ' ');
   if (cleaned.length === 0) {
     return null;
   }
 
-  return cleaned;
+  const withoutListMarker = cleaned.replace(/^[-*]\s*/, '');
+  const singleSentence = extractFirstSentence(withoutListMarker).trim();
+  if (singleSentence.length === 0) {
+    return null;
+  }
+
+  return singleSentence;
 }
 
 export function buildIdeationDirective(baseGameVersionId: string): string {
   if (baseGameVersionId === IDEAS_STARTER_VERSION_ID) {
     return [
       `Base game for ideation: \`${IDEAS_STARTER_VERSION_ID}\`.`,
-      'Ideation mode: full game concept.',
-      'Generate one original game concept that can be built from the starter template.',
+      'Starter ideation directive: Generate one creative, single-sentence arcade-style game concept.',
     ].join('\n');
   }
 
   return [
     `Base game for ideation: \`${baseGameVersionId}\`.`,
-    'Ideation mode: focused mechanics improvement.',
-    `Generate one focused mechanics improvement for the existing \`${baseGameVersionId}\` game.`,
+    `Non-starter ideation directive: Generate one off-the-wall, single-sentence improvement grounded in current game context for the existing \`${baseGameVersionId}\` game.`,
   ].join('\n');
 }
 

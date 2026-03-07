@@ -180,11 +180,17 @@ test('ideas generate action sends csrf, selected base game, and renders returned
     await page.goto('/ideas');
     await expect(page.getByRole('heading', { level: 1, name: 'Ideas' })).toBeVisible();
     await expect(page.locator('.idea-row')).toHaveCount(1);
+    await expect(page.locator('.ideas-guidance')).toHaveText(
+      'Generating from starter creates one creative, single-sentence arcade-style game concept.',
+    );
     await page.locator('#ideas-base-game-toggle').click();
     await page
       .locator('.ideas-base-game-option')
       .filter({ hasText: 'phase0 selector game' })
       .click();
+    await expect(page.locator('.ideas-guidance')).toHaveText(
+      'Generating from phase0 selector game creates one off-the-wall, single-sentence improvement grounded in current game context.',
+    );
 
     await page.locator('#ideas-generate-button').click();
     await expect.poll(() => generateCsrfHeaderLength).toBeGreaterThan(0);
