@@ -113,6 +113,35 @@ describe('repo automation configuration', () => {
     expect(workflow).not.toContain('/^tests\\/e2e\\/.+\\.spec\\.ts$/.test(filename)');
   });
 
+  it('owner pr auto-merge workflow only targets eligible owner-authored main PRs', async () => {
+    const workflow = await readRepoFile('.github/workflows/owner-pr-automerge.yml');
+
+    expect(workflow).toContain('name: Owner PR Auto-Merge');
+    expect(workflow).toContain('pull_request:');
+    expect(workflow).toContain('branches: [main]');
+    expect(workflow).toContain('types: [opened, reopened, synchronize, ready_for_review]');
+    expect(workflow).toContain('permissions:');
+    expect(workflow).toContain('contents: write');
+    expect(workflow).toContain('pull-requests: write');
+    expect(workflow).toContain('const pr = context.payload.pull_request;');
+    expect(workflow).toContain("if (pr.base.ref !== 'main')");
+    expect(workflow).toContain('if (pr.draft)');
+    expect(workflow).toContain('if (pr.user?.login !== context.repo.owner)');
+    expect(workflow).toContain('pr.head.repo?.full_name === repositoryFullName');
+    expect(workflow).toContain('pr.head.repo?.fork !== true');
+    expect(workflow).toContain('enablePullRequestAutoMerge');
+  });
+
+  it('owner pr auto-merge workflow safely ignores non-eligible PRs and handles known benign API errors', async () => {
+    const workflow = await readRepoFile('.github/workflows/owner-pr-automerge.yml');
+
+    expect(workflow).toContain('No pull request payload found. Skipping.');
+    expect(workflow).toContain('draft PRs are not eligible');
+    expect(workflow).toContain('head repository must be');
+    expect(workflow).toContain('already (has )?auto-merge enabled');
+    expect(workflow).toContain('core.setFailed(`Failed to enable auto-merge');
+  });
+
   it('pull request template nudges authors to request feature videos for user-visible changes', async () => {
     const template = await readRepoFile('.github/pull_request_template.md');
 
@@ -134,6 +163,16 @@ describe('repo automation configuration', () => {
 
   it('pr feature video workflow remains valid yaml after script updates', () => {
     const workflowPath = path.join(process.cwd(), '.github/workflows/pr-feature-videos.yml');
+
+    expect(() =>
+      execFileSync('ruby', ['-e', 'require "yaml"; YAML.load_file(ARGV.fetch(0))', workflowPath], {
+        stdio: 'pipe'
+      })
+    ).not.toThrow();
+  });
+
+  it('owner pr auto-merge workflow remains valid yaml', () => {
+    const workflowPath = path.join(process.cwd(), '.github/workflows/owner-pr-automerge.yml');
 
     expect(() =>
       execFileSync('ruby', ['-e', 'require "yaml"; YAML.load_file(ARGV.fetch(0))', workflowPath], {

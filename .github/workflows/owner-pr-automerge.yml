@@ -1,0 +1,85 @@
+name: Owner PR Auto-Merge
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable-automerge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge for eligible owner PRs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+
+            if (!pr) {
+              core.info('No pull request payload found. Skipping.');
+              return;
+            }
+
+            if (pr.base.ref !== 'main') {
+              core.info(`Skipping PR #${pr.number}: base branch is ${pr.base.ref}, expected main.`);
+              return;
+            }
+
+            if (pr.draft) {
+              core.info(`Skipping PR #${pr.number}: draft PRs are not eligible.`);
+              return;
+            }
+
+            if (pr.user?.login !== context.repo.owner) {
+              core.info(
+                `Skipping PR #${pr.number}: author ${pr.user?.login ?? 'unknown'} is not repository owner ${context.repo.owner}.`
+              );
+              return;
+            }
+
+            const repositoryFullName = `${context.repo.owner}/${context.repo.repo}`;
+            const isSameRepository =
+              pr.head.repo?.full_name === repositoryFullName &&
+              pr.head.repo?.fork !== true;
+
+            if (!isSameRepository) {
+              core.info(
+                `Skipping PR #${pr.number}: head repository must be ${repositoryFullName} and must not be a fork.`
+              );
+              return;
+            }
+
+            if (typeof pr.node_id !== 'string' || pr.node_id.length === 0) {
+              core.setFailed(`Cannot enable auto-merge for PR #${pr.number}: missing pull request node id.`);
+              return;
+            }
+
+            try {
+              await github.graphql(
+                `
+                  mutation EnableAutoMerge($pullRequestId: ID!) {
+                    enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
+                      pullRequest {
+                        number
+                      }
+                    }
+                  }
+                `,
+                { pullRequestId: pr.node_id }
+              );
+
+              core.info(`Enabled auto-merge for PR #${pr.number}.`);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+
+              if (/already (has )?auto-merge enabled/i.test(message)) {
+                core.info(`Auto-merge already enabled for PR #${pr.number}.`);
+                return;
+              }
+
+              core.setFailed(`Failed to enable auto-merge for PR #${pr.number}: ${message}`);
+            }
