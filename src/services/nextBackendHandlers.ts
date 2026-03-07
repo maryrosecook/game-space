@@ -631,6 +631,11 @@ function readHeaderToken(request: Request): string | null {
   return normalizedToken.length > 0 ? normalizedToken : null;
 }
 
+function createCacheBustedTileSnapshotPath(versionId: string): string {
+  const cacheBuster = `${Date.now().toString(36)}-${randomBytes(8).toString('hex')}`;
+  return `/games/${encodeURIComponent(versionId)}/snapshots/tile.png?v=${cacheBuster}`;
+}
+
 async function requireAdminMutationAccess(request: Request): Promise<Response | null> {
   if (!(await requireAdminOr404(request))) {
     return textResponse(404, 'Not found');
@@ -914,6 +919,11 @@ export async function handleApiGameTileSnapshotPost(request: Request, versionId:
   if (!(await hasGameDirectory(runtimePaths.gamesRootPath, versionId))) {
     return jsonResponse(404, { error: 'Game version not found' });
   }
+  const metadataPath = path.join(gameDirectoryPath(runtimePaths.gamesRootPath, versionId), 'metadata.json');
+  const metadata = await readMetadataFile(metadataPath);
+  if (!metadata) {
+    return jsonResponse(404, { error: 'Game metadata not found' });
+  }
 
   const requestBody = await readJsonBody(request);
   const tilePngDataUrlInput = requestBody.tilePngDataUrl;
@@ -933,11 +943,16 @@ export async function handleApiGameTileSnapshotPost(request: Request, versionId:
   const tileSnapshotPath = path.join(snapshotsDirectoryPath, 'tile.png');
   await fs.mkdir(snapshotsDirectoryPath, { recursive: true });
   await fs.writeFile(tileSnapshotPath, tilePngBytes);
+  const cacheBustedTileSnapshotPath = createCacheBustedTileSnapshotPath(versionId);
+  await writeMetadataFile(metadataPath, {
+    ...metadata,
+    tileSnapshotPath: cacheBustedTileSnapshotPath,
+  });
 
   return jsonResponse(200, {
     status: 'ok',
     versionId,
-    tileSnapshotPath: `/games/${encodeURIComponent(versionId)}/snapshots/tile.png`,
+    tileSnapshotPath: cacheBustedTileSnapshotPath,
   });
 }
 

@@ -32,7 +32,7 @@ describe('buildHomepagePageData', () => {
         createdTime: '2026-01-02T00:00:00.000Z',
         favorite: true,
         threeWords: 'beta-splash-mode',
-        tileSnapshotPath: '/games/beta-version/snapshots/tile.png'
+        tileSnapshotPath: '/games/beta-version/snapshots/tile.png?v=cached'
       }),
       createVersion({
         id: 'gamma',
@@ -53,7 +53,7 @@ describe('buildHomepagePageData', () => {
           displayId: 'beta splash mode',
           tileColor: '#1D3557',
           isFavorite: true,
-          tileSnapshotPath: '/games/beta-version/snapshots/tile.png'
+          tileSnapshotPath: '/games/beta-version/snapshots/tile.png?v=cached'
         },
         {
           id: 'gamma',

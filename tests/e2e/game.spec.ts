@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+
 import { loginAsAdmin } from './helpers/auth';
 
 test('public game page hides manual tile snapshot capture controls', async ({ page }) => {
@@ -128,9 +131,109 @@ test('admin game page places tile capture in edit panel and posts tile snapshot 
   await page.locator('#game-tab-capture-tile').click();
 
   await expect.poll(() => tileCaptureRequestBody).not.toBeNull();
-  const tileCapturePayload = JSON.parse(tileCaptureRequestBody ?? '{}') as { tilePngDataUrl?: string };
-  expect(typeof tileCapturePayload.tilePngDataUrl).toBe('string');
-  expect(tileCapturePayload.tilePngDataUrl?.startsWith('data:image/png;base64,')).toBe(true);
+  const tileCapturePayload = JSON.parse(tileCaptureRequestBody ?? '{}');
+  expect(isRecord(tileCapturePayload)).toBe(true);
+  if (!isRecord(tileCapturePayload)) {
+    throw new Error('Tile capture payload must be an object');
+  }
+  const tilePngDataUrl = tileCapturePayload.tilePngDataUrl;
+  expect(typeof tilePngDataUrl).toBe('string');
+  expect(typeof tilePngDataUrl === 'string' && tilePngDataUrl.startsWith('data:image/png;base64,')).toBe(true);
+});
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function readTileSnapshotPath(payload: unknown): string {
+  if (!isRecord(payload)) {
+    throw new Error('Tile snapshot response missing tileSnapshotPath');
+  }
+
+  const tileSnapshotPath = payload.tileSnapshotPath;
+  if (typeof tileSnapshotPath !== 'string' || tileSnapshotPath.length === 0) {
+    throw new Error('Tile snapshot path must be a non-empty string');
+  }
+
+  return tileSnapshotPath;
+}
+
+async function createManualCaptureGameFixture(): Promise<{ versionId: string; gameDirectoryPath: string }> {
+  const randomSuffix = Math.random().toString(36).slice(2, 10);
+  const versionId = `e2e-manual-capture-${Date.now().toString(36)}-${randomSuffix}`;
+  const gameDirectoryPath = path.resolve('games', versionId);
+  const gameBundlePath = path.join(gameDirectoryPath, 'dist', 'game.js');
+  const sourceBundlePath = path.resolve('games/starter/dist/game.js');
+  const metadataPath = path.join(gameDirectoryPath, 'metadata.json');
+  await fs.mkdir(path.dirname(gameBundlePath), { recursive: true });
+  await fs.copyFile(sourceBundlePath, gameBundlePath);
+  await fs.writeFile(
+    metadataPath,
+    JSON.stringify(
+      {
+        id: versionId,
+        parentId: 'starter',
+        createdTime: new Date().toISOString(),
+        favorite: false,
+      },
+      null,
+      2,
+    ) + '\n',
+    'utf8',
+  );
+
+  return {
+    versionId,
+    gameDirectoryPath,
+  };
+}
+
+test('manual tile capture returns unique tile URLs and homepage uses the latest path', async ({ page }) => {
+  const { versionId, gameDirectoryPath } = await createManualCaptureGameFixture();
+  const metadataPath = path.join(gameDirectoryPath, 'metadata.json');
+
+  async function captureTileSnapshotPath(): Promise<string> {
+    const responsePromise = page.waitForResponse((response) => {
+      return (
+        response.request().method() === 'POST' &&
+        response.url().includes(`/api/games/${encodeURIComponent(versionId)}/tile-snapshot`)
+      );
+    });
+
+    await page.locator('#game-tab-capture-tile').click();
+    const response = await responsePromise;
+    expect(response.status()).toBe(200);
+    const payload = await response.json();
+    return readTileSnapshotPath(payload);
+  }
+
+  try {
+    await loginAsAdmin(page);
+    await page.goto(`/game/${encodeURIComponent(versionId)}`);
+    await page.locator('#game-tab-edit').click();
+    await expect(page.locator('#game-tab-capture-tile')).toBeVisible();
+
+    const firstTileSnapshotPath = await captureTileSnapshotPath();
+    await expect(page.locator('#game-tab-capture-tile')).toBeEnabled();
+    const secondTileSnapshotPath = await captureTileSnapshotPath();
+    expect(secondTileSnapshotPath).not.toBe(firstTileSnapshotPath);
+
+    const metadataPayloadRaw = JSON.parse(await fs.readFile(metadataPath, 'utf8'));
+    expect(isRecord(metadataPayloadRaw)).toBe(true);
+    if (!isRecord(metadataPayloadRaw)) {
+      throw new Error('Game metadata payload must be an object');
+    }
+    const metadataPayload = metadataPayloadRaw;
+    expect(metadataPayload.tileSnapshotPath).toBe(secondTileSnapshotPath);
+
+    await page.goto('/');
+    await expect(page.locator(`.game-tile[data-version-id="${versionId}"] .tile-image`)).toHaveAttribute(
+      'src',
+      secondTileSnapshotPath
+    );
+  } finally {
+    await fs.rm(gameDirectoryPath, { recursive: true, force: true });
+  }
 });
 
 
