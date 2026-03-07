@@ -947,6 +947,138 @@ describe('game view prompt submit client', () => {
     expect(peerConnection?.remoteDescription).toEqual({ type: 'answer', sdp: 'fake-answer-sdp' });
   });
 
+  it('keeps stop busy until flush completes and then submits the final transcript', async () => {
+    const harness = await runGameViewScript(async (url) => {
+      if (url === '/api/transcribe') {
+        return {
+          ok: true,
+          async json() {
+            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
+          }
+        };
+      }
+
+      if (url === 'https://api.openai.com/v1/realtime/calls') {
+        return {
+          ok: true,
+          async text() {
+            return 'fake-answer-sdp';
+          }
+        };
+      }
+
+      if (url === '/api/games/source-version/prompts') {
+        return {
+          ok: true,
+          async json() {
+            return { forkId: 'voice-fork' };
+          }
+        };
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    const peerConnection = harness.getPeerConnection();
+    expect(peerConnection).not.toBeNull();
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    expect(harness.recordButton.disabled).toBe(true);
+    expect(harness.recordButton.classList.contains('game-view-icon-tab--busy')).toBe(true);
+
+    peerConnection?.dataChannel.dispatchEvent(
+      'message',
+      createEvent({
+        data: JSON.stringify({
+          type: 'conversation.item.input_audio_transcription.completed',
+          transcript: 'wider'
+        })
+      })
+    );
+    peerConnection?.dataChannel.dispatchEvent(
+      'message',
+      createEvent({
+        data: JSON.stringify({
+          type: 'response.done'
+        })
+      })
+    );
+    await flushAsyncOperations();
+
+    expect(harness.fetchCalls[2]).toEqual({
+      url: '/api/games/source-version/prompts',
+      init: {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': 'csrf-token-123'
+        },
+        body: JSON.stringify({
+          prompt: 'wider',
+          annotationPngDataUrl: null,
+          gameScreenshotPngDataUrl: 'data:image/png;base64,test-canvas'
+        })
+      }
+    });
+    expect(peerConnection?.dataChannel.sentMessages).toContain(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+    expect(harness.recordButton.disabled).toBe(false);
+    expect(harness.recordButton.classList.contains('game-view-icon-tab--busy')).toBe(false);
+    expect(harness.assignCalls).toEqual(['/game/voice-fork']);
+    expect(harness.consoleLogs).not.toContainEqual(['[realtime-transcription] flush timeout fallback']);
+  });
+
+  it('uses timeout fallback to exit stop flow when realtime flush never signals completion', async () => {
+    const harness = await runGameViewScript(async (url) => {
+      if (url === '/api/transcribe') {
+        return {
+          ok: true,
+          async json() {
+            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
+          }
+        };
+      }
+
+      if (url === 'https://api.openai.com/v1/realtime/calls') {
+        return {
+          ok: true,
+          async text() {
+            return 'fake-answer-sdp';
+          }
+        };
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    const peerConnection = harness.getPeerConnection();
+    expect(peerConnection).not.toBeNull();
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    expect(harness.recordButton.disabled).toBe(true);
+    expect(harness.recordButton.classList.contains('game-view-icon-tab--busy')).toBe(true);
+
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      for (const intervalCallback of harness.intervalCallbacks) {
+        intervalCallback();
+      }
+    }
+    await flushAsyncOperations();
+
+    expect(harness.fetchCalls).toHaveLength(2);
+    expect(harness.mediaTrack.stopped).toBe(true);
+    expect(peerConnection?.closed).toBe(true);
+    expect(harness.recordButton.disabled).toBe(false);
+    expect(harness.recordButton.classList.contains('game-view-icon-tab--busy')).toBe(false);
+    expect(harness.recordButton.getAttribute('aria-label')).toBe('Start voice recording');
+    expect(harness.consoleLogs).toContainEqual(['[realtime-transcription] flush timeout fallback']);
+  });
+
   it('enables annotation drawing during recording and includes annotation PNG in prompt submit', async () => {
     const harness = await runGameViewScript(async (url) => {
       if (url === '/api/transcribe') {
@@ -1013,8 +1145,20 @@ describe('game view prompt submit client', () => {
         })
       })
     );
+    harness.intervalCallbacks[0]?.();
+    harness.intervalCallbacks[0]?.();
+    harness.intervalCallbacks[0]?.();
 
     harness.recordButton.dispatchEvent('click', createEvent());
+    expect(harness.recordButton.disabled).toBe(true);
+    peerConnection?.dataChannel.dispatchEvent(
+      'message',
+      createEvent({
+        data: JSON.stringify({
+          type: 'response.done'
+        })
+      })
+    );
     await flushAsyncOperations();
 
     expect(drawingContext.strokeStyleValue).toBe('rgba(250, 204, 21, 0.95)');
@@ -1090,7 +1234,17 @@ describe('game view prompt submit client', () => {
     expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 11, y: 17 });
     expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 38, y: 61 });
 
+    const peerConnection = harness.getPeerConnection();
     harness.recordButton.dispatchEvent('click', createEvent());
+    expect(harness.recordButton.disabled).toBe(true);
+    peerConnection?.dataChannel.dispatchEvent(
+      'message',
+      createEvent({
+        data: JSON.stringify({
+          type: 'response.done'
+        })
+      })
+    );
     await flushAsyncOperations();
     expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(false);
   });
@@ -1226,6 +1380,15 @@ describe('game view prompt submit client', () => {
     expect(harness.promptOverlay.scrollLeft).toBe(480);
 
     harness.recordButton.dispatchEvent('click', createEvent());
+    expect(harness.recordButton.disabled).toBe(true);
+    peerConnection?.dataChannel.dispatchEvent(
+      'message',
+      createEvent({
+        data: JSON.stringify({
+          type: 'response.done'
+        })
+      })
+    );
     await flushAsyncOperations();
 
     expect(harness.promptInput.value).toBe('');

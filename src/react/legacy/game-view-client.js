@@ -124,10 +124,22 @@ const pendingOverlayWords = [];
 let displayedOverlayWords = [];
 let overlayWordDrainIntervalId = null;
 const overlayWordDrainIntervalMs = 100;
+const realtimeStopFlushPollIntervalMs = 50;
+const realtimeStopFlushTimeoutMs = 2000;
+const realtimeStopFlushMaxPolls = Math.max(1, Math.ceil(realtimeStopFlushTimeoutMs / realtimeStopFlushPollIntervalMs));
+const realtimeStopFlushSignalTypes = new Set([
+  'input_audio_buffer.committed',
+  'input_audio_buffer.cleared',
+  'conversation.item.input_audio_transcription.completed',
+  'conversation.item.input_audio_transcription.failed',
+  'response.done',
+  'error'
+]);
 let annotationPointerId = null;
 let annotationStrokeInProgress = false;
 let annotationHasInk = false;
 let recordingStartGameScreenshotPngDataUrl = null;
+let realtimeStopFlushWaitState = null;
 
 
 function drawingContext() {
@@ -499,6 +511,71 @@ function drainOverlayWord() {
   updatePromptOverlay();
 }
 
+function settleRealtimeStopFlushWait(result) {
+  const flushWaitState = realtimeStopFlushWaitState;
+  if (!flushWaitState || flushWaitState.settled) {
+    return;
+  }
+
+  flushWaitState.settled = true;
+  if (typeof flushWaitState.intervalId === 'number') {
+    window.clearInterval(flushWaitState.intervalId);
+  }
+
+  realtimeStopFlushWaitState = null;
+  flushWaitState.resolve(result);
+}
+
+function maybeResolveRealtimeStopFlushWait() {
+  const flushWaitState = realtimeStopFlushWaitState;
+  if (!flushWaitState || flushWaitState.settled) {
+    return;
+  }
+
+  if (pendingOverlayWords.length > 0) {
+    drainOverlayWord();
+  }
+
+  const overlayDrainComplete = pendingOverlayWords.length === 0;
+  if (overlayDrainComplete && flushWaitState.flushSignalReceived) {
+    settleRealtimeStopFlushWait('completed');
+    return;
+  }
+
+  flushWaitState.pollsRemaining -= 1;
+  if (flushWaitState.pollsRemaining <= 0) {
+    settleRealtimeStopFlushWait('timeout');
+  }
+}
+
+function markRealtimeStopFlushSignal(payloadType) {
+  const flushWaitState = realtimeStopFlushWaitState;
+  if (!flushWaitState || flushWaitState.settled || !realtimeStopFlushSignalTypes.has(payloadType)) {
+    return;
+  }
+
+  flushWaitState.flushSignalReceived = true;
+  maybeResolveRealtimeStopFlushWait();
+}
+
+function waitForRealtimeStopFlush(initialFlushSignalReceived = false) {
+  return new Promise((resolve) => {
+    realtimeStopFlushWaitState = {
+      settled: false,
+      flushSignalReceived: initialFlushSignalReceived,
+      pollsRemaining: realtimeStopFlushMaxPolls,
+      intervalId: null,
+      resolve
+    };
+
+    realtimeStopFlushWaitState.intervalId = window.setInterval(() => {
+      maybeResolveRealtimeStopFlushWait();
+    }, realtimeStopFlushPollIntervalMs);
+
+    maybeResolveRealtimeStopFlushWait();
+  });
+}
+
 function ensureOverlayWordDrainLoop() {
   if (typeof overlayWordDrainIntervalId === 'number') {
     return;
@@ -560,13 +637,11 @@ function handleRealtimeDataChannelMessage(event) {
     return;
   }
 
-  if (payload.type !== 'conversation.item.input_audio_transcription.completed') {
-    return;
-  }
-
-  if (typeof payload.transcript === 'string') {
+  if (payload.type === 'conversation.item.input_audio_transcription.completed' && typeof payload.transcript === 'string') {
     appendCompletedTranscriptSegment(payload.transcript);
   }
+
+  markRealtimeStopFlushSignal(payload.type);
 }
 
 function csrfRequestHeaders() {
@@ -814,7 +889,8 @@ async function stopRealtimeRecording() {
   updateRecordButtonVisualState();
 
   try {
-    if (realtimeDataChannel && realtimeDataChannel.readyState === 'open') {
+    const hasOpenRealtimeDataChannel = Boolean(realtimeDataChannel && realtimeDataChannel.readyState === 'open');
+    if (hasOpenRealtimeDataChannel) {
       realtimeDataChannel.send(
         JSON.stringify({
           type: 'input_audio_buffer.commit'
@@ -822,9 +898,10 @@ async function stopRealtimeRecording() {
       );
     }
 
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, 200);
-    });
+    const flushOutcome = await waitForRealtimeStopFlush(!hasOpenRealtimeDataChannel);
+    if (flushOutcome === 'timeout') {
+      logRealtimeTranscription('flush timeout fallback');
+    }
 
     const transcribedPrompt = completedTranscriptionSegments.join(' ').trim();
     const annotationPngDataUrl = readAnnotationPngDataUrl();
