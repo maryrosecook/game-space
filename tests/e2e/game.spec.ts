@@ -115,6 +115,129 @@ test('game page passes a connected canvas to the starter module bootstrap', asyn
   });
 });
 
+test('game lifecycle teardown runs once across reload and unload via global handle', async ({ page }) => {
+  const storageKey = `starter-lifecycle-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+  await page.route('**/games/starter/dist/game.js', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/javascript',
+      body: `
+        const COUNTS_KEY = ${JSON.stringify(storageKey)};
+
+        function readCounts() {
+          try {
+            const raw = localStorage.getItem(COUNTS_KEY);
+            if (!raw) {
+              return { startCalls: 0, teardownCalls: 0, lastCanvasId: null };
+            }
+
+            const parsed = JSON.parse(raw);
+            if (
+              typeof parsed !== 'object' ||
+              parsed === null ||
+              typeof parsed.startCalls !== 'number' ||
+              typeof parsed.teardownCalls !== 'number'
+            ) {
+              return { startCalls: 0, teardownCalls: 0, lastCanvasId: null };
+            }
+
+            return {
+              startCalls: parsed.startCalls,
+              teardownCalls: parsed.teardownCalls,
+              lastCanvasId:
+                typeof parsed.lastCanvasId === 'string' || parsed.lastCanvasId === null
+                  ? parsed.lastCanvasId
+                  : null
+            };
+          } catch {
+            return { startCalls: 0, teardownCalls: 0, lastCanvasId: null };
+          }
+        }
+
+        function writeCounts(counts) {
+          localStorage.setItem(COUNTS_KEY, JSON.stringify(counts));
+        }
+
+        window.__starterLifecycleReadCounts = () => readCounts();
+
+        export function startGame(canvas) {
+          const counts = readCounts();
+          counts.startCalls += 1;
+          counts.lastCanvasId = canvas instanceof HTMLCanvasElement ? canvas.id : null;
+          writeCounts(counts);
+
+          return () => {
+            const nextCounts = readCounts();
+            nextCounts.teardownCalls += 1;
+            writeCounts(nextCounts);
+          };
+        }
+      `,
+    });
+  });
+
+  async function readLifecycleState() {
+    return page.evaluate(() => {
+      const windowWithState = window as Window & {
+        __starterLifecycleReadCounts?: () => {
+          startCalls: number;
+          teardownCalls: number;
+          lastCanvasId: string | null;
+        };
+        __gameSpaceTeardownActiveGame?: () => void;
+      };
+
+      const countsReader = windowWithState.__starterLifecycleReadCounts;
+      const counts = typeof countsReader === 'function' ? countsReader() : null;
+      return {
+        counts,
+        hasGlobalTeardownHandle: typeof windowWithState.__gameSpaceTeardownActiveGame === 'function',
+      };
+    });
+  }
+
+  await page.goto('/game/starter');
+  await expect.poll(async () => (await readLifecycleState()).counts).toEqual({
+    startCalls: 1,
+    teardownCalls: 0,
+    lastCanvasId: 'game-canvas',
+  });
+  await expect.poll(async () => (await readLifecycleState()).hasGlobalTeardownHandle).toBe(true);
+
+  await page.goto('/game/starter?lifecycle=reload');
+  await expect.poll(async () => (await readLifecycleState()).counts).toEqual({
+    startCalls: 2,
+    teardownCalls: 1,
+    lastCanvasId: 'game-canvas',
+  });
+
+  const countsAfterUnloadSignals = await page.evaluate(() => {
+    const windowWithState = window as Window & {
+      __starterLifecycleReadCounts?: () => {
+        startCalls: number;
+        teardownCalls: number;
+        lastCanvasId: string | null;
+      };
+      __gameSpaceTeardownActiveGame?: () => void;
+    };
+
+    window.dispatchEvent(new Event('beforeunload'));
+    window.dispatchEvent(new Event('pagehide'));
+    window.dispatchEvent(new Event('unload'));
+    windowWithState.__gameSpaceTeardownActiveGame?.();
+    windowWithState.__gameSpaceTeardownActiveGame?.();
+
+    return windowWithState.__starterLifecycleReadCounts?.() ?? null;
+  });
+
+  expect(countsAfterUnloadSignals).toEqual({
+    startCalls: 2,
+    teardownCalls: 2,
+    lastCanvasId: 'game-canvas',
+  });
+});
+
 test('admin game page does not emit React hydration mismatch errors', async ({ page }) => {
   await loginAsAdmin(page);
 
