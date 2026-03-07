@@ -57,7 +57,7 @@ export type IdeasPageData = {
   initialBaseGameVersionId: string;
   lightbulbIdeaIcon: string;
   rocketIdeaIcon: string;
-  trashIdeaIcon: string;
+  archiveIdeaIcon: string;
 };
 
 export type GamePageData = {

@@ -101,14 +101,14 @@ References:
 - After successful prompt execution, may write `games/<forkId>/snapshots/tile.png` and update `metadata.json.tileSnapshotPath`.
 
 `POST /api/ideas/generate`
-- Prepends a new entry in root `ideas.json`: `{ prompt, hasBeenBuilt: false }`.
+- Prepends a new entry in root `ideas.json`: `{ prompt, hasBeenBuilt: false, archived: false }`.
 
 `POST /api/ideas/:ideaIndex/build`
 - Uses `games/starter` as source for fork creation.
-- Updates `ideas.json` built-state and creates fork in `games/<forkId>/`.
+- Resolves `ideaIndex` against unarchived ideas, updates built-state in persisted history, and creates fork in `games/<forkId>/`.
 
 `DELETE /api/ideas/:ideaIndex`
-- Removes the indexed entry from root `ideas.json`.
+- Resolves `ideaIndex` against unarchived ideas and sets `archived: true` on the selected persisted entry.
 
 References:
 - `src/app.ts`
@@ -145,10 +145,11 @@ Path:
 On-disk format:
 ```json
 [
-  { "prompt": "non-empty string", "hasBeenBuilt": false }
+  { "prompt": "non-empty string", "hasBeenBuilt": false, "archived": false }
 ]
 ```
 - `hasBeenBuilt` is a boolean (`false` before build, `true` after build).
+- `archived` is optional on legacy entries and defaults to `false` when omitted.
 
 Read normalization:
 - Missing file (`ENOENT`) => `[]`.
@@ -159,9 +160,9 @@ Write format:
 - Pretty JSON (2-space indent) + trailing newline.
 
 Mutation invariants:
-- Generate prepends new `{ prompt, hasBeenBuilt: false }`.
-- Build validates `ideaIndex`, requires starter game, marks selected idea built.
-- Delete validates `ideaIndex`, removes selected entry.
+- Generate prepends new `{ prompt, hasBeenBuilt: false, archived: false }`.
+- Build validates `ideaIndex` against active (unarchived) ideas, requires starter game, marks selected idea built.
+- Delete validates `ideaIndex` against active (unarchived) ideas, marks selected entry archived, and preserves history.
 
 References:
 - `src/services/ideas.ts`

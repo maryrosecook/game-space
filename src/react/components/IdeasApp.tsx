@@ -15,15 +15,15 @@ type IdeasAppProps = {
   onSelectBaseGame?: (baseGameVersionId: string) => void;
   onToggleBaseGameSelector?: () => void;
   onBuild?: (ideaIndex: number) => void;
-  onDelete?: (ideaIndex: number) => void;
+  onArchive?: (ideaIndex: number) => void;
   baseGameSelectorRef?: RefObject<HTMLDivElement | null>;
   isBaseGameSelectorOpen?: boolean;
 };
 
 function renderIdeasList(
   ideas: readonly IdeasIdea[],
-  icons: { build: string; remove: string },
-  handlers: { onBuild?: (ideaIndex: number) => void; onDelete?: (ideaIndex: number) => void },
+  icons: { build: string; archive: string },
+  handlers: { onBuild?: (ideaIndex: number) => void; onArchive?: (ideaIndex: number) => void },
 ) {
   if (ideas.length === 0) {
     return <p className="codex-empty">No ideas yet. Generate one to get started.</p>;
@@ -51,12 +51,12 @@ function renderIdeasList(
             <button
               className="idea-action-button idea-action-button--danger"
               type="button"
-              data-action="delete"
+              data-action="archive"
               data-idea-index={index}
-              aria-label="Delete idea"
-              onClick={() => handlers.onDelete?.(index)}
+              aria-label="Archive idea"
+              onClick={() => handlers.onArchive?.(index)}
             >
-              <IconMarkup markup={icons.remove} />
+              <IconMarkup markup={icons.archive} />
             </button>
           </div>
         </li>
@@ -124,7 +124,7 @@ export function IdeasApp({
   onSelectBaseGame,
   onToggleBaseGameSelector,
   onBuild,
-  onDelete,
+  onArchive,
   baseGameSelectorRef,
   isBaseGameSelectorOpen,
 }: IdeasAppProps) {
@@ -198,8 +198,8 @@ export function IdeasApp({
       <section id="ideas-list-root" aria-live="polite">
         {renderIdeasList(
           data.ideas,
-          { build: data.rocketIdeaIcon, remove: data.trashIdeaIcon },
-          { onBuild, onDelete },
+          { build: data.rocketIdeaIcon, archive: data.archiveIdeaIcon },
+          { onBuild, onArchive },
         )}
       </section>
     </main>

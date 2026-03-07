@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import { Lightbulb, Rocket, Trash2, type IconNode } from 'lucide';
+import { Archive, Lightbulb, Rocket, type IconNode } from 'lucide';
 import { cookies, headers } from 'next/headers';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
@@ -28,15 +28,15 @@ export const metadata: Metadata = {
   title: 'Ideas',
 };
 
-type LucideIconName = 'lightbulb' | 'rocket' | 'trash-2';
+type LucideIconName = 'archive' | 'lightbulb' | 'rocket';
 
 const IDEAS_STARTER_VERSION_ID = 'starter';
 const DEFAULT_TILE_COLOR = '#1D3557';
 
 const LUCIDE_ICON_NODES: Record<LucideIconName, IconNode> = {
+  archive: Archive,
   lightbulb: Lightbulb,
   rocket: Rocket,
-  'trash-2': Trash2,
 };
 
 function escapeHtml(value: string): string {
@@ -105,7 +105,7 @@ async function ensurePageCsrfToken(cookieHeader: string | undefined): Promise<st
 function renderBodySetupScript(options: {
   csrfToken: string;
   ideaBuildIcon: string;
-  ideaDeleteIcon: string;
+  ideaArchiveIcon: string;
 }): string {
   const serializedOptions = serializePageData(options);
 
@@ -115,7 +115,8 @@ function renderBodySetupScript(options: {
     body.className = 'codex-page';
     body.dataset.csrfToken = options.csrfToken;
     body.dataset.ideaBuildIcon = options.ideaBuildIcon;
-    body.dataset.ideaDeleteIcon = options.ideaDeleteIcon;
+    body.dataset.ideaArchiveIcon = options.ideaArchiveIcon;
+    delete body.dataset.ideaDeleteIcon;
     delete body.dataset.versionId;
     delete body.dataset.gameFavorited;
     delete body.dataset.codegenProvider;
@@ -182,7 +183,7 @@ export default async function IdeasPage() {
     initialBaseGameVersionId: IDEAS_STARTER_VERSION_ID,
     lightbulbIdeaIcon: renderLucideIcon('lightbulb', 'idea-icon'),
     rocketIdeaIcon: renderLucideIcon('rocket', 'idea-icon'),
-    trashIdeaIcon: renderLucideIcon('trash-2', 'idea-icon'),
+    archiveIdeaIcon: renderLucideIcon('archive', 'idea-icon'),
   };
 
   return (
@@ -193,7 +194,7 @@ export default async function IdeasPage() {
           __html: renderBodySetupScript({
             csrfToken,
             ideaBuildIcon: ideasData.rocketIdeaIcon,
-            ideaDeleteIcon: ideasData.trashIdeaIcon,
+            ideaArchiveIcon: ideasData.archiveIdeaIcon,
           }),
         }}
       />

@@ -214,7 +214,7 @@ export async function generateIdea(
   };
 }
 
-export async function deleteIdea(csrfToken: string, ideaIndex: number): Promise<{ ok: boolean; status: number; ideas: IdeasIdea[] | null }> {
+export async function archiveIdea(csrfToken: string, ideaIndex: number): Promise<{ ok: boolean; status: number; ideas: IdeasIdea[] | null }> {
   let response: Response;
   try {
     response = await fetch(`/api/ideas/${encodeURIComponent(String(ideaIndex))}`, {

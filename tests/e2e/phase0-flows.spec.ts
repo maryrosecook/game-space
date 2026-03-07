@@ -10,6 +10,7 @@ const ONE_BY_ONE_PNG_BASE64 =
 type GameIdea = {
   prompt: string;
   hasBeenBuilt: boolean;
+  archived?: boolean;
 };
 
 type ForkMetadata = {
@@ -197,13 +198,14 @@ test('ideas generate action sends csrf, selected base game, and renders returned
   }
 });
 
-test('ideas build and delete actions trigger backend mutations from the UI', async ({ page }) => {
+test('ideas build and archive actions trigger backend mutations from the UI', async ({ page }) => {
   const originalIdeasContents = await fs.readFile(IDEAS_PATH, 'utf8');
   let forkedVersionId: string | null = null;
-  let deleteRequestCount = 0;
+  let archiveRequestCount = 0;
 
   try {
     await writeIdeasFile([
+      { prompt: 'phase0 hidden archived', hasBeenBuilt: false, archived: true },
       { prompt: 'phase0 seed alpha', hasBeenBuilt: false },
       { prompt: 'phase0 seed beta', hasBeenBuilt: false },
     ]);
@@ -245,21 +247,21 @@ test('ideas build and delete actions trigger backend mutations from the UI', asy
       }
 
       if (/^\/api\/ideas\/\d+$/.test(pathnameFromUrl(request.url()))) {
-        deleteRequestCount += 1;
+        archiveRequestCount += 1;
       }
     });
 
-    const ideaToDelete = page.locator('.idea-row', { hasText: 'phase0 seed beta' });
-    await expect(ideaToDelete).toBeVisible();
+    const ideaToArchive = page.locator('.idea-row', { hasText: 'phase0 seed beta' });
+    await expect(ideaToArchive).toBeVisible();
 
     page.once('dialog', (dialog) => {
       void dialog.dismiss();
     });
-    await ideaToDelete.getByRole('button', { name: 'Delete idea' }).click();
-    await expect.poll(() => deleteRequestCount).toBe(0);
-    await expect(ideaToDelete).toBeVisible();
+    await ideaToArchive.getByRole('button', { name: 'Archive idea' }).click();
+    await expect.poll(() => archiveRequestCount).toBe(0);
+    await expect(ideaToArchive).toBeVisible();
 
-    const deleteResponsePromise = page.waitForResponse((response) => {
+    const archiveResponsePromise = page.waitForResponse((response) => {
       if (response.request().method() !== 'DELETE') {
         return false;
       }
@@ -269,11 +271,20 @@ test('ideas build and delete actions trigger backend mutations from the UI', asy
     page.once('dialog', (dialog) => {
       void dialog.accept();
     });
-    await ideaToDelete.getByRole('button', { name: 'Delete idea' }).click();
-    const deleteResponse = await deleteResponsePromise;
-    expect(deleteResponse.status()).toBe(200);
-    await expect(ideaToDelete).toHaveCount(0);
-    await expect.poll(() => deleteRequestCount).toBe(1);
+    await ideaToArchive.getByRole('button', { name: 'Archive idea' }).click();
+    const archiveResponse = await archiveResponsePromise;
+    expect(archiveResponse.status()).toBe(200);
+    await expect(ideaToArchive).toHaveCount(0);
+    await expect.poll(() => archiveRequestCount).toBe(1);
+
+    const persistedIdeas = JSON.parse(await fs.readFile(IDEAS_PATH, 'utf8')) as GameIdea[];
+    expect(persistedIdeas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ prompt: 'phase0 hidden archived', archived: true }),
+        expect.objectContaining({ prompt: 'phase0 seed alpha', archived: false }),
+        expect.objectContaining({ prompt: 'phase0 seed beta', archived: true }),
+      ]),
+    );
   } finally {
     await fs.writeFile(IDEAS_PATH, originalIdeasContents, 'utf8');
     await waitForForkSessionStatusToSettle(forkedVersionId);

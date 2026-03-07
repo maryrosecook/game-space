@@ -32,7 +32,13 @@ import {
 } from './gameVersions';
 import { isAllowedGamesRuntimeAssetPath } from './gameAssetAllowlist';
 import { generateIdeaPrompt } from './ideaGeneration';
-import { readIdeasFile, writeIdeasFile } from './ideas';
+import {
+  readIdeasFile,
+  readStoredIdeasFile,
+  resolveStoredIdeaIndexFromActiveIndex,
+  toActiveIdeas,
+  writeIdeasFile,
+} from './ideas';
 import {
   DEFAULT_REALTIME_MODEL,
   OpenAiRealtimeTranscriptionSessionFactory,
@@ -733,13 +739,13 @@ export async function handleApiIdeasGeneratePost(request: Request): Promise<Resp
       abortController.signal,
     );
 
-    const ideas = await readIdeasFile(runtimePaths.ideasPath);
-    const nextIdeas = [{ prompt, hasBeenBuilt: false }, ...ideas];
+    const ideas = await readStoredIdeasFile(runtimePaths.ideasPath);
+    const nextIdeas = [{ prompt, hasBeenBuilt: false, archived: false }, ...ideas];
     await writeIdeasFile(runtimePaths.ideasPath, nextIdeas);
 
     return jsonResponse(201, {
       prompt,
-      ideas: nextIdeas,
+      ideas: toActiveIdeas(nextIdeas),
     });
   } catch (error: unknown) {
     if (error instanceof Error && error.message === 'codex ideation command aborted') {
@@ -768,12 +774,13 @@ export async function handleApiIdeasBuildPost(request: Request, ideaIndex: strin
     return jsonResponse(503, { error: 'Starter game is not available' });
   }
 
-  const ideas = await readIdeasFile(runtimePaths.ideasPath);
-  if (parsedIdeaIndex >= ideas.length) {
+  const ideas = await readStoredIdeasFile(runtimePaths.ideasPath);
+  const storedIdeaIndex = resolveStoredIdeaIndexFromActiveIndex(ideas, parsedIdeaIndex);
+  if (storedIdeaIndex === null) {
     return jsonResponse(404, { error: 'Idea not found' });
   }
 
-  const idea = ideas[parsedIdeaIndex];
+  const idea = ideas[storedIdeaIndex];
   if (!idea) {
     return jsonResponse(404, { error: 'Idea not found' });
   }
@@ -792,7 +799,7 @@ export async function handleApiIdeasBuildPost(request: Request, ideaIndex: strin
   });
 
   const nextIdeas = ideas.map((entry, index) =>
-    index === parsedIdeaIndex
+    index === storedIdeaIndex
       ? {
           ...entry,
           hasBeenBuilt: true,
@@ -803,11 +810,11 @@ export async function handleApiIdeasBuildPost(request: Request, ideaIndex: strin
 
   return jsonResponse(202, {
     forkId: submitResult.forkId,
-    ideas: nextIdeas,
+    ideas: toActiveIdeas(nextIdeas),
   });
 }
 
-export async function handleApiIdeasDelete(request: Request, ideaIndex: string): Promise<Response> {
+export async function handleApiIdeasArchive(request: Request, ideaIndex: string): Promise<Response> {
   const authFailureResponse = await requireAdminMutationAccess(request);
   if (authFailureResponse) {
     return authFailureResponse;
@@ -819,16 +826,24 @@ export async function handleApiIdeasDelete(request: Request, ideaIndex: string):
   }
 
   const runtimePaths = readRuntimePaths();
-  const ideas = await readIdeasFile(runtimePaths.ideasPath);
-  if (parsedIdeaIndex >= ideas.length) {
+  const ideas = await readStoredIdeasFile(runtimePaths.ideasPath);
+  const storedIdeaIndex = resolveStoredIdeaIndexFromActiveIndex(ideas, parsedIdeaIndex);
+  if (storedIdeaIndex === null) {
     return jsonResponse(404, { error: 'Idea not found' });
   }
 
-  const nextIdeas = ideas.filter((_entry, index) => index !== parsedIdeaIndex);
+  const nextIdeas = ideas.map((entry, index) =>
+    index === storedIdeaIndex
+      ? {
+          ...entry,
+          archived: true,
+        }
+      : entry,
+  );
   await writeIdeasFile(runtimePaths.ideasPath, nextIdeas);
 
   return jsonResponse(200, {
-    ideas: nextIdeas,
+    ideas: toActiveIdeas(nextIdeas),
   });
 }
 

@@ -7,13 +7,18 @@ export type GameIdea = {
   hasBeenBuilt: boolean;
 };
 
-function normalizeIdea(value: unknown): GameIdea | null {
+export type StoredGameIdea = GameIdea & {
+  archived: boolean;
+};
+
+function normalizeIdea(value: unknown): StoredGameIdea | null {
   if (!isObjectRecord(value)) {
     return null;
   }
 
   const prompt = value.prompt;
   const hasBeenBuilt = value.hasBeenBuilt;
+  const archived = value.archived;
 
   if (typeof prompt !== 'string') {
     return null;
@@ -28,13 +33,56 @@ function normalizeIdea(value: unknown): GameIdea | null {
     return null;
   }
 
+  const normalizedArchived =
+    typeof archived === 'undefined' ? false : typeof archived === 'boolean' ? archived : null;
+  if (normalizedArchived === null) {
+    return null;
+  }
+
   return {
     prompt: normalizedPrompt,
-    hasBeenBuilt
+    hasBeenBuilt,
+    archived: normalizedArchived,
   };
 }
 
-export async function readIdeasFile(ideasPath: string): Promise<GameIdea[]> {
+export function toActiveIdeas(ideas: readonly StoredGameIdea[]): GameIdea[] {
+  const activeIdeas: GameIdea[] = [];
+  for (const idea of ideas) {
+    if (idea.archived) {
+      continue;
+    }
+
+    activeIdeas.push({
+      prompt: idea.prompt,
+      hasBeenBuilt: idea.hasBeenBuilt,
+    });
+  }
+
+  return activeIdeas;
+}
+
+export function resolveStoredIdeaIndexFromActiveIndex(
+  ideas: readonly StoredGameIdea[],
+  activeIdeaIndex: number,
+): number | null {
+  let currentActiveIdeaIndex = 0;
+  for (const [storedIdeaIndex, idea] of ideas.entries()) {
+    if (idea.archived) {
+      continue;
+    }
+
+    if (currentActiveIdeaIndex === activeIdeaIndex) {
+      return storedIdeaIndex;
+    }
+
+    currentActiveIdeaIndex += 1;
+  }
+
+  return null;
+}
+
+export async function readStoredIdeasFile(ideasPath: string): Promise<StoredGameIdea[]> {
   let serializedIdeas: string;
   try {
     serializedIdeas = await fs.readFile(ideasPath, 'utf8');
@@ -57,7 +105,7 @@ export async function readIdeasFile(ideasPath: string): Promise<GameIdea[]> {
     return [];
   }
 
-  const ideas: GameIdea[] = [];
+  const ideas: StoredGameIdea[] = [];
   for (const rawIdea of rawIdeas) {
     const normalizedIdea = normalizeIdea(rawIdea);
     if (normalizedIdea) {
@@ -68,6 +116,14 @@ export async function readIdeasFile(ideasPath: string): Promise<GameIdea[]> {
   return ideas;
 }
 
-export async function writeIdeasFile(ideasPath: string, ideas: readonly GameIdea[]): Promise<void> {
+export async function readIdeasFile(ideasPath: string): Promise<GameIdea[]> {
+  const storedIdeas = await readStoredIdeasFile(ideasPath);
+  return toActiveIdeas(storedIdeas);
+}
+
+export async function writeIdeasFile(
+  ideasPath: string,
+  ideas: readonly StoredGameIdea[],
+): Promise<void> {
   await fs.writeFile(ideasPath, `${JSON.stringify(ideas, null, 2)}\n`, 'utf8');
 }

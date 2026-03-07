@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { buildIdea, deleteIdea, fetchIdeas, generateIdea } from '../../../src/react/api/client';
+import { archiveIdea, buildIdea, fetchIdeas, generateIdea } from '../../../src/react/api/client';
 import { IdeasApp } from '../../../src/react/components/IdeasApp';
 import type { IdeasBaseGameOption, IdeasIdea, IdeasPageData } from '../../../src/react/types';
 
@@ -38,12 +38,13 @@ export function IdeasPageClient({ initialData }: IdeasPageClientProps) {
     body.className = 'codex-page';
     body.dataset.csrfToken = initialData.csrfToken;
     body.dataset.ideaBuildIcon = initialData.rocketIdeaIcon;
-    body.dataset.ideaDeleteIcon = initialData.trashIdeaIcon;
+    body.dataset.ideaArchiveIcon = initialData.archiveIdeaIcon;
+    delete body.dataset.ideaDeleteIcon;
     delete body.dataset.versionId;
     delete body.dataset.gameFavorited;
     delete body.dataset.codegenProvider;
     body.style.removeProperty('--game-tile-color');
-  }, [initialData.csrfToken, initialData.rocketIdeaIcon, initialData.trashIdeaIcon]);
+  }, [initialData.archiveIdeaIcon, initialData.csrfToken, initialData.rocketIdeaIcon]);
 
   const syncIdeasState = useCallback(async () => {
     const response = await fetchIdeas(initialData.csrfToken);
@@ -127,14 +128,14 @@ export function IdeasPageClient({ initialData }: IdeasPageClientProps) {
     };
   }, [isBaseGameSelectorOpen]);
 
-  const onDelete = useCallback(
+  const onArchive = useCallback(
     (ideaIndex: number) => {
-      if (!window.confirm('Delete this idea?')) {
+      if (!window.confirm('Archive this idea?')) {
         return;
       }
 
       void (async () => {
-        const response = await deleteIdea(initialData.csrfToken, ideaIndex);
+        const response = await archiveIdea(initialData.csrfToken, ideaIndex);
         if (response.ok && response.ideas !== null) {
           setIdeas(response.ideas);
         }
@@ -190,7 +191,7 @@ export function IdeasPageClient({ initialData }: IdeasPageClientProps) {
       onSelectBaseGame={onSelectBaseGame}
       onToggleBaseGameSelector={onToggleBaseGameSelector}
       onBuild={onBuild}
-      onDelete={onDelete}
+      onArchive={onArchive}
       baseGameSelectorRef={baseGameSelectorRef}
       isBaseGameSelectorOpen={isBaseGameSelectorOpen}
     />

@@ -74,6 +74,7 @@ export function CodexPageClient({ initialData }: CodexPageClientProps) {
     delete body.dataset.csrfToken;
     delete body.dataset.gameFavorited;
     delete body.dataset.ideaBuildIcon;
+    delete body.dataset.ideaArchiveIcon;
     delete body.dataset.ideaDeleteIcon;
     body.style.removeProperty('--game-tile-color');
   }, [initialData.codegenProvider]);

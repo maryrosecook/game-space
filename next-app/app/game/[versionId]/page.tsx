@@ -161,6 +161,7 @@ function renderBodySetupScript(options: {
     body.dataset.gameFavorited = options.gameFavorited ? 'true' : 'false';
     body.dataset.codegenProvider = options.codegenProvider;
     delete body.dataset.ideaBuildIcon;
+    delete body.dataset.ideaArchiveIcon;
     delete body.dataset.ideaDeleteIcon;
     delete body.dataset.gameReactHydrated;
     body.style.setProperty('--game-tile-color', options.tileColor);

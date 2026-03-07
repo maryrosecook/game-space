@@ -1,4 +1,4 @@
-import { handleApiIdeasDelete } from '../../../../../src/services/nextBackendHandlers';
+import { handleApiIdeasArchive } from '../../../../../src/services/nextBackendHandlers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,5 +9,5 @@ type RouteContext = {
 
 export async function DELETE(request: Request, context: RouteContext): Promise<Response> {
   const { ideaIndex } = await context.params;
-  return handleApiIdeasDelete(request, ideaIndex);
+  return handleApiIdeasArchive(request, ideaIndex);
 }
