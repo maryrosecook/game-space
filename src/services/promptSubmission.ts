@@ -23,7 +23,32 @@ const MAX_ANNOTATION_PNG_BYTES = 1024 * 1024;
 const MAX_GAME_SCREENSHOT_PNG_BYTES = 3 * 1024 * 1024;
 
 const TILE_SNAPSHOT_PROTOCOL = {
-  steps: [{ run: 120 }, { snap: 'tile' }],
+  steps: [
+    { run: 90 },
+    {
+      input: {
+        action: 'down',
+        pointerId: 1,
+        x: 0.5,
+        y: 0.5,
+        space: 'norm01',
+        emit: 'touch',
+      },
+    },
+    { run: 20 },
+    {
+      input: {
+        action: 'up',
+        pointerId: 1,
+        x: 0.5,
+        y: 0.5,
+        space: 'norm01',
+        emit: 'touch',
+      },
+    },
+    { run: 10 },
+    { snap: 'tile' },
+  ],
 };
 
 type HeadlessSnapshotResult = {
