@@ -49,6 +49,11 @@ describe('repo automation configuration', () => {
     expect(packageJson).toContain('"start": "npm run dev"');
   });
 
+  it('defines a pull-games script for syncing remote game directories over ssh', async () => {
+    const packageJson = await readRepoFile('package.json');
+    expect(packageJson).toContain('"pull-games": "tsx scripts/pull-games.ts"');
+  });
+
   it('defines conductor setup and run scripts for this repo', async () => {
     const text = await readRepoFile('conductor.json');
     const config = parseConductorConfig(JSON.parse(text));

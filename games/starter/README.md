@@ -1,8 +1,10 @@
 # Starter Game
 
-This starter now ships with a minimal engine core that mirrors key game-framework runtime concepts (engine loop, blueprints, touch input, particles, render, and camera) without editor/GUI tooling.
-The default scene is a single night-blue bouncing ball with foreground fire-colored rain particles.
-It is mobile-first and uses touch-first input.
+## The Game
+
+This starter ships with a minimal engine core that mirrors key game-framework runtime concepts (engine loop, blueprints, touch input, particles, render, and camera) without editor/GUI tooling.
+The default scene intentionally contains no game objects and no particles.
+It renders only the background color so new games can start from a blank state.
 
 ## Scope and flexibility
 
@@ -39,11 +41,6 @@ Keep `dist/` gitignored.
 3. Add or modify blueprint `create`/`input`/`update` handlers for your game loop behavior.
 4. If you need real collisions or physics, replace `createNoopPhysicsAdapter()` with your own adapter in `engine.ts` dependencies.
 5. Keep touch controls in blueprint input handlers to stay mobile-first.
-
-## Starter touch controls
-
-- Touch and hold left/right side: nudge horizontal velocity.
-- Touch and hold top/bottom side: nudge vertical velocity.
 
 ## Headless debugging scripts
 
