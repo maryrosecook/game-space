@@ -62,8 +62,71 @@ const initialUiState = Object.freeze({
   recordingInProgress: false,
   transcriptionInFlight: false
 });
+const promptDraftStorageKeyPrefix = 'game-space:prompt-draft:';
 
 let uiState = initialUiState;
+
+function promptDraftStorageKey() {
+  if (typeof versionId !== 'string' || versionId.length === 0) {
+    return null;
+  }
+
+  return `${promptDraftStorageKeyPrefix}${versionId}`;
+}
+
+function promptDraftStorage() {
+  if (typeof window !== 'object' || window === null || !('localStorage' in window)) {
+    return null;
+  }
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function writePromptDraftToStorage(promptDraft) {
+  const storageKey = promptDraftStorageKey();
+  const storage = promptDraftStorage();
+  if (!storageKey || !storage) {
+    return;
+  }
+
+  try {
+    if (typeof promptDraft === 'string' && promptDraft.length > 0) {
+      storage.setItem(storageKey, promptDraft);
+      return;
+    }
+
+    storage.removeItem(storageKey);
+  } catch {
+    // Keep draft persistence non-blocking if storage is unavailable.
+  }
+}
+
+function clearPromptDraftFromStorage() {
+  writePromptDraftToStorage('');
+}
+
+function restorePromptDraftFromStorage() {
+  const storageKey = promptDraftStorageKey();
+  const storage = promptDraftStorage();
+  if (!storageKey || !storage) {
+    return;
+  }
+
+  try {
+    const storedDraft = storage.getItem(storageKey);
+    if (typeof storedDraft !== 'string' || storedDraft.length === 0) {
+      return;
+    }
+
+    promptInput.value = storedDraft;
+  } catch {
+    // Keep draft persistence non-blocking if storage is unavailable.
+  }
+}
 
 function reduceUiState(state, action) {
   switch (action.type) {
@@ -612,6 +675,7 @@ function appendCompletedTranscriptSegment(transcriptSegment) {
 
   if (uiState.editPanelOpen) {
     promptInput.value = completedTranscriptionSegments.join(' ').trim();
+    writePromptDraftToStorage(promptInput.value);
     resizePromptInput();
     focusPromptInput();
   }
@@ -969,7 +1033,12 @@ function applyBottomPanelState() {
   document.body.classList.toggle('game-page--codex-expanded', uiState.codexPanelExpanded);
 
   if (uiState.editPanelOpen) {
-    promptInput.value = completedTranscriptionSegments.join(' ').trim();
+    const transcribedPrompt = completedTranscriptionSegments.join(' ').trim();
+    if (transcribedPrompt.length > 0) {
+      promptInput.value = transcribedPrompt;
+      writePromptDraftToStorage(promptInput.value);
+    }
+
     resizePromptInput();
     updateEditDrawerHeight();
   }
@@ -1176,15 +1245,17 @@ async function submitPrompt(prompt, annotationPngDataUrl = null, gameScreenshotP
   });
 
   if (!response.ok) {
-    return;
+    return false;
   }
 
   const payload = await response.json();
   if (!payload || typeof payload !== 'object' || typeof payload.forkId !== 'string') {
-    return;
+    return false;
   }
 
+  clearPromptDraftFromStorage();
   window.location.assign(`/game/${encodeURIComponent(payload.forkId)}`);
+  return true;
 }
 
 function resizePromptInput() {
@@ -1215,6 +1286,7 @@ function initializeGameViewControls() {
 
   hasInitializedGameViewControls = true;
 
+  restorePromptDraftFromStorage();
   applyBottomPanelState();
   resizePromptInput();
   updateEditDrawerHeight();
@@ -1257,7 +1329,14 @@ function initializeGameViewControls() {
     focusPromptInput();
   });
 
+  promptForm.addEventListener('reset', () => {
+    promptInput.value = '';
+    clearPromptDraftFromStorage();
+    resizePromptInput();
+  });
+
   promptInput.addEventListener('input', () => {
+    writePromptDraftToStorage(promptInput.value);
     resizePromptInput();
   });
 

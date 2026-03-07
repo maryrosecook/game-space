@@ -395,6 +395,7 @@ type GameViewHarness = {
   getPeerConnection: () => TestRTCPeerConnection | null;
   mediaTrack: TestMediaStreamTrack;
   getUserMediaCalls: () => number;
+  readLocalStorageItem: (key: string) => string | null;
 };
 
 type RunGameViewOptions = {
@@ -403,6 +404,9 @@ type RunGameViewOptions = {
   gameFavorited?: boolean;
   gameReactHydrated?: boolean;
   codegenProvider?: string;
+  versionId?: string;
+  localStorageEntries?: Record<string, string>;
+  localStorageAvailable?: boolean;
 };
 
 function createEvent(overrides: Partial<TestEvent> = {}): TestEvent {
@@ -432,11 +436,14 @@ async function runGameViewScript(
   fetchImplementation: FetchImplementation,
   options: RunGameViewOptions = {}
 ): Promise<GameViewHarness> {
+  const versionId = options.versionId ?? 'source-version';
   const csrfToken = Object.hasOwn(options, 'csrfToken') ? options.csrfToken : 'csrf-token-123';
   const startTranscriptPolling = options.startTranscriptPolling ?? false;
   const gameFavorited = options.gameFavorited ?? false;
   const gameReactHydrated = options.gameReactHydrated ?? true;
   const codegenProvider = options.codegenProvider;
+  const localStorageEntries = options.localStorageEntries ?? {};
+  const localStorageAvailable = options.localStorageAvailable ?? true;
   const promptPanel = new TestHTMLElement();
   const promptForm = new TestHTMLFormElement();
   const promptInput = new TestHTMLInputElement();
@@ -452,7 +459,7 @@ async function runGameViewScript(
   const promptDrawingCanvas = new TestHTMLCanvasElement();
   const gameCanvas = new TestHTMLCanvasElement();
 
-  const document = new TestDocument('source-version', csrfToken, gameFavorited, gameReactHydrated, codegenProvider);
+  const document = new TestDocument(versionId, csrfToken, gameFavorited, gameReactHydrated, codegenProvider);
   document.registerElement('prompt-panel', promptPanel);
   document.registerElement('prompt-form', promptForm);
   document.registerElement('prompt-input', promptInput);
@@ -476,6 +483,7 @@ async function runGameViewScript(
   const mediaTrack = new TestMediaStreamTrack();
   const mediaStream = new TestMediaStream([mediaTrack]);
   let getUserMediaCalls = 0;
+  const localStorageState = new Map<string, string>(Object.entries(localStorageEntries));
   let transcriptTitle: string | null = null;
   const renderTranscriptCalls: TranscriptRenderCall[] = [];
   let scrollToBottomCalls = 0;
@@ -535,6 +543,30 @@ async function runGameViewScript(
       windowEventListeners.set(event, [listener]);
     }
   };
+
+  const localStorageApi = {
+    getItem(key: string): string | null {
+      return localStorageState.get(String(key)) ?? null;
+    },
+    setItem(key: string, value: string): void {
+      localStorageState.set(String(key), String(value));
+    },
+    removeItem(key: string): void {
+      localStorageState.delete(String(key));
+    }
+  };
+
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    enumerable: true,
+    get(): unknown {
+      if (!localStorageAvailable) {
+        throw new Error('localStorage unavailable');
+      }
+
+      return localStorageApi;
+    }
+  });
 
   const scriptPath = path.join(process.cwd(), 'src/react/legacy/game-view-client.js');
   const source = await readFile(scriptPath, 'utf8');
@@ -620,8 +652,15 @@ async function runGameViewScript(
     },
     getPeerConnection: () => TestRTCPeerConnection.latestInstance,
     mediaTrack,
-    getUserMediaCalls: () => getUserMediaCalls
+    getUserMediaCalls: () => getUserMediaCalls,
+    readLocalStorageItem(key: string): string | null {
+      return localStorageState.get(key) ?? null;
+    }
   };
+}
+
+function promptDraftStorageKey(versionId: string): string {
+  return `game-space:prompt-draft:${versionId}`;
 }
 
 describe('game view prompt submit client', () => {
@@ -640,6 +679,139 @@ describe('game view prompt submit client', () => {
     harness.dispatchWindowEvent('game-react-hydrated');
     await flushAsyncOperations();
     expect(harness.fetchCalls[0]?.url).toBe('/api/codex-sessions/source-version');
+  });
+
+  it('restores a saved prompt draft and autosaves edits for the same game version', async () => {
+    const versionDraftKey = promptDraftStorageKey('source-version');
+    const harness = await runGameViewScript(
+      async () => ({
+        ok: true,
+        async json() {
+          return { status: 'ok' };
+        }
+      }),
+      { localStorageEntries: { [versionDraftKey]: 'add sparkle trail' } }
+    );
+
+    expect(harness.promptInput.value).toBe('add sparkle trail');
+
+    harness.promptInput.value = 'add sparkle trail and glow';
+    harness.promptInput.dispatchEvent('input', createEvent());
+
+    expect(harness.readLocalStorageItem(versionDraftKey)).toBe('add sparkle trail and glow');
+  });
+
+  it('uses a per-game localStorage key and ignores drafts from other games', async () => {
+    const currentVersionId = 'active-version';
+    const currentVersionDraftKey = promptDraftStorageKey(currentVersionId);
+    const otherVersionDraftKey = promptDraftStorageKey('other-version');
+    const harness = await runGameViewScript(
+      async () => ({
+        ok: true,
+        async json() {
+          return { status: 'ok' };
+        }
+      }),
+      {
+        versionId: currentVersionId,
+        localStorageEntries: {
+          [otherVersionDraftKey]: 'draft for other version'
+        }
+      }
+    );
+
+    expect(harness.promptInput.value).toBe('');
+
+    harness.promptInput.value = 'draft for active version';
+    harness.promptInput.dispatchEvent('input', createEvent());
+
+    expect(harness.readLocalStorageItem(currentVersionDraftKey)).toBe('draft for active version');
+    expect(harness.readLocalStorageItem(otherVersionDraftKey)).toBe('draft for other version');
+  });
+
+  it('clears the saved prompt draft after a successful prompt submit', async () => {
+    const versionDraftKey = promptDraftStorageKey('source-version');
+    const harness = await runGameViewScript(
+      async () => ({
+        ok: true,
+        async json() {
+          return { forkId: 'pebble-iris-dawn' };
+        }
+      }),
+      { localStorageEntries: { [versionDraftKey]: 'persisted draft' } }
+    );
+
+    harness.editTab.dispatchEvent('click', createEvent());
+    harness.promptInput.value = 'persisted draft';
+    harness.promptInput.dispatchEvent('input', createEvent());
+    harness.promptForm.dispatchEvent('submit', createEvent());
+    await flushAsyncOperations();
+
+    expect(harness.readLocalStorageItem(versionDraftKey)).toBeNull();
+    expect(harness.assignCalls).toEqual(['/game/pebble-iris-dawn']);
+  });
+
+  it('keeps the saved draft when prompt submit does not succeed', async () => {
+    const versionDraftKey = promptDraftStorageKey('source-version');
+    const harness = await runGameViewScript(
+      async () => ({
+        ok: true,
+        async json() {
+          return { status: 'accepted' };
+        }
+      }),
+      { localStorageEntries: { [versionDraftKey]: 'persisted draft' } }
+    );
+
+    harness.editTab.dispatchEvent('click', createEvent());
+    harness.promptInput.value = 'persisted draft';
+    harness.promptInput.dispatchEvent('input', createEvent());
+    harness.promptForm.dispatchEvent('submit', createEvent());
+    await flushAsyncOperations();
+
+    expect(harness.readLocalStorageItem(versionDraftKey)).toBe('persisted draft');
+    expect(harness.assignCalls).toHaveLength(0);
+  });
+
+  it('clears the saved prompt draft when the prompt form is reset', async () => {
+    const versionDraftKey = promptDraftStorageKey('source-version');
+    const harness = await runGameViewScript(
+      async () => ({
+        ok: true,
+        async json() {
+          return { status: 'ok' };
+        }
+      }),
+      { localStorageEntries: { [versionDraftKey]: 'persisted draft' } }
+    );
+
+    harness.promptInput.value = 'persisted draft';
+    harness.promptInput.dispatchEvent('input', createEvent());
+    harness.promptForm.dispatchEvent('reset', createEvent());
+
+    expect(harness.promptInput.value).toBe('');
+    expect(harness.readLocalStorageItem(versionDraftKey)).toBeNull();
+  });
+
+  it('does not crash when localStorage is unavailable', async () => {
+    const harness = await runGameViewScript(
+      async () => ({
+        ok: true,
+        async json() {
+          return { forkId: 'pebble-iris-dawn' };
+        }
+      }),
+      { localStorageAvailable: false }
+    );
+
+    harness.editTab.dispatchEvent('click', createEvent());
+    harness.promptInput.value = 'darken the ball';
+    harness.promptInput.dispatchEvent('input', createEvent());
+    harness.promptForm.dispatchEvent('submit', createEvent());
+    await flushAsyncOperations();
+
+    expect(harness.fetchCalls).toHaveLength(1);
+    expect(harness.assignCalls).toEqual(['/game/pebble-iris-dawn']);
   });
 
   it('redirects to the newly forked game page when prompt submit succeeds', async () => {

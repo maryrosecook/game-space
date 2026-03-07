@@ -310,6 +310,66 @@ test('admin game page places tile capture in edit panel and posts tile snapshot 
   expect(typeof tilePngDataUrl === 'string' && tilePngDataUrl.startsWith('data:image/png;base64,')).toBe(true);
 });
 
+test('admin prompt draft persists across reload for the same game and clears after successful submit', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.goto('/game/starter');
+  await page.locator('#game-tab-edit').click();
+
+  const promptDraft = `persisted draft ${Date.now().toString(36)}`;
+  const draftStorageKey = 'game-space:prompt-draft:starter';
+  await page.locator('#prompt-input').fill(promptDraft);
+
+  await expect
+    .poll(async () => {
+      return await page.evaluate((storageKey) => {
+        return window.localStorage.getItem(storageKey);
+      }, draftStorageKey);
+    })
+    .toBe(promptDraft);
+
+  await page.reload();
+  await expect(page.locator('#game-canvas')).toBeVisible();
+  await page.locator('#game-tab-edit').click();
+  await expect(page.locator('#prompt-input')).toHaveValue(promptDraft);
+
+  let submittedPrompt: string | null = null;
+  await page.route('**/api/games/starter/prompts', async (route) => {
+    const requestBody = route.request().postData();
+    if (typeof requestBody === 'string') {
+      try {
+        const requestPayload = JSON.parse(requestBody);
+        if (isRecord(requestPayload) && typeof requestPayload.prompt === 'string') {
+          submittedPrompt = requestPayload.prompt;
+        }
+      } catch {
+        submittedPrompt = null;
+      }
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ forkId: 'starter' })
+    });
+  });
+
+  await page.locator('#prompt-submit-button').click();
+  await page.waitForLoadState('domcontentloaded');
+  await expect(page.locator('#game-canvas')).toBeVisible();
+
+  await expect
+    .poll(async () => {
+      return await page.evaluate((storageKey) => {
+        return window.localStorage.getItem(storageKey);
+      }, draftStorageKey);
+    })
+    .toBeNull();
+
+  await page.locator('#game-tab-edit').click();
+  await expect(page.locator('#prompt-input')).toHaveValue('');
+  expect(submittedPrompt).toBe(promptDraft);
+});
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
