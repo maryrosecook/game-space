@@ -30,6 +30,51 @@ test('game page does not log a favicon 404 console error on load', async ({ page
   ).toBe(false);
 });
 
+test('starter game ships a blank default scene contract and loads canvas', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.goto('/game/starter');
+  await expect(page.locator('#game-canvas')).toBeVisible();
+
+  const starterDefaults = await page.evaluate(async () => {
+    const bundlePath = '/games/starter/dist/game.js';
+    const starterModule = await import(bundlePath);
+    const createStarterDataSource = Reflect.get(starterModule, 'createStarterDataSource');
+    if (typeof createStarterDataSource !== 'function') {
+      return null;
+    }
+
+    const dataSource = createStarterDataSource();
+    if (typeof dataSource !== 'object' || dataSource === null) {
+      return null;
+    }
+
+    const loadGame = Reflect.get(dataSource, 'loadGame');
+    if (typeof loadGame !== 'function') {
+      return null;
+    }
+
+    const loadedGame = await loadGame('starter');
+    const game = Reflect.get(loadedGame, 'game');
+    if (typeof game !== 'object' || game === null) {
+      return null;
+    }
+
+    return {
+      things: Reflect.get(game, 'things'),
+      blueprints: Reflect.get(game, 'blueprints'),
+      camera: Reflect.get(game, 'camera'),
+      backgroundColor: Reflect.get(game, 'backgroundColor')
+    };
+  });
+
+  expect(starterDefaults).toEqual({
+    things: [],
+    blueprints: [],
+    camera: { x: 0, y: 0 },
+    backgroundColor: '#020617'
+  });
+});
+
 test('game page passes a connected canvas to the starter module bootstrap', async ({ page }) => {
   await page.route('**/games/starter/dist/game.js', async (route) => {
     await route.fulfill({

@@ -76,6 +76,17 @@ describe('starter package manifest', () => {
 });
 
 describe('starter README', () => {
+  it('documents the blank default scene and engine API quick reference', async () => {
+    const readme = await readStarterReadme();
+
+    expect(readme).toContain('The default scene intentionally contains no game objects and no particles.');
+    expect(readme).toContain('It renders only the background color so new games can start from a blank state.');
+    expect(readme).toContain('## Engine API quick reference');
+    expect(readme).toContain('empty `things`, empty `blueprints`');
+    expect(readme).toContain('`spawn({ blueprint, position, overrides? })`');
+    expect(readme).toContain('`destroy(thingOrId)`');
+  });
+
   it('documents that dist is generated build output and should stay ignored', async () => {
     const readme = await readStarterReadme();
 

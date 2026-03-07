@@ -107,6 +107,10 @@ describe('composeCodexPrompt', () => {
     expect(buildPromptText).toContain('Do not read, depend on, or modify files outside the current directory.');
     expect(buildPromptText).toContain('startGame');
     expect(buildPromptText).toContain('dist/game.js');
+    expect(buildPromptText).toContain('Engine API quick reference:');
+    expect(buildPromptText).toContain('`createStarterGameFile()` in `src/main.ts`');
+    expect(buildPromptText).toContain('`game.spawn({ blueprint, position, overrides? })`');
+    expect(buildPromptText).toContain('`game.destroy(thingOrId)`');
     expect(buildPromptText).toContain('fixed viewport of `360x640`');
     expect(buildPromptText).toContain('`maxFrames=120` and `maxSnaps=1`');
     expect(buildPromptText).toContain("npm run headless -- --json '<protocol-json>'");

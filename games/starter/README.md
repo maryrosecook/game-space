@@ -34,6 +34,13 @@ Keep `dist/` gitignored.
 - `src/engine/types.ts` - Shared engine runtime types.
 - `src/headless/*` - Headless protocol validator, deterministic action executor, Playwright runner, and CLI entrypoint.
 
+## Engine API quick reference
+
+- `createStarterGameFile()` in `src/main.ts` is the default scene contract: empty `things`, empty `blueprints`, camera `{ x: 0, y: 0 }`, and a background color.
+- Add visible actors by adding things (and matching blueprints) to `createStarterGameFile()`.
+- Blueprint handlers are `create(thing, game)`, `input(thing, game, input)`, `update(thing, game, input)`, and `collision(thing, otherThing, game)`.
+- Runtime helpers on `game`: `spawn({ blueprint, position, overrides? })`, `spawnParticle({ position, velocity, color, size? })`, and `destroy(thingOrId)`.
+
 ## How to fork into a new game
 
 1. Keep `src/engine/*` as the runtime base.

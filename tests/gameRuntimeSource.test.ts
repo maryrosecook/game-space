@@ -1,31 +1,24 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
-
 import { describe, expect, it } from 'vitest';
+import { createStarterDataSource } from '../games/starter/src/main';
 
-const starterGameSourcePath = 'games/starter/src/main.ts';
+describe('starter runtime defaults', () => {
+  it('loads an empty default scene with background-only rendering state', async () => {
+    const dataSource = createStarterDataSource();
+    const loadedGame = await dataSource.loadGame('starter');
 
-async function readGameSource(relativePath: string): Promise<string> {
-  return fs.readFile(path.join(process.cwd(), relativePath), 'utf8');
-}
-
-describe('game runtime source', () => {
-  it('keeps starter movement bounds camera-aware without viewport globals', async () => {
-    const source = await readGameSource(starterGameSourcePath);
-
-    expect(source).toContain('const minX = camera.x;');
-    expect(source).toContain('const maxX = camera.x + screen.width - (thing.width ?? 0);');
-    expect(source).toContain('const maxY = camera.y + screen.height - (thing.height ?? 0);');
-    expect(source).not.toContain('window.innerWidth');
-    expect(source).not.toContain('window.innerHeight');
+    expect(loadedGame.gameDirectory).toBe('starter');
+    expect(loadedGame.game.things).toEqual([]);
+    expect(loadedGame.game.blueprints).toEqual([]);
+    expect(loadedGame.game.camera).toEqual({ x: 0, y: 0 });
+    expect(loadedGame.game.backgroundColor).toBe('#020617');
   });
 
-  it('spawns fire-colored rain particles in starter runtime updates', async () => {
-    const source = await readGameSource(starterGameSourcePath);
+  it('uses no camera controller by default', async () => {
+    const dataSource = createStarterDataSource();
+    if (!dataSource.loadCamera) {
+      throw new Error('Expected starter data source to provide loadCamera');
+    }
 
-    expect(source).toContain("const FIRE_COLOR_PALETTE = ['#ff2d00', '#ff4a00', '#ff6a00', '#ff8d00', '#ffb300', '#ffd24a'];");
-    expect(source).toContain('spawnFireRain(game, nextRainRandom);');
-    expect(source).toContain('const spawnCount = nextRandom() > 0.68 ? 2 : 1;');
-    expect(source).toContain('game.spawnParticle({');
+    await expect(dataSource.loadCamera('starter')).resolves.toBeNull();
   });
 });
