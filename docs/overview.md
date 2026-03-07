@@ -3,7 +3,7 @@
 Local-first game version browser and editor where every version is playable, forkable, and independently buildable.
 
 Top three features:
-- Filesystem-backed version catalog rendered as responsive homepage tiles (`Fountain`) with a minimum three-column grid, edge-to-edge tile media, overlaid labels, hyphen-normalized names, and favorite highlighting; logged-out users see only favorites while direct non-favorite game URLs still load.
+- Filesystem-backed version catalog rendered as responsive homepage tiles (`Fountain`) with a minimum three-column grid, edge-to-edge tile media, image-only cards with accessible link names, hyphen-normalized names, and favorite highlighting; logged-out users see only favorites while direct non-favorite game URLs still load.
 - Cookie-authenticated admin workflow (`/auth`) that unlocks prompt execution and transcript access, including runtime switching between Codex and Claude codegen providers, while keeping public gameplay (`/` and `/game/:versionId`) available without login.
 - Starter now supports deterministic headless runs (Playwright + SwiftShader flags) driven by a bounded JSON action protocol (`run` / `input` / `snap`) with PNG capture output via a local CLI workflow (`npm run headless`).
 
@@ -20,7 +20,7 @@ Top three features:
       - `game-live-reload-client.js` - Legacy dev-only polling module.
       - `codex-transcript-presenter.js` - Shared transcript presenter used by `game-view-client`.
   - `public/` - Static browser assets.
-    - `styles.css` - Homepage/game/auth styling, including minimum three-column homepage tile layout with full-bleed media + overlaid labels, favorite tile/button states, admin/public game states, provider selector controls on `/auth`, transcript layouts, and Edit-tab generating spinner animation.
+    - `styles.css` - Homepage/game/auth styling, including minimum three-column homepage tile layout with full-bleed media and image-only cards, favorite tile/button states, admin/public game states, provider selector controls on `/auth`, transcript layouts, and Edit-tab generating spinner animation.
   - `services/` - Filesystem, auth, build, provider-configurable prompt execution, and session/transcript orchestration.
     - `fsUtils.ts` - Shared fs/object/error helpers.
     - `adminAuth.ts` - Admin password verification, iron-session sealed cookies, fixed TTL, and login rate limiter.
@@ -139,7 +139,7 @@ Top three features:
 - Manual tile snapshot model: admins trigger capture from the Edit drawer action row; `game-view-client.js` reads `#game-canvas` on animation-frame boundaries, calls `gl.finish()` when available, and retries blank-frame captures before saving to `snapshots/tile.png` through `/api/games/:versionId/tile-snapshot`. The API also persists a cache-busted `tileSnapshotPath` in `metadata.json` so homepage tiles use a fresh URL after each manual capture. `next-app/app/game/[versionId]/page.tsx` forces `preserveDrawingBuffer` for admin game-canvas WebGL context creation so manual captures remain stable.
 - Icon model: server-rendered controls serialize official Lucide icon nodes imported from the `lucide` npm package; ideas rerenders reuse these server-provided SVG strings from `data-idea-build-icon` / `data-idea-delete-icon` so client updates stay in sync with package-backed icons.
 - Tile-color model: `tileColor.ts` generates random `#RRGGBB` colors that satisfy a minimum 4.5:1 contrast ratio with white text (fallback `#1D3557`), and forks/seeded versions persist this value in `metadata.json`.
-- Homepage tile layout model: `.game-grid` uses `repeat(3, minmax(0, 1fr))` so sparse tile sets still render in at least three columns; `.game-tile` media is full-bleed (`.tile-image` absolute inset) and `.tile-id` is bottom-overlaid with a readability gradient.
+- Homepage tile layout model: `.game-grid` uses `repeat(3, minmax(0, 1fr))` so sparse tile sets still render in at least three columns; `.game-tile` media is full-bleed (`.tile-image` absolute inset) and game names are exposed through tile link accessibility labels.
 - Static serving model: Next serves shared `src/public/*` and runtime game assets under `/games/*` with allowlist enforcement; static semantics intentionally use Option B (GET-only, no `express.static` HEAD/range/conditional parity).
 - Client build model: Next App Router owns browser client bundling (`next-app/**` + shared `src/react/**` imports) and emits frontend artifacts under `.next/**`; no generated hydration bundles are tracked under `src/public/react`.
 - Dev live-reload model: token file stays on disk under each game `dist/`, but browser access is routed through `/api/dev/reload-token/:versionId` in dev mode.
@@ -162,7 +162,7 @@ Top three features:
   - Auth login/logout cookies, fixed TTL, CSRF checks, and brute-force backoff behavior.
   - Protected-route gating for `/codex`, transcript API, prompt API, and favorite toggle API.
   - Manual tile snapshot capture route validation (`/api/games/:versionId/tile-snapshot`) and persistence to `snapshots/tile.png`.
-  - Homepage branding/filter behavior (`Fountain` header/title, logged-out favorites-only view, minimum three-column tile grid, full-bleed tile media, overlaid tile labels, and favorite tile styling).
+  - Homepage branding/filter behavior (`Fountain` header/title, logged-out favorites-only view, minimum three-column tile grid, full-bleed tile media, image-only tile cards with accessible names, and favorite tile styling).
   - Runtime-state derivation from Codex JSONL task lifecycle events and lifecycle-status fallback mapping.
   - Provider switching from `/auth` (`codex -> claude -> codex`) and active provider/model rendering.
   - `/games` runtime allowlist allow/deny behavior and dev reload-token API route.
@@ -186,7 +186,7 @@ Top three features:
   - On later commits to the same PR, keep that selector block current; the workflow reruns on `synchronize` and updates the existing “Feature Video Artifacts” comment in place.
 - End-to-end/manual flow:
   - Run `npm run dev`.
-  - Verify logged-out behavior: `/` shows only favorited game tiles in a minimum three-column grid with edge-to-edge imagery + overlaid labels, direct `/game/:versionId` URLs still load, and `/codex`, prompt API, and favorite toggle API are unavailable.
+  - Verify logged-out behavior: `/` shows only favorited game tiles in a minimum three-column grid with edge-to-edge imagery and no visible name overlays, direct `/game/:versionId` URLs still load, and `/codex`, prompt API, and favorite toggle API are unavailable.
   - Verify logged-in behavior via `/auth`: prompt controls/transcripts and the favorite star appear on game pages; `/codex` loads and transcript/favorite APIs respond.
   - On `/auth`, switch provider `Codex -> Claude -> Codex` and verify the selected provider and active model/thinking labels update accordingly.
   - While a Codex or Claude run is active for a game worktree, verify the `Edit` tab shows a spinner on the right and clears when generation completes.

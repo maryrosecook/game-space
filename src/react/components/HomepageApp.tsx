@@ -15,6 +15,7 @@ export function HomepageApp({ data }: HomepageAppProps) {
             key={tile.id}
             className={`game-tile${tile.isFavorite ? " game-tile--favorite" : ""}`}
             href={tile.href}
+            aria-label={tile.displayId}
             data-version-id={tile.id}
             data-tile-color={tile.tileColor}
             style={{ "--tile-color": tile.tileColor } as CSSProperties}
@@ -23,14 +24,13 @@ export function HomepageApp({ data }: HomepageAppProps) {
               <img
                 className="tile-image"
                 src={tile.tileSnapshotPath}
-                alt={tile.displayId}
+                alt=""
                 loading="lazy"
                 decoding="async"
               />
             ) : (
               <span className="tile-image tile-image--placeholder" aria-hidden="true"></span>
             )}
-            <span className="tile-id">{tile.displayId}</span>
           </a>
         ))}
       </div>

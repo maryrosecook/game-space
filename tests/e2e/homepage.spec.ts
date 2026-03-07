@@ -20,9 +20,8 @@ async function injectHomepageTile(page: Page): Promise<void> {
     const grid = document.createElement('div');
     grid.className = 'game-grid';
     grid.setAttribute('role', 'list');
-    grid.innerHTML = `<a class="game-tile" href="/game/starter" data-version-id="starter" data-tile-color="#1D3557" style="--tile-color: #1D3557;">
-      <img class="tile-image" src="${imageDataUrl}" alt="starter" />
-      <span class="tile-id">starter</span>
+    grid.innerHTML = `<a class="game-tile" href="/game/starter" aria-label="starter" data-version-id="starter" data-tile-color="#1D3557" style="--tile-color: #1D3557;">
+      <img class="tile-image" src="${imageDataUrl}" alt="" />
     </a>`;
     shell.appendChild(grid);
   }, ONE_BY_ONE_PNG_DATA_URL);
@@ -51,6 +50,13 @@ test('homepage renders 9:16 tile snapshots when available', async ({ page }) => 
   const starterMetadataPath = path.resolve('games/starter/metadata.json');
   const starterMetadataRaw = await fs.readFile(starterMetadataPath, 'utf8');
   const starterMetadata = JSON.parse(starterMetadataRaw) as Record<string, unknown>;
+  const starterDisplayNameSource =
+    typeof starterMetadata.threeWords === 'string' && starterMetadata.threeWords.length > 0
+      ? starterMetadata.threeWords
+      : typeof starterMetadata.id === 'string' && starterMetadata.id.length > 0
+        ? starterMetadata.id
+        : 'starter';
+  const starterDisplayName = starterDisplayNameSource.replaceAll('-', ' ');
   await fs.mkdir(snapshotDirectoryPath, { recursive: true });
   await fs.writeFile(snapshotPath, Buffer.from(ONE_BY_ONE_PNG_BASE64, 'base64'));
   await fs.writeFile(
@@ -63,6 +69,9 @@ test('homepage renders 9:16 tile snapshots when available', async ({ page }) => 
     const starterTile = page.locator('.game-tile[data-version-id="starter"]');
     await expect(starterTile).toBeVisible();
     await expect(starterTile).toHaveCSS('aspect-ratio', '9 / 16');
+    await expect(starterTile).toHaveAttribute('aria-label', starterDisplayName);
+    await expect(starterTile.locator('.tile-id')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: starterDisplayName })).toBeVisible();
     await expect(starterTile.locator('.tile-image')).toHaveAttribute('src', '/games/starter/snapshots/tile.png');
   } finally {
     await fs.writeFile(starterMetadataPath, starterMetadataRaw);
@@ -129,30 +138,28 @@ test('homepage keeps at least three tile columns when only one tile is shown', a
   expect(gridLayout.firstTileWidth).toBeLessThan(gridLayout.gridWidth / 2);
 });
 
-test('homepage tiles render edge-to-edge media with overlaid labels', async ({ page }) => {
+test('homepage tiles render image-only cards with accessible names', async ({ page }) => {
   await injectHomepageTile(page);
   const tile = page.locator('.game-tile[data-version-id="starter"]');
   await expect(tile).toBeVisible();
   await expect(tile).toHaveCSS('padding', '0px');
   await expect(tile.locator('.tile-image')).toHaveCSS('position', 'absolute');
-  await expect(tile.locator('.tile-id')).toHaveCSS('position', 'absolute');
+  await expect(tile.locator('.tile-id')).toHaveCount(0);
+  await expect(tile).toHaveAttribute('aria-label', 'starter');
+  await expect(page.getByRole('link', { name: 'starter' })).toBeVisible();
 
   const mediaCoverage = await tile.evaluate((tileElement) => {
     const image = tileElement.querySelector('.tile-image');
-    const label = tileElement.querySelector('.tile-id');
-    if (!(image instanceof HTMLElement) || !(label instanceof HTMLElement)) {
+    if (!(image instanceof HTMLElement)) {
       return null;
     }
 
     const imageRect = image.getBoundingClientRect();
-    const labelRect = label.getBoundingClientRect();
     return {
       tileInnerWidth: tileElement.clientWidth,
       tileInnerHeight: tileElement.clientHeight,
       imageWidth: imageRect.width,
       imageHeight: imageRect.height,
-      labelWithinTile:
-        labelRect.top >= imageRect.top - 0.5 && labelRect.bottom <= imageRect.bottom + 0.5,
     };
   });
 
@@ -163,5 +170,4 @@ test('homepage tiles render edge-to-edge media with overlaid labels', async ({ p
 
   expect(Math.abs(mediaCoverage.tileInnerWidth - mediaCoverage.imageWidth)).toBeLessThan(1);
   expect(Math.abs(mediaCoverage.tileInnerHeight - mediaCoverage.imageHeight)).toBeLessThan(1);
-  expect(mediaCoverage.labelWithinTile).toBe(true);
 });
