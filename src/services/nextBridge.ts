@@ -16,9 +16,13 @@ type CreateNextBridgeOptions = {
   dev?: boolean;
 };
 
-export async function createNextBridge(options: CreateNextBridgeOptions = {}): Promise<NextBridge> {
+export function resolveNextAppPath(options: Pick<CreateNextBridgeOptions, 'repoRootPath' | 'nextAppPath'> = {}): string {
   const repoRootPath = options.repoRootPath ?? process.cwd();
-  const nextAppPath = options.nextAppPath ?? path.join(repoRootPath, 'next-app');
+  return options.nextAppPath ?? path.join(repoRootPath, 'src');
+}
+
+export async function createNextBridge(options: CreateNextBridgeOptions = {}): Promise<NextBridge> {
+  const nextAppPath = resolveNextAppPath(options);
   const dev = options.dev ?? false;
 
   const nextServer = next({

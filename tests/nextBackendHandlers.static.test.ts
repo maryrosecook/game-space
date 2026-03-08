@@ -3,9 +3,9 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import * as faviconRoute from '../next-app/app/favicon.ico/route';
-import * as gamesRoute from '../next-app/app/games/[versionId]/[...assetPath]/route';
-import * as publicRoute from '../next-app/app/public/[...assetPath]/route';
+import * as faviconRoute from '../src/app/favicon.ico/route';
+import * as gamesRoute from '../src/app/games/[versionId]/[...assetPath]/route';
+import * as publicRoute from '../src/app/public/[...assetPath]/route';
 import { handleGamesAssetGet, handlePublicAssetGet } from '../src/services/nextBackendHandlers';
 import { createGameFixture, createTempDirectory } from './testHelpers';
 

@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { buildHomepagePageData } from '../src/react/homepagePageData';
+import { buildHomepagePageData } from '../src/app/shared/homepagePageData';
 import type { GameVersion } from '../src/types';
 
 function createVersion(partial: Partial<GameVersion> & Pick<GameVersion, 'id' | 'createdTime'>): GameVersion {

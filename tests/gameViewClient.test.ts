@@ -568,7 +568,7 @@ async function runGameViewScript(
     }
   });
 
-  const scriptPath = path.join(process.cwd(), 'src/react/legacy/game-view-client.js');
+  const scriptPath = path.join(process.cwd(), 'src/app/game/[versionId]/legacy/game-view-client.js');
   const source = await readFile(scriptPath, 'utf8');
   const runnableSource = source
     .replace(

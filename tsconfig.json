@@ -17,12 +17,10 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
+    "src/**/*.d.ts",
     "scripts/**/*.ts",
     "scripts/**/*.tsx",
     "tests/**/*.ts",
-    "vitest.config.ts",
-    "next-app/**/*.ts",
-    "next-app/**/*.tsx",
-    "next-app/**/*.d.ts"
+    "vitest.config.ts"
   ]
 }

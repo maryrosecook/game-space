@@ -1,10 +1,17 @@
 [
   {
+    "prompt": "2D WebGL neon shrine-defense: tap to rotate monk shots, hold to charge lotus beam, swipe to dash; yokai rush, spirit bombs explode zones, and healing lanterns restore you in alleys.",
+    "hasBeenBuilt": true,
+    "archived": false
+  },
+  {
     "prompt": "Rainy neon-Edo 2D WebGL lane brawler: ronin, turret drones, oni bikers, shrine gates; tap gates to switch lanes, hold for katana dash, swipe to deflect shots into bikers.",
-    "hasBeenBuilt": false
+    "hasBeenBuilt": false,
+    "archived": false
   },
   {
     "prompt": "Neon alley 2D WebGL arena: tap Palette Totems to change background hue, drag Prism Shields to parry swarming Ink Wraiths, hold Chroma Seeds to charge stunning bursts; touch-only on phone.",
-    "hasBeenBuilt": false
+    "hasBeenBuilt": false,
+    "archived": false
   }
 ]

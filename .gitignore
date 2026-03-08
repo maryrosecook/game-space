@@ -3,7 +3,7 @@ factory/
 node_modules/
 dist/
 src/public/react/
-next-app/.next/
+src/.next/
 games/*
 !games/starter/
 !games/starter/**

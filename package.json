@@ -7,7 +7,7 @@
     "start": "npm run dev",
     "pull-games": "tsx scripts/pull-games.ts",
     "build": "npm run build:next && npm run build:games && tsc -p tsconfig.build.json",
-    "build:next": "next build next-app",
+    "build:next": "next build src",
     "build:games": "tsx scripts/build-games.ts",
     "lint": "eslint . --ext .ts,.tsx,.js",
     "typecheck": "tsc --noEmit",

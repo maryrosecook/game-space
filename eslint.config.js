@@ -6,7 +6,7 @@ module.exports = [
   {
     ignores: [
       'dist/**',
-      'next-app/.next/**',
+      'src/.next/**',
       'games/**/dist/**',
       'games/**/node_modules/**',
       'node_modules/**'

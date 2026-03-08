@@ -8,7 +8,7 @@ Complete the Next.js migration by (1) moving frontend source and build outputs t
 ## Success Criteria
 - No committed/generated frontend bundles in `src/public/react`.
 - No runtime dependence on hand-authored browser source files in `src/public/*.js`.
-- `next-app/app/game/[versionId]/page.tsx` renders and controls the full game page behavior through React/TypeScript.
+- `src/app/game/[versionId]/page.tsx` renders and controls the full game page behavior through React/TypeScript.
 - Existing security and behavior contracts remain intact (admin 404 semantics, CSRF checks, runtime asset allowlist, game fork/build flow).
 - Targeted unit/integration tests and E2E tests pass, including at least one E2E path added/updated for user-visible behavior changes.
 
@@ -33,11 +33,11 @@ Complete the Next.js migration by (1) moving frontend source and build outputs t
   - `/public/game-view.js` (admin controls and integrations)
   - `/public/game-live-reload.js` (dev token polling)
   - `codex-transcript-presenter.js` (shared transcript rendering helper)
-- `/public/*` is served from `src/public/*` through `next-app/app/public/[...assetPath]/route.ts` + `handlePublicAssetGet`.
+- `/public/*` is served from `src/public/*` through `src/app/public/[...assetPath]/route.ts` + `handlePublicAssetGet`.
 
 ## Target Architecture
 - Frontend source:
-  - Route UI and client behavior in `next-app/app/**` and typed shared modules under `src/react/**` (or `next-app/**` where appropriate).
+  - Route UI and client behavior in `src/app/**` and typed shared modules under `src/app/shared/**` (or `src/**` where appropriate).
 - Frontend build output:
   - Produced by Next (`.next/**`) only.
   - Static-only assets in repo root `public/**` (images/fonts/static files), not generated bundles.
@@ -93,7 +93,7 @@ Complete the Next.js migration by (1) moving frontend source and build outputs t
   - `src/public/game-live-reload.js`
   - `src/public/codex-transcript-presenter.js`
 - Remove all references in:
-  - `next-app/app/game/[versionId]/page.tsx`
+  - `src/app/game/[versionId]/page.tsx`
   - tests that execute those files directly as scripts.
 - Replace script-centric tests with React/component/integration tests that validate equivalent behavior.
 
@@ -150,4 +150,3 @@ Complete the Next.js migration by (1) moving frontend source and build outputs t
   - Default: no; move into React hook for consistency.
 - Should any JS remain under `src/public` after migration?
   - Default: only true static assets in root `public/`; no hand-authored runtime logic modules in `src/public`.
-

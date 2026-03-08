@@ -4,7 +4,7 @@ import {
   ensureGlobalGameTeardownHandle,
   runActiveGameTeardown,
   setActiveGameTeardown,
-} from '../next-app/app/game/[versionId]/GamePageClientBootstrap';
+} from '../src/app/game/[versionId]/GamePageClientBootstrap';
 
 type TestLifecycleHost = {
   __gameSpaceActiveGameTeardown?: () => void;

@@ -15,7 +15,7 @@ Updated: 2026-03-01
 - Removed legacy `/public/react/*` hydration bundle contract:
   - deleted `scripts/build-client.ts`
   - removed tracked files under `src/public/react/*`
-  - moved game/codex/ideas hydration to Next-native client components (`next-app/app/**`)
+  - moved game/codex/ideas hydration to Next-native client components (`src/app/**`)
 
 ## Scope
 Record the completed Next.js cutover where Next owns runtime routes and `src/server.ts` no longer performs legacy compatibility routing.
@@ -24,12 +24,12 @@ Record the completed Next.js cutover where Next owns runtime routes and `src/ser
 - `src/server.ts`
 - `src/services/nextBackendHandlers.ts`
 - `src/services/gameAssetAllowlist.ts`
-- `next-app/app/page.tsx`
-- `next-app/app/auth/**/route.ts`
-- `next-app/app/api/**/route.ts`
-- `next-app/app/public/[...assetPath]/route.ts`
-- `next-app/app/games/[versionId]/[...assetPath]/route.ts`
-- `next-app/app/favicon.ico/route.ts`
+- `src/app/page.tsx`
+- `src/app/auth/**/route.ts`
+- `src/app/api/**/route.ts`
+- `src/app/public/[...assetPath]/route.ts`
+- `src/app/games/[versionId]/[...assetPath]/route.ts`
+- `src/app/favicon.ico/route.ts`
 
 ## Completion snapshot
 
@@ -92,27 +92,27 @@ Required deny behavior (`404`):
 ## Implementation checklist by workstream
 
 ### Workstream A: decouple page rendering from legacy coupling
-- [x] Create page-data/page-rendering paths for Next ownership without introducing `react-dom/server` into `next-app/app/api/**` import graphs.
+- [x] Create page-data/page-rendering paths for Next ownership without introducing `react-dom/server` into `src/app/api/**` import graphs.
 - [x] Keep API/auth/static handlers isolated in `src/services/nextBackendHandlers.ts`.
 - [x] Isolate `src/views.ts` to legacy Express-only usage so production runtime no longer depends on it.
 
 Concrete files/functions:
 - `src/views.ts` (`renderGameView`, `renderCodexView`, `renderIdeasView`, shared serialization helpers)
 - `src/services/nextBackendHandlers.ts`
-- new shared modules under `src/react/` or `src/services/`
+- new shared modules under `src/app/shared/` or `src/services/`
 
 ### Workstream B: implement Next page ownership for remaining pages
-- [x] Add `next-app/app/game/[versionId]/page.tsx`.
-- [x] Add `next-app/app/codex/page.tsx`.
-- [x] Add `next-app/app/ideas/page.tsx`.
+- [x] Add `src/app/game/[versionId]/page.tsx`.
+- [x] Add `src/app/codex/page.tsx`.
+- [x] Add `src/app/ideas/page.tsx`.
 - [x] Ensure each page preserves root ids and behavior while migrating hydration to Next-managed client bundles.
 - [x] Keep `/game` admin/dev behavior by loading legacy control modules through Next client bootstrap instead of `/public/*` script tags.
 
 Concrete files/functions:
-- `next-app/app/layout.tsx`
-- new page files under `next-app/app/game/[versionId]/`, `next-app/app/codex/`, `next-app/app/ideas/`
-- `src/react/legacy/game-view-client.js`
-- `src/react/legacy/game-live-reload-client.js`
+- `src/app/layout.tsx`
+- new page files under `src/app/game/[versionId]/`, `src/app/codex/`, `src/app/ideas/`
+- `src/app/game/[versionId]/legacy/game-view-client.js`
+- `src/app/game/[versionId]/legacy/game-live-reload-client.js`
 
 ### Workstream C: activate and harden Next static routes
 - [x] Finalize `/public/*` behavior in `handlePublicAssetGet`.
@@ -122,9 +122,9 @@ Concrete files/functions:
 
 Concrete files/functions:
 - `src/services/nextBackendHandlers.ts` (`handlePublicAssetGet`, `handleGamesAssetGet`, static helpers)
-- `next-app/app/public/[...assetPath]/route.ts`
-- `next-app/app/games/[versionId]/[...assetPath]/route.ts`
-- `next-app/app/favicon.ico/route.ts`
+- `src/app/public/[...assetPath]/route.ts`
+- `src/app/games/[versionId]/[...assetPath]/route.ts`
+- `src/app/favicon.ico/route.ts`
 
 ### Workstream D: remove legacy compatibility mode from entrypoint
 - [x] Remove `hasRoutePrefix()` and `shouldUseLegacyExpressHandler()` from `src/server.ts`.
