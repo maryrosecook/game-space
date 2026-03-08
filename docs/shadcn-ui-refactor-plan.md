@@ -1,166 +1,124 @@
-# React + TypeScript Refactor Plan for Game Controls
+# Shadcn UI Refactor Plan for Game View Controls
 
 ## Goal
-Refactor the current game controls implementation to be:
-- fully React-driven in UI state and rendering,
-- immutable in state transitions,
-- one-way in data flow,
-- TypeScript-first (port non-JS code in the control layer to TS where applicable).
+Refactor the game controls to use the **default `shadcn/ui` light theme** (not a custom dark variant) while preserving all current behavior and control dimensions.
 
-This plan intentionally focuses only on Reactification and TypeScript migration.
+## Theme Direction (explicit)
 
-## Scope and non-negotiable behavior parity
+- Use `shadcn/ui`'s default light token set as the migration baseline.
+- Avoid introducing custom theme overrides during the initial refactor unless they are strictly needed to preserve dimensions/behavior.
+- Treat any color, border, and surface changes from adopting the default light theme as acceptable, but preserve interaction behavior and control geometry.
 
-### Behavior parity requirements
-The refactor must preserve all existing behavior:
-1. Three-level bottom-panel behavior:
-   - closed,
-   - edit-open,
-   - transcript-expanded.
-2. Partial panel/toolbar motion updates as prompt textarea grows.
-3. Existing focus management, keyboard submit shortcut, transcript open/close interactions, and recording-related interactions.
-4. Existing control dimensions and interaction timing.
+## Behavior and UX Invariants (must not change)
 
-### Migration scope
-In scope:
-- React componentization of game controls.
-- Immutable reducer/state-machine style state transitions.
-- Side effects moved into hooks.
-- Porting relevant non-JS code to TS in this UI/control surface.
+1. **Three toolbar elevation levels stay intact:**
+   - **Level 1 (collapsed):** only bottom toolbar row visible over game.
+   - **Level 2 (edit open):** tapping the settings/cog opens prompt panel, toolbar shifts up by drawer height.
+   - **Level 3 (transcript expanded):** tapping transcript button expands drawer to near/full screen and toolbar shifts up to top of drawer region.
+2. **Prompt textarea growth changes drawer height dynamically** as the user types.
+3. **Control dimensions remain functionally identical** (tap targets, spacing, panel heights, textarea min/max height).
+4. **Existing keyboard and accessibility behavior remains** (`aria-expanded`, `aria-hidden`, submit with Cmd/Ctrl+Enter, focus return behavior).
+5. **Voice recording/transcription and annotation flow remains unchanged** (including overlay and drawing canvas behaviors).
 
-Out of scope:
-- style-system changes,
-- theme changes,
-- visual redesign efforts.
+## Current Architecture Snapshot
 
-## Target architecture
+- Markup is server-rendered in `renderGameView` (`src/views.ts`) with IDs used as JS hooks.
+- Interaction logic is centralized in `src/public/game-view.js` with a reducer-like UI state:
+  - `editPanelOpen`
+  - `codexPanelExpanded`
+  - `recordingInProgress`
+  - etc.
+- Motion/layout are currently class-driven in `src/public/styles.css`:
+  - `.prompt-panel`, `.prompt-panel--open`
+  - `.game-page--edit-open`, `.game-page--codex-expanded`
+  - CSS var `--edit-drawer-height`
+- Textarea auto-resize (`resizePromptInput`) recalculates panel height and updates `--edit-drawer-height`.
 
-### 1) Single source of truth state (React)
-Use a central reducer (`useReducer`) for controls/UI state.
+## Proposed Refactor Strategy
 
-```ts
-type PanelMode = 'closed' | 'edit' | 'transcript';
+### Phase 0: Baseline capture (before visual migration)
+1. Capture control metrics from live DOM (buttons, textarea min/max height, bottom tab height, panel paddings, gaps).
+2. Add or update E2E coverage for:
+   - Cog toggles edit drawer.
+   - Transcript toggle expands to full-screen state.
+   - Textarea growth raises drawer and shifts toolbar.
+3. Record baseline screenshots for comparison.
 
-type GameUiState = {
-  panelMode: PanelMode;
-  promptText: string;
-  textareaHeightPx: number;
-  drawerHeightPx: number;
-  isRecording: boolean;
-  isTranscribing: boolean;
-  isGenerating: boolean;
-  isFavorited: boolean;
-  isTileCaptureBusy: boolean;
-};
-```
+### Phase 1: Introduce `shadcn/ui` primitives with compatibility wrappers
+1. Add lightweight wrappers (or class adapters) for target primitives:
+   - `Button` (for toolbar actions)
+   - `Textarea` (prompt input)
+   - `Sheet`/`Drawer`-style container (prompt panel shell)
+   - `ScrollArea` for transcript body if needed
+2. Keep existing IDs and data/aria attributes to avoid breaking `game-view.js` during migration.
+3. Use `className` passthrough to retain exact sizing tokens while allowing default light theme surface styles.
 
-Principles:
-- derive UI from state at render time,
-- avoid state stored in DOM attributes/classes,
-- avoid reading UI state from DOM.
+### Phase 2: Separate behavior state from presentation classes
+1. Replace direct class toggles with semantic state attributes on root/panel (e.g. `data-edit-open`, `data-codex-expanded`).
+2. Keep `applyBottomPanelState` as single state-to-DOM sync point.
+3. Preserve and explicitly test:
+   - `toggleEditPanel` collapsing transcript when closing edit panel.
+   - `toggleCodexPanelExpanded` auto-opening edit panel first.
 
-### 2) Immutable transitions
-Define typed actions and pure reducer logic.
+### Phase 3: Rebuild layout with shadcn-themed styling while preserving geometry
+1. Migrate toolbar and panel styling to the default `shadcn/ui` light theme tokens.
+2. Lock dimensions with explicit CSS custom properties sourced from baseline:
+   - button heights/paddings
+   - icon button square sizes
+   - textarea `min-height`/`max-height`
+   - drawer paddings/gaps
+3. Preserve transform-based slide mechanics:
+   - closed: drawer translated below viewport
+   - edit-open: bottom tabs offset by `--edit-drawer-height`
+   - transcript-expanded: drawer fills `100dvh - --bottom-tab-height`
 
-```ts
-type GameUiAction =
-  | { type: 'TOGGLE_EDIT' }
-  | { type: 'TOGGLE_TRANSCRIPT' }
-  | { type: 'SET_PROMPT_TEXT'; text: string }
-  | { type: 'SET_TEXTAREA_HEIGHT'; px: number }
-  | { type: 'SET_DRAWER_HEIGHT'; px: number }
-  | { type: 'SET_RECORDING'; value: boolean }
-  | { type: 'SET_TRANSCRIBING'; value: boolean }
-  | { type: 'SET_GENERATING'; value: boolean }
-  | { type: 'SET_FAVORITED'; value: boolean }
-  | { type: 'SET_TILE_CAPTURE_BUSY'; value: boolean };
-```
+### Phase 4: Transcript and prompt content area parity
+1. Keep transcript mount node stable (`#game-codex-session-view`) for presenter integration.
+2. Ensure transcript auto-scroll behavior remains in expanded mode.
+3. Verify prompt submit reset behavior still clears textarea, canvas, and overlay state.
 
-Rules:
-- no in-place mutation,
-- no reducer side effects,
-- deterministic state transitions.
+### Phase 5: Cleanup and hardening
+1. Remove obsolete legacy-only classes once selectors are migrated.
+2. Consolidate sizing constants and theme variables in one place.
+3. Confirm no regressions in admin-only vs public game view rendering paths.
 
-### 3) Declarative rendering
-- Render class names/ARIA directly from state.
-- Keep derived selectors in pure functions.
-- Treat DOM refs as imperative escape hatches only (canvas/media/focus/measurement).
+## Detailed Acceptance Checklist
 
-### 4) Side-effect boundaries
-Extract imperative behavior into focused hooks:
-- `useTranscriptPolling`,
-- `useRealtimeRecording`,
-- `useCanvasAnnotation`,
-- `usePromptMeasurement`.
+- [ ] Tapping cog opens prompt drawer and sets `aria-expanded=true` on edit button.
+- [ ] Tapping cog again closes prompt drawer and transcript expansion.
+- [ ] Tapping transcript button opens edit drawer (if closed) and expands transcript region.
+- [ ] Tapping transcript again collapses transcript and returns prompt focus.
+- [ ] Typing multi-line prompt increases textarea height (clamped to max) and shifts toolbar upward.
+- [ ] Cmd/Ctrl+Enter still submits prompt.
+- [ ] Submit still clears prompt, overlay text, and annotation canvas.
+- [ ] Record button behavior unchanged (including busy/disabled visual state timing).
+- [ ] Favorite, tile capture, and delete buttons retain tap target size and action wiring.
 
-Hooks perform effects; reducer remains pure.
+## E2E Test Plan (to implement during refactor)
 
-## TypeScript migration plan
+1. `game-toolbar-levels.spec.ts`
+   - Assert initial collapsed state.
+   - Click edit/cog; verify edit-open class/attribute and vertical shift.
+   - Click transcript; verify expanded state and transcript visible.
+2. `game-prompt-resize.spec.ts`
+   - Fill textarea with multi-line text; assert height increase and bounded max.
+   - Assert bottom toolbar transform changes with drawer height.
+3. `game-controls-parity.spec.ts`
+   - Keyboard submit shortcut.
+   - Focus management on transcript toggle.
+   - Core action buttons still present with unchanged bounding box dimensions (within tolerance).
 
-### TS migration objectives
-- Port control-related non-JS modules/files to `.ts`/`.tsx`.
-- Eliminate untyped state/event payloads in this area.
-- Introduce explicit types for:
-  - reducer state/actions,
-  - transcript payloads,
-  - recording lifecycle state,
-  - measurement payloads.
+## Risk Areas and Mitigations
 
-### TS migration steps
-1. Introduce `GameUiState`, `GameUiAction`, and reducer in TS.
-2. Port React control components to `.tsx` with typed props.
-3. Port control hooks to `.ts` with typed contracts.
-4. Add shared type module(s) for API payload contracts used by controls.
-5. Remove legacy JS code paths once TS parity is complete.
+- **Risk:** Visual library defaults change spacing/size.
+  - **Mitigation:** Pin dimensions with explicit CSS vars and DOM measurement assertions in E2E.
+- **Risk:** Behavior regressions from changing selectors/IDs.
+  - **Mitigation:** Preserve IDs until final cleanup; migrate incrementally.
+- **Risk:** Full-screen expanded mode breaks on mobile viewport changes.
+  - **Mitigation:** Keep `100dvh` logic and test on mobile emulation.
 
-### TS quality gates
-- Strictly typed action handling (exhaustive reducer checks).
-- No `any` in new control-layer code.
-- Narrow unknown payloads via runtime guards where needed.
+## Rollout Notes
 
-## Phased execution plan
-
-### Phase 0 — Baseline behavior capture
-1. Capture behavior matrix for key states/motions.
-2. Add/refresh E2E coverage for:
-   - panel mode transitions,
-   - textarea-growth motion,
-   - focus and keyboard submit behavior,
-   - transcript and recording flows.
-
-### Phase 1 — React shell and reducer
-1. Introduce a React root for controls.
-2. Add reducer + action model in TS.
-3. Keep existing behavior through adapter layer while migrating.
-
-### Phase 2 — Component migration
-1. Split controls into typed React components:
-   - toolbar,
-   - prompt panel,
-   - transcript panel,
-   - action rows.
-2. Move all rendering decisions to React state/selectors.
-
-### Phase 3 — Hook extraction and imperative isolation
-1. Move polling/recording/canvas logic into dedicated hooks.
-2. Remove mutable globals and DOM-class-toggling as state carriers.
-
-### Phase 4 — TS completion
-1. Port remaining in-scope non-JS control files to TS/TSX.
-2. Remove compatibility shims.
-3. Ensure typed API boundaries and reducer exhaustiveness.
-
-### Phase 5 — Validation and cleanup
-1. Run checks sequentially:
-   1. `npm run typecheck`
-   2. `npm run lint`
-2. Run E2E suite for migrated behavior paths.
-3. Remove dead legacy code after parity verification.
-
-## Acceptance criteria
-A refactor pass is complete when:
-1. UI behavior is unchanged from baseline.
-2. Control rendering is fully React state-driven.
-3. Control-layer non-JS code in scope is ported to TS/TSX.
-4. Reducer transitions are immutable and typed.
-5. E2E coverage validates preserved behavior for all panel modes and textarea-growth motion.
+- Land in small PRs by phase.
+- Keep each PR behavior-safe with updated E2E tests.
+- If user-visible behavior changes in any phase, include corresponding `video-tests` selectors in PR body.
