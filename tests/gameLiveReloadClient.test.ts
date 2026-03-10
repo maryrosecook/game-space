@@ -19,6 +19,7 @@ type ReloadHarness = {
     url: string;
     init: Record<string, unknown> | undefined;
   }>;
+  intervalMs: number | null;
   reloadCalls: number;
   tick: () => Promise<void>;
 };
@@ -33,6 +34,7 @@ async function runLiveReloadScript(fetchImplementation: FetchImplementation): Pr
   const fetchCalls: Array<{ url: string; init: Record<string, unknown> | undefined }> = [];
   let reloadCalls = 0;
   let intervalCallback: (() => void) | null = null;
+  let intervalMs: number | null = null;
 
   const context = {
     document: {
@@ -53,8 +55,9 @@ async function runLiveReloadScript(fetchImplementation: FetchImplementation): Pr
       fetchCalls.push({ url, init });
       return fetchImplementation(url, init);
     },
-    setInterval(callback: () => void): number {
+    setInterval(callback: () => void, delay?: number): number {
       intervalCallback = callback;
+      intervalMs = typeof delay === 'number' ? delay : null;
       return 1;
     },
     Date,
@@ -71,6 +74,9 @@ async function runLiveReloadScript(fetchImplementation: FetchImplementation): Pr
 
   return {
     fetchCalls,
+    get intervalMs() {
+      return intervalMs;
+    },
     get reloadCalls() {
       return reloadCalls;
     },
@@ -97,6 +103,7 @@ describe('game live reload client', () => {
     await harness.tick();
 
     expect(harness.reloadCalls).toBe(1);
+    expect(harness.intervalMs).toBe(3000);
     expect(harness.fetchCalls[0]?.url).toContain('/api/dev/reload-token/source-version');
     expect(harness.fetchCalls[0]?.init).toEqual({ cache: 'no-store' });
   });

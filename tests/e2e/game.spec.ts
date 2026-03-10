@@ -238,6 +238,48 @@ test('game lifecycle teardown runs once across reload and unload via global hand
   });
 });
 
+test('dev live reload waits about three seconds before refreshing after a token change', async ({ page }) => {
+  let tokenReadCount = 0;
+  await page.route('**/api/dev/reload-token/starter*', async (route) => {
+    tokenReadCount += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/plain',
+      body: tokenReadCount === 1 ? 'token-1' : 'token-2',
+    });
+  });
+
+  await page.goto('/game/starter');
+  await expect(page.locator('#game-canvas')).toBeVisible();
+
+  const liveReloadScriptPath = path.join(
+    process.cwd(),
+    'src/app/game/[versionId]/legacy/game-live-reload-client.js'
+  );
+  const liveReloadScriptSource = await fs.readFile(liveReloadScriptPath, 'utf8');
+
+  await page.addScriptTag({ content: liveReloadScriptSource });
+
+  await page.waitForTimeout(2500);
+  expect(
+    await page.evaluate(() => {
+      const entry = performance.getEntriesByType('navigation')[0];
+      return entry instanceof PerformanceNavigationTiming ? entry.type : null;
+    })
+  ).toBe('navigate');
+
+  await expect
+    .poll(
+      async () =>
+        await page.evaluate(() => {
+          const entry = performance.getEntriesByType('navigation')[0];
+          return entry instanceof PerformanceNavigationTiming ? entry.type : null;
+        }),
+      { timeout: 2500 }
+    )
+    .toBe('reload');
+});
+
 test('admin game page does not emit React hydration mismatch errors', async ({ page }) => {
   await loginAsAdmin(page);
 
