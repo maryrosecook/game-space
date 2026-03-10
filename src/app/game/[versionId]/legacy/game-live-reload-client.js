@@ -1,5 +1,6 @@
 
 const versionId = document.body.dataset.versionId;
+const reloadPollIntervalMs = 3000;
 
 if (typeof versionId === 'string' && versionId.length > 0) {
   const tokenUrl = `/api/dev/reload-token/${encodeURIComponent(versionId)}`;
@@ -56,5 +57,5 @@ if (typeof versionId === 'string' && versionId.length > 0) {
   void checkForTokenChange();
   setInterval(() => {
     void checkForTokenChange();
-  }, 700);
+  }, reloadPollIntervalMs);
 }
