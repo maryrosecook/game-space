@@ -4,6 +4,7 @@ import {
   Bot,
   ChevronLeft,
   Mic,
+  Paintbrush,
   Rocket,
   Settings,
   Star,
@@ -54,6 +55,7 @@ type LucideIconName =
   | 'bot'
   | 'chevron-left'
   | 'mic'
+  | 'paintbrush'
   | 'rocket'
   | 'settings'
   | 'star'
@@ -64,6 +66,7 @@ const LUCIDE_ICON_NODES: Record<LucideIconName, IconNode> = {
   bot: Bot,
   'chevron-left': ChevronLeft,
   mic: Mic,
+  paintbrush: Paintbrush,
   rocket: Rocket,
   settings: Settings,
   star: Star,
@@ -272,6 +275,7 @@ export default async function GamePage(context: RouteContext) {
     homeIcon: renderLucideIcon('chevron-left', 'game-view-icon', 22),
     settingsIcon: renderLucideIcon('settings', 'game-view-icon'),
     micIcon: renderLucideIcon('mic', 'game-view-icon'),
+    paintbrushIcon: renderLucideIcon('paintbrush', 'game-view-icon'),
     rocketIcon: renderLucideIcon('rocket', 'game-view-icon'),
     starIcon: renderLucideIcon('star', 'game-view-icon'),
     botIcon: renderLucideIcon('bot', 'game-view-icon'),
