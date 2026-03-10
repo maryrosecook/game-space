@@ -278,6 +278,8 @@ class TestHTMLCanvasElement extends TestHTMLElement {
   public height = 0;
   public clientWidth = 360;
   public clientHeight = 640;
+  public toDataUrlCalls = 0;
+  public dataUrlValue = 'data:image/png;base64,test-canvas';
   private readonly context = new TestCanvasRenderingContext2D();
   private readonly capturedPointerIds = new Set<number>();
 
@@ -291,7 +293,8 @@ class TestHTMLCanvasElement extends TestHTMLElement {
 
   toDataURL(type?: string): string {
     void type;
-    return 'data:image/png;base64,test-canvas';
+    this.toDataUrlCalls += 1;
+    return this.dataUrlValue;
   }
 
   getBoundingClientRect(): { left: number; top: number } {
@@ -377,6 +380,7 @@ type GameViewHarness = {
   body: TestBodyElement;
   transcriptTitle: string | null;
   editTab: TestHTMLButtonElement;
+  annotationButton: TestHTMLButtonElement;
   favoriteButton: TestHTMLButtonElement;
   deleteButton: TestHTMLButtonElement;
   recordButton: TestHTMLButtonElement;
@@ -448,6 +452,7 @@ async function runGameViewScript(
   const promptForm = new TestHTMLFormElement();
   const promptInput = new TestHTMLInputElement();
   const editTab = new TestHTMLButtonElement();
+  const annotationButton = new TestHTMLButtonElement();
   const favoriteButton = new TestHTMLButtonElement();
   const deleteButton = new TestHTMLButtonElement();
   const recordButton = new TestHTMLButtonElement();
@@ -464,6 +469,7 @@ async function runGameViewScript(
   document.registerElement('prompt-form', promptForm);
   document.registerElement('prompt-input', promptInput);
   document.registerElement('game-tab-edit', editTab);
+  document.registerElement('game-tab-annotation', annotationButton);
   document.registerElement('game-tab-favorite', favoriteButton);
   document.registerElement('game-tab-delete', deleteButton);
   document.registerElement('prompt-record-button', recordButton);
@@ -626,6 +632,7 @@ async function runGameViewScript(
     body: document.body,
     transcriptTitle,
     editTab,
+    annotationButton,
     favoriteButton,
     deleteButton,
     recordButton,
@@ -1119,6 +1126,42 @@ describe('game view prompt submit client', () => {
     expect(peerConnection?.remoteDescription).toEqual({ type: 'answer', sdp: 'fake-answer-sdp' });
   });
 
+  it('enables annotation and captures the base screenshot when recording starts', async () => {
+    const harness = await runGameViewScript(async (url) => {
+      if (url === '/api/transcribe') {
+        return {
+          ok: true,
+          async json() {
+            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
+          }
+        };
+      }
+
+      if (url === 'https://api.openai.com/v1/realtime/calls') {
+        return {
+          ok: true,
+          async text() {
+            return 'fake-answer-sdp';
+          }
+        };
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    expect(harness.gameCanvas.toDataUrlCalls).toBe(0);
+    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(false);
+    expect(harness.annotationButton.getAttribute('aria-pressed')).toBe('false');
+
+    harness.recordButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    expect(harness.gameCanvas.toDataUrlCalls).toBeGreaterThan(0);
+    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(true);
+    expect(harness.promptDrawingCanvas.getAttribute('aria-hidden')).toBe('false');
+    expect(harness.annotationButton.getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('keeps stop busy until flush completes and then submits the final transcript', async () => {
     const harness = await runGameViewScript(async (url) => {
       if (url === '/api/transcribe') {
@@ -1251,7 +1294,7 @@ describe('game view prompt submit client', () => {
     expect(harness.consoleLogs).toContainEqual(['[realtime-transcription] flush timeout fallback']);
   });
 
-  it('enables annotation drawing during recording and includes annotation PNG in prompt submit', async () => {
+  it('submits the annotated prompt on recording stop even while the edit drawer is open', async () => {
     const harness = await runGameViewScript(async (url) => {
       if (url === '/api/transcribe') {
         return {
@@ -1283,11 +1326,15 @@ describe('game view prompt submit client', () => {
       throw new Error(`Unexpected fetch URL: ${url}`);
     });
 
-    harness.recordButton.dispatchEvent('click', createEvent());
+    harness.editTab.dispatchEvent('click', createEvent());
+    harness.annotationButton.dispatchEvent('click', createEvent());
     await flushAsyncOperations();
 
+    const annotationCaptureCallCount = harness.gameCanvas.toDataUrlCalls;
+    expect(annotationCaptureCallCount).toBeGreaterThan(0);
     expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(true);
     expect(harness.promptDrawingCanvas.getAttribute('aria-hidden')).toBe('false');
+    expect(harness.annotationButton.getAttribute('aria-pressed')).toBe('true');
 
     const drawingContext = harness.promptDrawingCanvas.getContext('2d');
     if (!drawingContext) {
@@ -1307,6 +1354,12 @@ describe('game view prompt submit client', () => {
       createEvent({ pointerId: 12, pointerType: 'mouse', button: 0, clientX: 70, clientY: 96 })
     );
 
+    harness.recordButton.dispatchEvent('click', createEvent());
+    await flushAsyncOperations();
+
+    expect(harness.gameCanvas.toDataUrlCalls).toBe(annotationCaptureCallCount);
+    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(true);
+
     const peerConnection = harness.getPeerConnection();
     peerConnection?.dataChannel.dispatchEvent(
       'message',
@@ -1322,7 +1375,6 @@ describe('game view prompt submit client', () => {
     harness.intervalCallbacks[0]?.();
 
     harness.recordButton.dispatchEvent('click', createEvent());
-    expect(harness.recordButton.disabled).toBe(true);
     peerConnection?.dataChannel.dispatchEvent(
       'message',
       createEvent({
@@ -1338,8 +1390,7 @@ describe('game view prompt submit client', () => {
     expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 25, y: 35 });
     expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 70, y: 96 });
     expect(drawingContext.operations).toContainEqual({ type: 'stroke' });
-    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(false);
-    expect(harness.promptDrawingCanvas.getAttribute('aria-hidden')).toBe('true');
+    await flushAsyncOperations();
 
     expect(harness.fetchCalls[2]).toEqual({
       url: '/api/games/source-version/prompts',
@@ -1356,24 +1407,20 @@ describe('game view prompt submit client', () => {
         })
       }
     });
+    expect(harness.gameCanvas.toDataUrlCalls).toBe(annotationCaptureCallCount);
+    expect(harness.assignCalls).toEqual(['/game/voice-fork']);
+    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(false);
+    expect(harness.promptDrawingCanvas.getAttribute('aria-hidden')).toBe('true');
+    expect(harness.annotationButton.getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('draws from touch pointer events while recording', async () => {
+  it('draws from touch pointer events after paintbrush activation', async () => {
     const harness = await runGameViewScript(async (url) => {
-      if (url === '/api/transcribe') {
+      if (url === '/api/games/source-version/prompts') {
         return {
           ok: true,
           async json() {
-            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
-          }
-        };
-      }
-
-      if (url === 'https://api.openai.com/v1/realtime/calls') {
-        return {
-          ok: true,
-          async text() {
-            return 'fake-answer-sdp';
+            return { forkId: 'draw-fork' };
           }
         };
       }
@@ -1381,7 +1428,8 @@ describe('game view prompt submit client', () => {
       throw new Error(`Unexpected fetch URL: ${url}`);
     });
 
-    harness.recordButton.dispatchEvent('click', createEvent());
+    harness.editTab.dispatchEvent('click', createEvent());
+    harness.annotationButton.dispatchEvent('click', createEvent());
     await flushAsyncOperations();
 
     const drawingContext = harness.promptDrawingCanvas.getContext('2d');
@@ -1405,20 +1453,7 @@ describe('game view prompt submit client', () => {
     expect(drawingContext.operations).toContainEqual({ type: 'moveTo', x: 11, y: 17 });
     expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 11, y: 17 });
     expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 38, y: 61 });
-
-    const peerConnection = harness.getPeerConnection();
-    harness.recordButton.dispatchEvent('click', createEvent());
-    expect(harness.recordButton.disabled).toBe(true);
-    peerConnection?.dataChannel.dispatchEvent(
-      'message',
-      createEvent({
-        data: JSON.stringify({
-          type: 'response.done'
-        })
-      })
-    );
-    await flushAsyncOperations();
-    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(false);
+    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(true);
   });
 
   it('does not retry a fallback endpoint when realtime calls returns 400', async () => {

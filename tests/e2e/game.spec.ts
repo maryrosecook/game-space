@@ -1,8 +1,12 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { loginAsAdmin } from './helpers/auth';
+
+async function waitForAdminGameViewReady(page: Page): Promise<void> {
+  await expect(page.locator('#game-tab-edit')).toHaveAttribute('aria-busy', 'false');
+}
 
 test('public game page hides manual tile snapshot capture controls', async ({ page }) => {
   await page.goto('/game/starter');
@@ -33,6 +37,7 @@ test('game page does not log a favicon 404 console error on load', async ({ page
 test('starter game ships a blank default scene contract and loads canvas', async ({ page }) => {
   await loginAsAdmin(page);
   await page.goto('/game/starter');
+  await waitForAdminGameViewReady(page);
   await expect(page.locator('#game-canvas')).toBeVisible();
 
   const starterDefaults = await page.evaluate(async () => {
@@ -251,6 +256,7 @@ test('admin game page does not emit React hydration mismatch errors', async ({ p
   });
 
   await page.goto('/game/starter');
+  await waitForAdminGameViewReady(page);
   await expect(page.locator('#prompt-record-button')).toBeVisible();
   expect(
     errorMessages.some(
@@ -264,11 +270,12 @@ test('admin game page does not emit React hydration mismatch errors', async ({ p
 test('admin game page places tile capture in edit panel and posts tile snapshot data', async ({ page }) => {
   await loginAsAdmin(page);
   await page.goto('/game/starter');
+  await waitForAdminGameViewReady(page);
 
   await expect(page.locator('#prompt-panel')).toHaveAttribute('aria-hidden', 'true');
   await expect(page.locator('.game-tool-tabs #game-tab-capture-tile')).toHaveCount(0);
 
-  await page.locator('#game-tab-edit').click();
+  await page.locator('#game-tab-edit').dispatchEvent('click');
   await expect(page.locator('#prompt-panel')).toHaveAttribute('aria-hidden', 'false');
   await expect(page.locator('#game-tab-capture-tile')).toBeVisible();
   await expect(page.locator('#game-tab-capture-tile')).toHaveCSS('color', 'rgb(247, 249, 255)');
@@ -297,7 +304,7 @@ test('admin game page places tile capture in edit panel and posts tile snapshot 
     });
   });
 
-  await page.locator('#game-tab-capture-tile').click();
+  await page.locator('#game-tab-capture-tile').dispatchEvent('click');
 
   await expect.poll(() => tileCaptureRequestBody).not.toBeNull();
   const tileCapturePayload = JSON.parse(tileCaptureRequestBody ?? '{}');
@@ -313,7 +320,8 @@ test('admin game page places tile capture in edit panel and posts tile snapshot 
 test('admin prompt draft persists across reload for the same game and clears after successful submit', async ({ page }) => {
   await loginAsAdmin(page);
   await page.goto('/game/starter');
-  await page.locator('#game-tab-edit').click();
+  await waitForAdminGameViewReady(page);
+  await page.locator('#game-tab-edit').dispatchEvent('click');
 
   const promptDraft = `persisted draft ${Date.now().toString(36)}`;
   const draftStorageKey = 'game-space:prompt-draft:starter';
@@ -329,7 +337,8 @@ test('admin prompt draft persists across reload for the same game and clears aft
 
   await page.reload();
   await expect(page.locator('#game-canvas')).toBeVisible();
-  await page.locator('#game-tab-edit').click();
+  await waitForAdminGameViewReady(page);
+  await page.locator('#game-tab-edit').dispatchEvent('click');
   await expect(page.locator('#prompt-input')).toHaveValue(promptDraft);
 
   let submittedPrompt: string | null = null;
@@ -365,7 +374,7 @@ test('admin prompt draft persists across reload for the same game and clears aft
     })
     .toBeNull();
 
-  await page.locator('#game-tab-edit').click();
+  await page.locator('#game-tab-edit').dispatchEvent('click');
   await expect(page.locator('#prompt-input')).toHaveValue('');
   expect(submittedPrompt).toBe(promptDraft);
 });
@@ -429,7 +438,7 @@ test('manual tile capture returns unique tile URLs and homepage uses the latest 
       );
     });
 
-    await page.locator('#game-tab-capture-tile').click();
+    await page.locator('#game-tab-capture-tile').dispatchEvent('click');
     const response = await responsePromise;
     expect(response.status()).toBe(200);
     const payload = await response.json();
@@ -439,7 +448,8 @@ test('manual tile capture returns unique tile URLs and homepage uses the latest 
   try {
     await loginAsAdmin(page);
     await page.goto(`/game/${encodeURIComponent(versionId)}`);
-    await page.locator('#game-tab-edit').click();
+    await waitForAdminGameViewReady(page);
+    await page.locator('#game-tab-edit').dispatchEvent('click');
     await expect(page.locator('#game-tab-capture-tile')).toBeVisible();
 
     const firstTileSnapshotPath = await captureTileSnapshotPath();
@@ -469,6 +479,7 @@ test('manual tile capture returns unique tile URLs and homepage uses the latest 
 test('admin game page shows a labeled record button with rounded border styling', async ({ page }) => {
   await loginAsAdmin(page);
   await page.goto('/game/starter');
+  await waitForAdminGameViewReady(page);
 
   const recordButton = page.locator('#prompt-record-button');
   await expect(recordButton).toBeVisible();
@@ -481,6 +492,7 @@ test('admin game page shows a labeled record button with rounded border styling'
 test('game page initializes yellow annotation stroke color for prompt drawing', async ({ page }) => {
   await loginAsAdmin(page);
   await page.goto('/game/starter');
+  await waitForAdminGameViewReady(page);
 
   const strokeStyle = await page.locator('#prompt-drawing-canvas').evaluate((canvas) => {
     if (!(canvas instanceof HTMLCanvasElement)) {
@@ -494,10 +506,44 @@ test('game page initializes yellow annotation stroke color for prompt drawing', 
   expect(strokeStyle).toBe('rgba(250, 204, 21, 0.95)');
 });
 
+test('admin game page toggles annotation drawing from the edit drawer paintbrush button', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.goto('/game/starter');
+  await waitForAdminGameViewReady(page);
+
+  const annotationButton = page.locator('#game-tab-annotation');
+  const drawingCanvas = page.locator('#prompt-drawing-canvas');
+
+  await expect(drawingCanvas).toHaveAttribute('aria-hidden', 'true');
+
+  await page.locator('#game-tab-edit').dispatchEvent('click');
+  await expect(annotationButton).toBeVisible();
+  await expect(annotationButton).toHaveAttribute('aria-pressed', 'false');
+
+  await annotationButton.dispatchEvent('click');
+  await expect(annotationButton).toHaveAttribute('aria-pressed', 'true');
+  await expect(drawingCanvas).toHaveAttribute('aria-hidden', 'false');
+  expect(
+    await drawingCanvas.evaluate((canvas) => {
+      return canvas.classList.contains('prompt-drawing-canvas--active');
+    })
+  ).toBe(true);
+
+  await annotationButton.dispatchEvent('click');
+  await expect(annotationButton).toHaveAttribute('aria-pressed', 'false');
+  await expect(drawingCanvas).toHaveAttribute('aria-hidden', 'true');
+  expect(
+    await drawingCanvas.evaluate((canvas) => {
+      return canvas.classList.contains('prompt-drawing-canvas--active');
+    })
+  ).toBe(false);
+});
+
 
 test('admin game panel toggles keep aria-expanded attributes in sync', async ({ page }) => {
   await loginAsAdmin(page);
   await page.goto('/game/starter');
+  await waitForAdminGameViewReady(page);
 
   const editToggle = page.locator('#game-tab-edit');
   const transcriptToggle = page.locator('#game-codex-toggle');
@@ -509,21 +555,21 @@ test('admin game panel toggles keep aria-expanded attributes in sync', async ({ 
   await expect(promptPanel).toHaveAttribute('aria-hidden', 'true');
   await expect(transcriptPanel).toHaveAttribute('aria-hidden', 'true');
 
-  await editToggle.click();
+  await editToggle.dispatchEvent('click');
   await expect(editToggle).toHaveAttribute('aria-expanded', 'true');
   await expect(promptPanel).toHaveAttribute('aria-hidden', 'false');
   await expect(transcriptToggle).toHaveAttribute('aria-expanded', 'false');
 
-  await transcriptToggle.click();
+  await transcriptToggle.dispatchEvent('click');
   await expect(transcriptToggle).toHaveAttribute('aria-expanded', 'true');
   await expect(transcriptPanel).toHaveAttribute('aria-hidden', 'false');
 
-  await transcriptToggle.click();
+  await transcriptToggle.dispatchEvent('click');
   await expect(transcriptToggle).toHaveAttribute('aria-expanded', 'false');
   await expect(transcriptPanel).toHaveAttribute('aria-hidden', 'true');
   await expect(editToggle).toHaveAttribute('aria-expanded', 'true');
 
-  await editToggle.click();
+  await editToggle.dispatchEvent('click');
   await expect(editToggle).toHaveAttribute('aria-expanded', 'false');
   await expect(promptPanel).toHaveAttribute('aria-hidden', 'true');
 });

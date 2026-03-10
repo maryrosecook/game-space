@@ -79,6 +79,15 @@ export function GameApp({ data }: GameAppProps) {
                   <span>Build</span>
                 </button>
                 <button
+                  id="game-tab-annotation"
+                  className="prompt-action-button prompt-action-button--icon"
+                  type="button"
+                  aria-label="Enable annotation drawing"
+                  aria-pressed="false"
+                >
+                  <IconMarkup markup={data.paintbrushIcon} />
+                </button>
+                <button
                   id="game-tab-favorite"
                   className={`prompt-action-button prompt-action-button--icon game-view-icon-tab--favorite${data.isFavorite ? " game-view-icon-tab--active" : ""}`}
                   type="button"

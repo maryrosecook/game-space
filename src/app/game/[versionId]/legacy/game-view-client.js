@@ -5,6 +5,7 @@ const promptPanel = document.getElementById('prompt-panel');
 const promptForm = document.getElementById('prompt-form');
 const promptInput = document.getElementById('prompt-input');
 const editTab = document.getElementById('game-tab-edit');
+const annotationButton = document.getElementById('game-tab-annotation');
 const favoriteButton = document.getElementById('game-tab-favorite');
 const recordButton = document.getElementById('prompt-record-button');
 const tileCaptureButton = document.getElementById('game-tab-capture-tile');
@@ -25,6 +26,7 @@ if (
   !(promptForm instanceof HTMLFormElement) ||
   !promptInputIsTextEntry ||
   !(editTab instanceof HTMLButtonElement) ||
+  !(annotationButton instanceof HTMLButtonElement) ||
   !(favoriteButton instanceof HTMLButtonElement) ||
   !(recordButton instanceof HTMLButtonElement) ||
   !(tileCaptureButton instanceof HTMLButtonElement) ||
@@ -59,6 +61,7 @@ const initialUiState = Object.freeze({
   editPanelOpen: false,
   codexPanelExpanded: false,
   gameFavorited: initialFavorite,
+  annotationEnabled: false,
   recordingInProgress: false,
   transcriptionInFlight: false
 });
@@ -154,6 +157,14 @@ function reduceUiState(state, action) {
         ...state,
         gameFavorited: action.favorited
       };
+    case 'set-annotation-enabled':
+      if (state.annotationEnabled === action.enabled) {
+        return state;
+      }
+      return {
+        ...state,
+        annotationEnabled: action.enabled
+      };
     case 'set-recording-in-progress':
       if (state.recordingInProgress === action.inProgress) {
         return state;
@@ -201,7 +212,8 @@ const realtimeStopFlushSignalTypes = new Set([
 let annotationPointerId = null;
 let annotationStrokeInProgress = false;
 let annotationHasInk = false;
-let recordingStartGameScreenshotPngDataUrl = null;
+let annotationBaseGameScreenshotPngDataUrl = null;
+let annotationToggleInFlight = false;
 let realtimeStopFlushWaitState = null;
 
 
@@ -223,12 +235,10 @@ function resizeDrawingCanvas() {
   const nextWidth = Math.round(width * nextDevicePixelRatio);
   const nextHeight = Math.round(height * nextDevicePixelRatio);
 
-  if (promptDrawingCanvas.width === nextWidth && promptDrawingCanvas.height === nextHeight) {
-    return;
+  if (promptDrawingCanvas.width !== nextWidth || promptDrawingCanvas.height !== nextHeight) {
+    promptDrawingCanvas.width = nextWidth;
+    promptDrawingCanvas.height = nextHeight;
   }
-
-  promptDrawingCanvas.width = nextWidth;
-  promptDrawingCanvas.height = nextHeight;
 
   const context = drawingContext();
   if (!context) {
@@ -253,13 +263,43 @@ function clearDrawingCanvas() {
   annotationHasInk = false;
 }
 
-function setAnnotationEnabled(enabled) {
-  promptDrawingCanvas.classList.toggle('prompt-drawing-canvas--active', enabled);
-  promptDrawingCanvas.setAttribute('aria-hidden', enabled ? 'false' : 'true');
-  if (!enabled) {
-    annotationPointerId = null;
-    annotationStrokeInProgress = false;
+function applyAnnotationCanvasState() {
+  const annotationEnabled = uiState.annotationEnabled;
+  promptDrawingCanvas.classList.toggle('prompt-drawing-canvas--active', annotationEnabled);
+  promptDrawingCanvas.setAttribute('aria-hidden', annotationEnabled ? 'false' : 'true');
+  if (annotationEnabled) {
+    return;
   }
+
+  if (typeof annotationPointerId === 'number' && promptDrawingCanvas.hasPointerCapture(annotationPointerId)) {
+    promptDrawingCanvas.releasePointerCapture(annotationPointerId);
+  }
+
+  annotationPointerId = null;
+  annotationStrokeInProgress = false;
+}
+
+function updateAnnotationButtonVisualState() {
+  annotationButton.classList.toggle('prompt-action-button--active', uiState.annotationEnabled);
+  annotationButton.classList.toggle('prompt-action-button--busy', annotationToggleInFlight);
+  annotationButton.disabled = annotationToggleInFlight;
+  annotationButton.setAttribute('aria-pressed', uiState.annotationEnabled ? 'true' : 'false');
+  annotationButton.setAttribute(
+    'aria-label',
+    uiState.annotationEnabled ? 'Disable annotation drawing' : 'Enable annotation drawing'
+  );
+}
+
+function applyAnnotationState() {
+  applyAnnotationCanvasState();
+  updateAnnotationButtonVisualState();
+}
+
+function resetAnnotationSession() {
+  annotationBaseGameScreenshotPngDataUrl = null;
+  clearDrawingCanvas();
+  dispatchUiState({ type: 'set-annotation-enabled', enabled: false });
+  applyAnnotationState();
 }
 
 function pointerCoordinates(event) {
@@ -281,7 +321,7 @@ function isPrimaryAnnotationPointer(event) {
 }
 
 function beginAnnotationStroke(event) {
-  if (!uiState.recordingInProgress || annotationStrokeInProgress || !isPrimaryAnnotationPointer(event)) {
+  if (!uiState.annotationEnabled || annotationStrokeInProgress || !isPrimaryAnnotationPointer(event)) {
     return;
   }
 
@@ -873,6 +913,37 @@ async function captureTileSnapshot() {
   }
 }
 
+async function toggleAnnotationMode() {
+  if (annotationToggleInFlight) {
+    return;
+  }
+
+  if (uiState.annotationEnabled) {
+    resetAnnotationSession();
+    return;
+  }
+
+  await enableAnnotationSession();
+}
+
+async function enableAnnotationSession() {
+  if (annotationToggleInFlight || uiState.annotationEnabled) {
+    return;
+  }
+
+  annotationToggleInFlight = true;
+  updateAnnotationButtonVisualState();
+  clearDrawingCanvas();
+
+  try {
+    annotationBaseGameScreenshotPngDataUrl = await captureGameScreenshotPngDataUrl();
+    dispatchUiState({ type: 'set-annotation-enabled', enabled: true });
+  } finally {
+    annotationToggleInFlight = false;
+    applyAnnotationState();
+  }
+}
+
 async function startRealtimeRecording() {
   if (!navigator?.mediaDevices?.getUserMedia) {
     return;
@@ -887,9 +958,7 @@ async function startRealtimeRecording() {
   ensureOverlayWordDrainLoop();
   completedTranscriptionSegments = [];
   clearTranscriptionDisplayBuffer();
-  clearDrawingCanvas();
-  recordingStartGameScreenshotPngDataUrl = await captureGameScreenshotPngDataUrl();
-  setAnnotationEnabled(false);
+  await enableAnnotationSession();
 
   let peerConnection = null;
   let dataChannel = null;
@@ -920,7 +989,6 @@ async function startRealtimeRecording() {
     realtimeDataChannel = dataChannel;
     realtimeAudioStream = stream;
     dispatchUiState({ type: 'set-recording-in-progress', inProgress: true });
-    setAnnotationEnabled(true);
     logRealtimeTranscription('started');
   } catch {
     if (dataChannel && typeof dataChannel.close === 'function') {
@@ -935,8 +1003,6 @@ async function startRealtimeRecording() {
       stopAudioStream(stream);
     }
 
-    clearDrawingCanvas();
-    setAnnotationEnabled(false);
     return;
   } finally {
     dispatchUiState({ type: 'set-transcription-in-flight', inFlight: false });
@@ -969,18 +1035,19 @@ async function stopRealtimeRecording() {
 
     const transcribedPrompt = completedTranscriptionSegments.join(' ').trim();
     const annotationPngDataUrl = readAnnotationPngDataUrl();
-    const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl(recordingStartGameScreenshotPngDataUrl);
-    if (!uiState.editPanelOpen && versionId && transcribedPrompt.length > 0) {
-      await submitPrompt(transcribedPrompt, annotationPngDataUrl, gameScreenshotPngDataUrl);
-      completedTranscriptionSegments = [];
-      clearTranscriptionDisplayBuffer();
+    const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl(annotationBaseGameScreenshotPngDataUrl);
+    if (versionId && transcribedPrompt.length > 0) {
+      const promptSubmitted = await submitPrompt(transcribedPrompt, annotationPngDataUrl, gameScreenshotPngDataUrl);
+      if (promptSubmitted) {
+        completedTranscriptionSegments = [];
+        clearTranscriptionDisplayBuffer();
+        resetAnnotationSession();
+      }
     }
   } finally {
     logRealtimeTranscription('stopped');
     logRealtimeTranscription('final transcribed text', promptInput.value);
     dispatchUiState({ type: 'set-recording-in-progress', inProgress: false });
-    recordingStartGameScreenshotPngDataUrl = null;
-    setAnnotationEnabled(false);
     closeRealtimeConnection();
     dispatchUiState({ type: 'set-transcription-in-flight', inFlight: false });
     updateRecordButtonVisualState();
@@ -1304,6 +1371,10 @@ function initializeGameViewControls() {
     void captureTileSnapshot();
   });
 
+  annotationButton.addEventListener('click', () => {
+    void toggleAnnotationMode();
+  });
+
   promptForm.addEventListener('submit', (event) => {
     event.preventDefault();
 
@@ -1314,7 +1385,7 @@ function initializeGameViewControls() {
 
     void (async () => {
       const annotationPngDataUrl = readAnnotationPngDataUrl();
-      const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl();
+      const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl(annotationBaseGameScreenshotPngDataUrl);
       await submitPrompt(prompt, annotationPngDataUrl, gameScreenshotPngDataUrl);
     })().catch(() => {
       // Keep prompt submit non-blocking if networking or payload parsing fails.
@@ -1324,8 +1395,7 @@ function initializeGameViewControls() {
     resizePromptInput();
     completedTranscriptionSegments = [];
     clearTranscriptionDisplayBuffer();
-    clearDrawingCanvas();
-    setAnnotationEnabled(false);
+    resetAnnotationSession();
     focusPromptInput();
   });
 
@@ -1362,7 +1432,7 @@ function initializeGameViewControls() {
   );
 
   resizeDrawingCanvas();
-  setAnnotationEnabled(false);
+  applyAnnotationState();
 
   promptDrawingCanvas.addEventListener('pointerdown', (event) => {
     beginAnnotationStroke(event);

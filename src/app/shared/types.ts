@@ -70,6 +70,7 @@ export type GamePageData = {
   homeIcon: string;
   settingsIcon: string;
   micIcon: string;
+  paintbrushIcon: string;
   rocketIcon: string;
   starIcon: string;
   botIcon: string;
