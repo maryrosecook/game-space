@@ -845,23 +845,36 @@ test("admin game toolbar separates build and settings drawers with synced aria s
 	await expect(promptPanel).toHaveAttribute("aria-hidden", "true");
 	await expect(settingsForm).toHaveCSS("overflow-y", "auto");
 
-	const settingsDrawerShift = await page.evaluate(() => {
+	const settingsDrawerLayout = await page.evaluate(() => {
 		const tabs = document.querySelector(".game-toolbar-main")?.closest(".game-bottom-tabs");
 		const panel = document.getElementById("settings-panel");
-		if (!(tabs instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
+		const editTab = document.getElementById("game-tab-edit");
+		const settingsTab = document.getElementById("game-tab-settings");
+		if (
+			!(tabs instanceof HTMLElement) ||
+			!(panel instanceof HTMLElement) ||
+			!(editTab instanceof HTMLElement) ||
+			!(settingsTab instanceof HTMLElement)
+		) {
 			return null;
 		}
 
 		const tabsRect = tabs.getBoundingClientRect();
 		const panelRect = panel.getBoundingClientRect();
+		const editRect = editTab.getBoundingClientRect();
+		const settingsRect = settingsTab.getBoundingClientRect();
 		const shift = window.innerHeight - tabsRect.bottom;
 		return {
 			shift,
 			panelHeight: panelRect.height,
+			activeTabBottomGap: Math.abs(editRect.bottom - panelRect.top),
+			tabTopOffset: Math.abs(editRect.top - settingsRect.top),
 		};
 	});
-	expect(settingsDrawerShift).not.toBeNull();
-	expect(Math.abs(settingsDrawerShift!.shift - settingsDrawerShift!.panelHeight)).toBeLessThanOrEqual(2);
+	expect(settingsDrawerLayout).not.toBeNull();
+	expect(Math.abs(settingsDrawerLayout!.shift - settingsDrawerLayout!.panelHeight)).toBeLessThanOrEqual(2);
+	expect(settingsDrawerLayout!.activeTabBottomGap).toBeLessThanOrEqual(2);
+	expect(settingsDrawerLayout!.tabTopOffset).toBeLessThanOrEqual(1);
 
 	const settingsHeightRatio = await settingsPanel.evaluate((element) => {
 		const rect = element.getBoundingClientRect();
