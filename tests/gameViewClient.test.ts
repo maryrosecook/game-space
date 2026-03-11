@@ -765,11 +765,10 @@ async function runGameViewScript(
 		"src/app/game/[versionId]/legacy/game-view-client.js",
 	);
 	const source = await readFile(scriptPath, "utf8");
+	const transcriptPresenterImportPattern =
+		/^import\s+\{\s*createCodexTranscriptPresenter\s*\}\s+from\s+['"]\.\/codex-transcript-presenter\.js['"];\n\n/;
 	const runnableSource = source
-		.replace(
-			"import { createCodexTranscriptPresenter } from './codex-transcript-presenter.js';\n\n",
-			"",
-		)
+		.replace(transcriptPresenterImportPattern, "")
 		.replaceAll(
 			"startTranscriptPolling();",
 			startTranscriptPolling ? "startTranscriptPolling();" : "",
