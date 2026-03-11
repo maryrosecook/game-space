@@ -22,9 +22,20 @@ export function GameApp({ data }: GameAppProps) {
               type="button"
               aria-controls="prompt-panel"
               aria-expanded="false"
+              aria-label="Build tools"
+            >
+              <IconMarkup markup={data.editIcon} />
+              <span className="game-view-tab-spinner" aria-hidden="true"></span>
+            </button>
+            <button
+              id="game-tab-settings"
+              className="game-view-tab game-view-tab--settings"
+              type="button"
+              aria-controls="settings-panel"
+              aria-expanded="false"
+              aria-label="Runtime settings"
             >
               <IconMarkup markup={data.settingsIcon} />
-              <span className="game-view-tab-spinner" aria-hidden="true"></span>
             </button>
             <button
               id="prompt-record-button"
@@ -33,7 +44,6 @@ export function GameApp({ data }: GameAppProps) {
               aria-label="Start voice recording"
             >
               <IconMarkup markup={data.micIcon} />
-              <span className="game-view-icon-tab-label">Describe a change</span>
             </button>
           </div>
           <div id="prompt-overlay" className="prompt-overlay" aria-hidden="true" aria-live="polite"></div>
@@ -58,7 +68,12 @@ export function GameApp({ data }: GameAppProps) {
 
       {data.isAdmin ? (
         <>
-          <section id="prompt-panel" className="prompt-panel" aria-hidden="true" aria-label="Create next version prompt">
+          <section
+            id="prompt-panel"
+            className="game-bottom-panel prompt-panel"
+            aria-hidden="true"
+            aria-label="Create next version prompt"
+          >
             <form id="prompt-form" className="prompt-form">
               <textarea
                 id="prompt-input"
@@ -136,6 +151,19 @@ export function GameApp({ data }: GameAppProps) {
                 <p className="codex-empty">Loading transcript...</p>
               </section>
             </section>
+          </section>
+          <section
+            id="settings-panel"
+            className="game-bottom-panel settings-panel"
+            aria-hidden="true"
+            aria-label="Runtime settings"
+          >
+            <header className="settings-panel-header">
+              <h2>Runtime settings</h2>
+            </header>
+            <div id="settings-form" className="settings-form" aria-live="polite">
+              <p className="settings-panel-empty">Loading settings...</p>
+            </div>
           </section>
           {gameToolbarMarkup}
         </>

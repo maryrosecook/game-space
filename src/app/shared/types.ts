@@ -68,6 +68,7 @@ export type GamePageData = {
   providerLabel: string;
   enableLiveReload: boolean;
   homeIcon: string;
+  editIcon: string;
   settingsIcon: string;
   micIcon: string;
   paintbrushIcon: string;

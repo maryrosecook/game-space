@@ -3,17 +3,19 @@
 Local-first game version browser and editor where every version is playable, forkable, and independently buildable.
 
 Top three features:
+
 - Filesystem-backed version catalog rendered as responsive homepage tiles (`Fountain`) with a minimum three-column grid, edge-to-edge tile media, image-only cards with accessible link names, hyphen-normalized names, and favorite highlighting; logged-out users see only favorites while direct non-favorite game URLs still load.
-- Cookie-authenticated admin workflow (`/auth`) that unlocks prompt execution and transcript access, including runtime switching between Codex and Claude codegen providers, while keeping public gameplay (`/` and `/game/:versionId`) available without login.
-- Starter now supports deterministic headless runs (Playwright + SwiftShader flags) driven by a bounded JSON action protocol (`run` / `input` / `snap`) with PNG capture output via a local CLI workflow (`npm run headless`).
+- Cookie-authenticated admin workflow (`/auth`) that unlocks prompt execution and transcript access, splits game-page tooling into hammer/settings drawers, and supports runtime switching between Codex and Claude codegen providers while keeping public gameplay (`/` and `/game/:versionId`) available without login.
+- Starter now supports both deterministic headless runs (Playwright + SwiftShader flags) driven by a bounded JSON action protocol (`run` / `input` / `snap`) and metadata-driven runtime settings via persisted per-version slider controls (`particleAmount` in the starter proof-of-concept).
 
 # Repo structure
 
 - `src/` - Backend runtime, browser assets, and service modules.
   - `server.ts` - Production HTTP entrypoint that boots Next and forwards all requests through `nextBridge.handleRequest`, with centralized `502 Bad gateway` fallback on Next failures.
+  - `gameRuntimeControls.ts` - Shared runtime-settings/control-state types plus slider validation, merge, and resolution helpers used by both the Next client bootstrap and starter runtime.
   - `types.ts` - Shared metadata/version TypeScript types.
   - `public/` - Static browser assets.
-    - `styles.css` - Homepage/game/auth styling, including minimum three-column homepage tile layout with full-bleed media and image-only cards, favorite tile/button states, admin/public game states, provider selector controls on `/auth`, transcript layouts, and Edit-tab generating spinner animation.
+    - `styles.css` - Homepage/game/auth styling, including minimum three-column homepage tile layout with full-bleed media and image-only cards, favorite tile/button states, admin/public game states, split hammer/settings game drawers, generated runtime-settings slider styles, provider selector controls on `/auth`, transcript layouts, and Edit-tab generating spinner animation.
   - `services/` - Filesystem, auth, build, provider-configurable prompt execution, and session/transcript orchestration.
     - `fsUtils.ts` - Shared fs/object/error helpers.
     - `adminAuth.ts` - Admin password verification, iron-session sealed cookies, fixed TTL, and login rate limiter.
@@ -28,6 +30,7 @@ Top three features:
     - `codexTurnInfo.ts` - Per-worktree runtime-state tracker that scans latest matching session JSONL by worktree cwd metadata (`session_meta.payload.cwd` or top-level `cwd`), reads append-only bytes, and derives `eyeState` from task lifecycle events (with message-balance fallback).
     - `openaiTranscription.ts` - OpenAI Realtime client-secret factory (`/v1/realtime/client_secrets`) that configures `gpt-realtime-1.5` sessions with input transcription enabled and returns ephemeral browser tokens.
     - `gameBuildPipeline.ts` - Per-game dependency install/build and source-path-to-version mapping.
+    - `gameControlState.ts` - Per-version `control-state.json` read/write helpers with atomic queued persistence.
     - `devLiveReload.ts` - Per-version reload-token pathing/writes used by the dev watch loop.
     - `promptSubmission.ts` - Shared prompt-submit flow (forking, visual attachment validation, session persistence, and tile-snapshot capture) used by Next API handlers.
     - `serverRuntimeState.ts` - Shared mutable runtime singletons (provider store, login limiter, idea-generation state, and codex runner) used across Next-owned page and API handlers.
@@ -46,7 +49,7 @@ Top three features:
   - `auth/*/route.ts` - Next-owned auth GET/POST route handlers (`/auth`, `/auth/login`, `/auth/logout`, `/auth/provider`).
   - `api/**/route.ts` - Next-owned API handlers for ideas, codex sessions, game mutations, transcription, and dev reload-token reads.
   - `game/[versionId]/legacy/` - Transitional browser modules loaded through Next client bootstrap.
-    - `game-view-client.js` - Legacy admin game-page behavior module (prompt submit/favorite/delete/snapshot/transcript/voice/annotation wiring).
+    - `game-view-client.js` - Legacy admin game-page behavior module (prompt submit/favorite/delete/snapshot/transcript/voice/annotation wiring plus generated runtime-settings drawer rendering/persistence).
     - `game-live-reload-client.js` - Legacy dev-only polling module.
     - `codex-transcript-presenter.js` - Shared transcript presenter used by `game-view-client`.
   - `public/[...assetPath]/route.ts` + `games/[versionId]/[...assetPath]/route.ts` + `favicon.ico/route.ts` - Next Node-runtime static/fallback handlers for `/public/*`, `/games/*`, and `/favicon.ico` under the explicit Option B GET-only static contract.
@@ -59,7 +62,7 @@ Top three features:
 - `.github/pull_request_template.md` - PR template with `video-tests` selector block for requesting feature-video runs.
 - `games/` - Versioned game sandboxes (one runtime/build boundary per version).
   - `starter/` - Minimal touch-and-mouse WebGL starter with browser/headless adapters and local headless tooling.
-    - `src/main.ts` - Starter bootstrap plus `createStarterEngine()` adapter-injection entrypoint.
+    - `src/main.ts` - Starter bootstrap plus `createStarterEngine()` adapter-injection entrypoint, runtime-settings proof-of-concept, and particle-emitter demo scene.
     - `src/engine/frameScheduler.ts` - Browser RAF and deterministic headless frame schedulers.
     - `src/engine/input.ts` - Browser and headless input managers that emit the same touch-frame shape.
     - `src/headless/protocol.ts` - Protocol types, guard rails, and parser/validator.
@@ -82,7 +85,8 @@ Top three features:
 
 - Request dispatch flow: `src/server.ts` is the single production entrypoint and forwards every request to Next (`nextBridge.handleRequest`) with centralized `502` fallback handling.
 - Auth/homepage/API flow: Next handles `/`, `/_next/*`, `/auth*`, `/api/*`, `/game/*`, `/codex`, `/ideas`, `/public/*`, `/games/*`, and `/favicon.ico`; Node-runtime handlers preserve existing CSRF, rate-limit, cookie, and admin-404 contracts.
-- Game page flow: `src/app/game/[versionId]/page.tsx` validates version/bundle availability, renders `GameApp`, and mounts `GamePageClientBootstrap` to start `/games/:versionId/dist/game.js` plus admin/dev client behaviors through Next-managed dynamic imports; bootstrap manages one active runtime teardown at a time and exposes a host-invokable global teardown handle.
+- Game page flow: `src/app/game/[versionId]/page.tsx` validates version/bundle availability, renders `GameApp`, reads any persisted `control-state.json`, and mounts `GamePageClientBootstrap` to start `/games/:versionId/dist/game.js` plus admin/dev client behaviors through Next-managed dynamic imports; bootstrap manages one active runtime teardown at a time, exposes a host-invokable global teardown handle, and passes runtime-settings host capabilities (`versionId`, control-state load/save) into `startGame(canvas, host?)`.
+- Runtime settings flow: admin game pages now split bottom-drawer UX into hammer/build tools and cog/settings drawers; `game-view-client.js` reads runtime slider metadata from `window.__gameSpaceActiveGameRuntimeControls`, renders range inputs into `#settings-form`, and debounces `serializeControlState()` saves to `POST /api/games/:versionId/control-state`, while both admin and public loads merge persisted globals from `games/<versionId>/control-state.json`.
 - Favorite toggle flow: `POST /api/games/:versionId/favorite` requires admin + CSRF, flips the `favorite` boolean in `metadata.json`, and returns the new state for `src/app/game/[versionId]/legacy/game-view-client.js` to reflect in the star button.
 - Manual tile snapshot flow: admin game pages expose a recorder button (`#game-tab-capture-tile`) in the Edit drawer action row (left of delete) that captures current `#game-canvas` pixels as a PNG data URL; client capture waits for animation frames and retries when the output matches a blank-canvas PNG before posting to `POST /api/games/:versionId/tile-snapshot`, which validates the payload, writes `games/<version-id>/snapshots/tile.png`, and stores a cache-busted `tileSnapshotPath` in metadata so homepage tiles refresh immediately.
 - Prompt fork flow: `POST /api/games/:versionId/prompts` requires admin + CSRF, forks via `createForkedGameVersion()` (prompt-derived three-word base plus random 10-character lowercase alphanumeric suffix), persists the submitted user prompt in the new fork's `metadata.json`, sets lifecycle state to `created`, composes full prompt, launches the provider-selected runner (`codex` or `claude`) behind `CodexRunner`, persists `codexSessionId` as soon as observed, and transitions lifecycle to `stopped` or `error` when the run settles.
@@ -98,6 +102,7 @@ Top three features:
 - `games/` - Primary persisted store (no external database).
   - `<version-id>/`
     - `metadata.json` - `{ id: string, parentId: string | null, createdTime: ISO-8601 string, threeWords?: string, prompt?: string, tileColor?: "#RRGGBB", favorite?: boolean, codexSessionId?: string | null, codexSessionStatus?: "none" | "created" | "stopped" | "error", tileSnapshotPath?: string }`.
+    - `control-state.json` - `{ globals?: { [key: string]: string | number | boolean | null } }` persisted runtime-settings overrides merged over code-defined `globals` at load time.
     - `src/main.ts` - Version gameplay source.
     - `dist/game.js` - Built runtime bundle served to clients.
     - `dist/reload-token.txt` - Dev-only rebuild token (read through `/api/dev/reload-token/:versionId` when dev live reload is enabled).
@@ -133,6 +138,8 @@ Top three features:
 - Realtime stop-flush model: when ending recording, `game-view-client.js` keeps the record button busy/disabled while waiting for realtime flush signal events and overlay-word drain completion, with a bounded timeout fallback so stop cannot hang.
 - Prompt draft persistence model: prompt input drafts autosave to `localStorage` per game version (`game-space:prompt-draft:<version-id>`), restore on load, and clear on successful prompt submit or form reset.
 - Annotation capture model: the Edit drawer exposes a paintbrush button (`#game-tab-annotation`) that toggles the full-stage `#prompt-drawing-canvas` overlay, and recording start also enables the same annotation session if it is not already active. On first activation, `game-view-client.js` captures a base game screenshot, then reuses that stored frame to compose the final image submitted on recording stop or later text-form submit; raw annotation PNG bytes are still attached only when ink exists. The server accepts only PNG data URLs, decodes the image bytes, writes temporary PNGs in the fork worktree, and passes them to both Codex (`--image`) and Claude (`--input-format stream-json` user message with base64 image content block) while also including an attached-image prompt marker.
+- Runtime settings model: game runtimes can declare top-level `globals` plus `editor.sliders`; the starter bootstrap exposes `getSliders`, `setGlobalValue`, and `serializeControlState`, while Next persists overrides per version in `control-state.json` without rewriting source files.
+- Annotation capture model: while recording, `game-view-client.js` activates the full-stage `#prompt-drawing-canvas` overlay and draws pointer/touch strokes using `CanvasRenderingContext2D`; when prompt submission happens from recorded speech, the client includes `toDataURL('image/png')` output as `annotationPngDataUrl` only if ink was drawn. The server accepts only PNG data URLs, decodes the image bytes, writes a temporary PNG in the fork worktree, and passes that image to both Codex (`--image`) and Claude (`--input-format stream-json` user message with base64 image content block) while also including an attached-image prompt marker.
 - Codegen provider model: `RuntimeCodegenConfigStore` loads env defaults once and keeps a mutable in-memory `provider` setting that `/auth/provider` can update; `SpawnCodegenRunner` reads this setting at run-time and dispatches to either Codex or Claude CLI while preserving the `CodexRunner` API contract.
 - Prompt safety model: user prompt text is never shell-interpolated; provider runners pass full prompt bytes through stdin (`codex exec --json --dangerously-bypass-approvals-and-sandbox -` with optional `--image` file arguments, or `claude --print --output-format stream-json --dangerously-skip-permissions`, switching to `--input-format stream-json` JSONL user-message input when image attachments are provided).
 - Ideas base-game ideation model: ideas generation accepts `baseGameVersionId` from `/ideas`; allowed options are `starter` plus favorited game versions. Ideation prompt composition injects a branch directive before shared guidance (`starter` => creative single-sentence arcade concept, non-starter => off-the-wall single-sentence improvement grounded in the selected game context).
@@ -143,7 +150,7 @@ Top three features:
 - Runtime-state derivation model: `codexTurnInfo.ts` keeps an in-memory tracker per worktree (`sessionPath`, append offset, partial-line buffer, task lifecycle counters, user/assistant counters, latest assistant metadata), scans for the newest matching JSONL by worktree cwd metadata (`session_meta.payload.cwd` for Codex or top-level `cwd` for Claude), and sets `eyeState` to `generating` while `task_started` count exceeds terminal task events (`task_complete` and related terminal markers); otherwise `idle`. For logs without task markers, it falls back to user/assistant message balance. When no tracker is active, lifecycle state maps fallback runtime state.
 - Transcript scroll model: `createCodexTranscriptPresenter()` exposes `scrollToBottom()`; game transcript panel-open events and transcript re-renders use it (via `autoScrollToBottom`) so admins land on the newest message when opening the panel and during polling updates.
 - Voice overlay layout model: `prompt-overlay` covers the full game viewport, renders transcript text top-left with reduced size, and `updatePromptOverlay()` keeps the container scrolled to `scrollHeight` while visible so newest transcript text stays in view.
-- Starter game base model: `games/starter/src/engine/engine.ts` runs lifecycle/tick phases with adapter injection points for input and frame scheduling. Browser gameplay defaults to `BrowserInputManager` + `BrowserRafScheduler`; headless runs inject `HeadlessInputManager` + `HeadlessFrameScheduler` while leaving game/blueprint logic unchanged. `games/starter/src/main.ts` intentionally ships an empty default scene (`things=[]`, `blueprints=[]`) so first launch renders only the configured background color.
+- Starter game base model: `games/starter/src/engine/engine.ts` runs lifecycle/tick phases with adapter injection points for input and frame scheduling. Browser gameplay defaults to `BrowserInputManager` + `BrowserRafScheduler`; headless runs inject `HeadlessInputManager` + `HeadlessFrameScheduler` while leaving game/blueprint logic unchanged. `games/starter/src/main.ts` now ships one hidden particle-emitter blueprint/thing, declares `globals.particleAmount` plus `editor.sliders`, and uses that persisted global as the multiplier for falling yellow/orange/red particles.
 - Starter headless protocol model: `protocol.ts` validates steps-only action tapes and enforces fixed runtime constraints (`viewport=360x640@dpr1`, `MAX_TOTAL_FRAMES=120`, `MAX_SNAPSHOTS=1`, `MAX_STEPS=64`, `MAX_INPUT_EVENTS=128`, and runtime ceiling) before launching Chromium.
 - Starter headless orchestration model: `runner.ts` bundles `browserHarness.ts` via esbuild at runtime, boots a canvas in Playwright, executes sequential steps through `executor.ts`, captures only `snap` frames, and persists PNG outputs with stable ordered filenames. `browserHarness.ts` creates WebGL with `preserveDrawingBuffer: true` and calls `gl.finish()` before `toDataURL('image/png')` so captures contain rendered pixels rather than cleared buffers.
 - Favorites model: each game version can be marked favorite in `metadata.json`; the homepage filters to favorites for logged-out users, while authenticated admins can toggle favorite state from the game-page star control.
@@ -182,7 +189,11 @@ Top three features:
   - Prompt fork/session lifecycle persistence flow and transcript parsing behavior across Codex + Claude JSONL formats.
   - Metadata persistence safety for multiline/quoted/Unicode prompt text and concurrent metadata writes.
   - Realtime transcription session creation route behavior (`200`, `502`, `503`) and game-page client WebRTC transcription wiring through `/v1/realtime/calls`.
-  - Game page client behavior for CSRF header inclusion, admin/public UI states, favorite-star toggling, paintbrush-driven annotation activation, transcript auto-scroll wiring on panel open and polling updates, top-anchored realtime voice-overlay auto-follow behavior, and Edit-tab generating spinner class toggling for both Codex and Claude generation states.
+    <<<<<<< HEAD
+  - # Game page client behavior for CSRF header inclusion, admin/public UI states, favorite-star toggling, paintbrush-driven annotation activation, transcript auto-scroll wiring on panel open and polling updates, top-anchored realtime voice-overlay auto-follow behavior, and Edit-tab generating spinner class toggling for both Codex and Claude generation states.
+  - Game page client behavior for CSRF header inclusion, admin/public UI states, favorite-star toggling, transcript auto-scroll wiring on panel open and polling updates, top-anchored realtime voice-overlay auto-follow behavior, and Edit-tab generating spinner class toggling for both Codex and Claude generation states.
+  - Runtime-settings coverage for slider metadata validation/merge logic, `/api/games/:versionId/control-state` validation + atomic persistence, hammer/settings drawer behavior, icon-only microphone button, and starter `particleAmount` persistence across reloads.
+    > > > > > > > ed44f59 (Add runtime settings controls)
   - `/codex` client behavior, including transcript render auto-scroll request on initial load.
   - `/ideas` client behavior for base-game selector UI, generate request payload (`baseGameVersionId`), and archive interactions.
   - Repo automation workflow integrity checks, including YAML parse validation for `.github/workflows/pr-feature-videos.yml` and `.github/workflows/owner-pr-automerge.yml`.

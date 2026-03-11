@@ -3,6 +3,7 @@ import path from 'node:path';
 import {
   Bot,
   ChevronLeft,
+  Hammer,
   Mic,
   Paintbrush,
   Rocket,
@@ -28,6 +29,7 @@ import {
   ensureCsrfTokenFromCookieHeader,
 } from '../../../services/csrf';
 import { pathExists } from '../../../services/fsUtils';
+import { controlStateFilePath, readControlStateFile } from '../../../services/gameControlState';
 import {
   gameDirectoryPath,
   hasGameDirectory,
@@ -54,6 +56,7 @@ type RouteContext = {
 type LucideIconName =
   | 'bot'
   | 'chevron-left'
+  | 'hammer'
   | 'mic'
   | 'paintbrush'
   | 'rocket'
@@ -65,6 +68,7 @@ type LucideIconName =
 const LUCIDE_ICON_NODES: Record<LucideIconName, IconNode> = {
   bot: Bot,
   'chevron-left': ChevronLeft,
+  hammer: Hammer,
   mic: Mic,
   paintbrush: Paintbrush,
   rocket: Rocket,
@@ -226,6 +230,83 @@ function renderInteractionGuardsScript(): string {
   })();`;
 }
 
+function renderAdminControlsWarmupScript(): string {
+  return `(() => {
+    const promptInput = document.getElementById('prompt-input');
+    const promptForm = document.getElementById('prompt-form');
+    const promptDrawingCanvas = document.getElementById('prompt-drawing-canvas');
+    const versionId = document.body.dataset.versionId;
+    const promptDraftStorageKey =
+      typeof versionId === 'string' && versionId.length > 0
+        ? 'game-space:prompt-draft:' + versionId
+        : null;
+
+    const readStorage = () => {
+      if (typeof window !== 'object' || window === null || !('localStorage' in window)) {
+        return null;
+      }
+
+      try {
+        return window.localStorage;
+      } catch {
+        return null;
+      }
+    };
+
+    const writePromptDraft = (value) => {
+      const storage = readStorage();
+      if (!storage || !promptDraftStorageKey) {
+        return;
+      }
+
+      try {
+        if (typeof value === 'string' && value.length > 0) {
+          storage.setItem(promptDraftStorageKey, value);
+          return;
+        }
+
+        storage.removeItem(promptDraftStorageKey);
+      } catch {
+        // Keep early prompt draft persistence non-blocking.
+      }
+    };
+
+    if (promptInput instanceof HTMLTextAreaElement) {
+      const storage = readStorage();
+      if (storage && promptDraftStorageKey && promptInput.value.length === 0) {
+        try {
+          const storedDraft = storage.getItem(promptDraftStorageKey);
+          if (typeof storedDraft === 'string' && storedDraft.length > 0) {
+            promptInput.value = storedDraft;
+          }
+        } catch {
+          // Keep early prompt draft restoration non-blocking.
+        }
+      }
+
+      promptInput.addEventListener('input', () => {
+        writePromptDraft(promptInput.value);
+      });
+    }
+
+    if (promptForm instanceof HTMLFormElement) {
+      promptForm.addEventListener('reset', () => {
+        writePromptDraft('');
+      });
+    }
+
+    if (promptDrawingCanvas instanceof HTMLCanvasElement) {
+      const context = promptDrawingCanvas.getContext('2d');
+      if (context) {
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+        context.strokeStyle = 'rgba(250, 204, 21, 0.95)';
+        context.lineWidth = 4;
+      }
+    }
+  })();`;
+}
+
 export async function generateMetadata(context: RouteContext): Promise<Metadata> {
   const { versionId } = await context.params;
 
@@ -252,6 +333,7 @@ export default async function GamePage(context: RouteContext) {
 
   const metadataPath = path.join(gameDirectoryPath(gamesRootPath, versionId), 'metadata.json');
   const metadata = await readMetadataFile(metadataPath);
+  const initialControlState = await readControlStateFile(controlStateFilePath(gamesRootPath, versionId));
   const requestHeaders = await headers();
   const cookieHeader = requestHeaders.get('cookie') ?? undefined;
   const authConfig = readAdminAuthConfigFromEnv();
@@ -273,6 +355,7 @@ export default async function GamePage(context: RouteContext) {
     providerLabel,
     enableLiveReload: process.env.GAME_SPACE_DEV_LIVE_RELOAD === '1',
     homeIcon: renderLucideIcon('chevron-left', 'game-view-icon', 22),
+    editIcon: renderLucideIcon('hammer', 'game-view-icon'),
     settingsIcon: renderLucideIcon('settings', 'game-view-icon'),
     micIcon: renderLucideIcon('mic', 'game-view-icon'),
     paintbrushIcon: renderLucideIcon('paintbrush', 'game-view-icon'),
@@ -301,10 +384,20 @@ export default async function GamePage(context: RouteContext) {
       <div id="game-react-root">
         <GameApp data={gameData} />
       </div>
+      {isAdmin ? (
+        <script
+          id="game-admin-controls-warmup"
+          dangerouslySetInnerHTML={{
+            __html: renderAdminControlsWarmupScript(),
+          }}
+        />
+      ) : null}
       <GamePageClientBootstrap
         versionId={versionId}
         isAdmin={isAdmin}
         enableLiveReload={gameData.enableLiveReload}
+        csrfToken={csrfToken}
+        initialControlState={initialControlState}
       />
       <script
         id="game-interaction-guards"

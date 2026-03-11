@@ -2,10 +2,19 @@
 
 import { useEffect } from 'react';
 
+import {
+  parseGameControlState,
+  type GameControlState,
+  type GameRuntimeControls,
+  type GameRuntimeHost,
+} from '../../../gameRuntimeControls';
+
 type GamePageClientBootstrapProps = {
   versionId: string;
   isAdmin: boolean;
   enableLiveReload: boolean;
+  csrfToken: string | null;
+  initialControlState: GameControlState | null;
 };
 
 type GameTeardown = () => void;
@@ -13,12 +22,30 @@ type GameTeardown = () => void;
 type GameLifecycleHost = {
   __gameSpaceActiveGameTeardown?: GameTeardown;
   __gameSpaceTeardownActiveGame?: () => void;
+  __gameSpaceActiveGameRuntimeControls?: GameRuntimeControls;
+  __gameSpaceActiveGameRuntimeHost?: GameRuntimeHost;
 };
 
 type GameLifecycleWindow = Window & GameLifecycleHost;
+const GAME_RUNTIME_CONTROLS_EVENT = 'game-runtime-controls-changed';
 
 function isGameTeardown(value: unknown): value is GameTeardown {
   return typeof value === 'function';
+}
+
+function isGameRuntimeControls(value: unknown): value is GameRuntimeControls {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const getSliders = Reflect.get(value, 'getSliders');
+  const setGlobalValue = Reflect.get(value, 'setGlobalValue');
+  const serializeControlState = Reflect.get(value, 'serializeControlState');
+  return (
+    typeof getSliders === 'function' &&
+    typeof setGlobalValue === 'function' &&
+    typeof serializeControlState === 'function'
+  );
 }
 
 function invokeGameTeardownSafely(teardown: GameTeardown): void {
@@ -31,6 +58,24 @@ function invokeGameTeardownSafely(teardown: GameTeardown): void {
 
 export function setActiveGameTeardown(host: GameLifecycleHost, value: unknown): void {
   host.__gameSpaceActiveGameTeardown = isGameTeardown(value) ? value : undefined;
+}
+
+function dispatchGameRuntimeControlsChanged(host: GameLifecycleHost): void {
+  if (typeof window === 'undefined' || host !== window) {
+    return;
+  }
+
+  window.dispatchEvent(new Event(GAME_RUNTIME_CONTROLS_EVENT));
+}
+
+export function setActiveGameRuntimeControls(host: GameLifecycleHost, value: unknown): void {
+  host.__gameSpaceActiveGameRuntimeControls = isGameRuntimeControls(value) ? value : undefined;
+  dispatchGameRuntimeControlsChanged(host);
+}
+
+export function setActiveGameRuntimeHost(host: GameLifecycleHost, value: GameRuntimeHost | undefined): void {
+  host.__gameSpaceActiveGameRuntimeHost = value;
+  dispatchGameRuntimeControlsChanged(host);
 }
 
 export function runActiveGameTeardown(host: GameLifecycleHost): void {
@@ -64,6 +109,27 @@ function getGameLifecycleWindow(): GameLifecycleWindow | null {
   return window as GameLifecycleWindow;
 }
 
+function readGameRuntimeTeardown(value: unknown): GameTeardown | undefined {
+  if (isGameTeardown(value)) {
+    return value;
+  }
+
+  if (typeof value !== 'object' || value === null) {
+    return undefined;
+  }
+
+  const teardown = Reflect.get(value, 'teardown');
+  return isGameTeardown(teardown) ? teardown : undefined;
+}
+
+function readGameRuntimeControls(value: unknown): GameRuntimeControls | undefined {
+  if (!isGameRuntimeControls(value)) {
+    return undefined;
+  }
+
+  return value;
+}
+
 function withPreservedDrawingBuffer(canvas: HTMLCanvasElement): void {
   const originalGetContext = canvas.getContext.bind(canvas) as unknown as (
     contextId: unknown,
@@ -90,10 +156,66 @@ function withPreservedDrawingBuffer(canvas: HTMLCanvasElement): void {
   };
 }
 
+function buildControlStateEndpoint(versionId: string): string {
+  return `/api/games/${encodeURIComponent(versionId)}/control-state`;
+}
+
+export function createGameRuntimeHost(
+  versionId: string,
+  initialControlState: GameControlState | null,
+  csrfToken: string | null
+): GameRuntimeHost {
+  let cachedControlState = initialControlState;
+
+  function loadControlState(): Promise<GameControlState | null> {
+    return Promise.resolve(cachedControlState);
+  }
+
+  const safeCsrfToken = csrfToken;
+  if (typeof safeCsrfToken !== 'string' || safeCsrfToken.length === 0) {
+    return {
+      versionId,
+      loadControlState
+    };
+  }
+  const writableCsrfToken = safeCsrfToken;
+
+  async function saveControlState(controlState: GameControlState): Promise<void> {
+    const response = await fetch(buildControlStateEndpoint(versionId), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': writableCsrfToken
+      },
+      body: JSON.stringify({ controlState })
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to save control state: ${response.status}`);
+    }
+
+    const payload = (await response.json()) as unknown;
+    if (typeof payload !== 'object' || payload === null) {
+      cachedControlState = controlState;
+      return;
+    }
+
+    const parsedControlState = parseGameControlState(Reflect.get(payload, 'controlState'));
+    cachedControlState = parsedControlState ?? controlState;
+  }
+
+  return {
+    versionId,
+    loadControlState,
+    saveControlState
+  };
+}
+
 export function GamePageClientBootstrap({
   versionId,
   isAdmin,
   enableLiveReload,
+  csrfToken,
+  initialControlState,
 }: GamePageClientBootstrapProps) {
   useEffect(() => {
     document.body.dataset.gameReactHydrated = 'true';
@@ -115,6 +237,7 @@ export function GamePageClientBootstrap({
     lifecycleWindow.addEventListener('pagehide', handleUnload);
     lifecycleWindow.addEventListener('unload', handleUnload);
     teardownActiveGame();
+    setActiveGameRuntimeControls(lifecycleWindow, undefined);
 
     const canvas = document.getElementById('game-canvas');
     if (!(canvas instanceof HTMLCanvasElement)) {
@@ -122,6 +245,8 @@ export function GamePageClientBootstrap({
         lifecycleWindow.removeEventListener('beforeunload', handleUnload);
         lifecycleWindow.removeEventListener('pagehide', handleUnload);
         lifecycleWindow.removeEventListener('unload', handleUnload);
+        setActiveGameRuntimeHost(lifecycleWindow, undefined);
+        setActiveGameRuntimeControls(lifecycleWindow, undefined);
         teardownActiveGame();
       };
     }
@@ -131,6 +256,8 @@ export function GamePageClientBootstrap({
     }
 
     let isDisposed = false;
+    const runtimeHost = createGameRuntimeHost(versionId, initialControlState, csrfToken);
+    setActiveGameRuntimeHost(lifecycleWindow, runtimeHost);
     const startGameModulePath = `/games/${encodeURIComponent(versionId)}/dist/game.js`;
     void import(/* webpackIgnore: true */ startGameModulePath)
       .then((gameModule: unknown) => {
@@ -143,7 +270,9 @@ export function GamePageClientBootstrap({
           return;
         }
 
-        const maybeTeardown = startGame(canvas);
+        const runtimeHandle = startGame(canvas, runtimeHost);
+        const runtimeControls = readGameRuntimeControls(runtimeHandle);
+        const maybeTeardown = readGameRuntimeTeardown(runtimeHandle);
         if (isDisposed) {
           if (isGameTeardown(maybeTeardown)) {
             invokeGameTeardownSafely(maybeTeardown);
@@ -151,6 +280,7 @@ export function GamePageClientBootstrap({
           return;
         }
 
+        setActiveGameRuntimeControls(lifecycleWindow, runtimeControls);
         setActiveGameTeardown(lifecycleWindow, maybeTeardown);
       })
       .catch(() => {
@@ -162,9 +292,11 @@ export function GamePageClientBootstrap({
       lifecycleWindow.removeEventListener('beforeunload', handleUnload);
       lifecycleWindow.removeEventListener('pagehide', handleUnload);
       lifecycleWindow.removeEventListener('unload', handleUnload);
+      setActiveGameRuntimeHost(lifecycleWindow, undefined);
+      setActiveGameRuntimeControls(lifecycleWindow, undefined);
       teardownActiveGame();
     };
-  }, [isAdmin, versionId]);
+  }, [csrfToken, initialControlState, isAdmin, versionId]);
 
   useEffect(() => {
     if (!isAdmin) {
