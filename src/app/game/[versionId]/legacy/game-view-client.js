@@ -1473,17 +1473,17 @@ function renderSettingsControls() {
   }
 }
 
-function updatePromptDrawerHeight() {
-  if (!(promptPanel instanceof HTMLElement)) {
+function updateDrawerHeightForPanel(panelElement) {
+  if (!(panelElement instanceof HTMLElement)) {
     return;
   }
 
   const panelRectHeight =
-    typeof promptPanel.getBoundingClientRect === "function"
-      ? promptPanel.getBoundingClientRect().height
+    typeof panelElement.getBoundingClientRect === "function"
+      ? panelElement.getBoundingClientRect().height
       : 0;
   const panelOffsetHeight =
-    typeof promptPanel.offsetHeight === "number" ? promptPanel.offsetHeight : 0;
+    typeof panelElement.offsetHeight === "number" ? panelElement.offsetHeight : 0;
   const panelHeight = Math.ceil(Math.max(panelRectHeight, panelOffsetHeight));
 
   if (panelHeight <= 0) {
@@ -1493,8 +1493,12 @@ function updatePromptDrawerHeight() {
   document.body.style.setProperty("--edit-drawer-height", `${panelHeight}px`);
 }
 
+function updatePromptDrawerHeight() {
+  updateDrawerHeightForPanel(promptPanel);
+}
+
 function updateSettingsDrawerHeight() {
-  document.body.style.setProperty("--edit-drawer-height", "50vh");
+  updateDrawerHeightForPanel(settingsPanel);
 }
 
 function applyBottomPanelState() {

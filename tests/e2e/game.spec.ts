@@ -845,6 +845,24 @@ test("admin game toolbar separates build and settings drawers with synced aria s
 	await expect(promptPanel).toHaveAttribute("aria-hidden", "true");
 	await expect(settingsForm).toHaveCSS("overflow-y", "auto");
 
+	const settingsDrawerShift = await page.evaluate(() => {
+		const tabs = document.querySelector(".game-toolbar-main")?.closest(".game-bottom-tabs");
+		const panel = document.getElementById("settings-panel");
+		if (!(tabs instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
+			return null;
+		}
+
+		const tabsRect = tabs.getBoundingClientRect();
+		const panelRect = panel.getBoundingClientRect();
+		const shift = window.innerHeight - tabsRect.bottom;
+		return {
+			shift,
+			panelHeight: panelRect.height,
+		};
+	});
+	expect(settingsDrawerShift).not.toBeNull();
+	expect(Math.abs(settingsDrawerShift!.shift - settingsDrawerShift!.panelHeight)).toBeLessThanOrEqual(2);
+
 	const settingsHeightRatio = await settingsPanel.evaluate((element) => {
 		const rect = element.getBoundingClientRect();
 		return rect.height / window.innerHeight;
@@ -858,6 +876,24 @@ test("admin game toolbar separates build and settings drawers with synced aria s
 	await expect(promptPanel).toHaveAttribute("aria-hidden", "false");
 	await expect(settingsPanel).toHaveAttribute("aria-hidden", "true");
 	await expect(transcriptToggle).toHaveAttribute("aria-expanded", "false");
+
+	const promptDrawerShift = await page.evaluate(() => {
+		const tabs = document.querySelector(".game-toolbar-main")?.closest(".game-bottom-tabs");
+		const panel = document.getElementById("prompt-panel");
+		if (!(tabs instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
+			return null;
+		}
+
+		const tabsRect = tabs.getBoundingClientRect();
+		const panelRect = panel.getBoundingClientRect();
+		const shift = window.innerHeight - tabsRect.bottom;
+		return {
+			shift,
+			panelHeight: panelRect.height,
+		};
+	});
+	expect(promptDrawerShift).not.toBeNull();
+	expect(Math.abs(promptDrawerShift!.shift - promptDrawerShift!.panelHeight)).toBeLessThanOrEqual(2);
 
 	await transcriptToggle.dispatchEvent("click");
 	await expect(transcriptToggle).toHaveAttribute("aria-expanded", "true");
