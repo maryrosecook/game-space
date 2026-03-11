@@ -1,3 +1,5 @@
+import type { GameEditor, GameEditorSlider, GameGlobals } from '../../../../src/gameRuntimeControls';
+
 export type Vector = {
   x: number;
   y: number;
@@ -72,6 +74,7 @@ export type RawGameState = {
   camera: Vector;
   screen: { width: number; height: number };
   backgroundColor: string;
+  globals: GameGlobals;
 };
 
 export type RuntimeGameState = Omit<RawGameState, 'things'> & {
@@ -138,7 +141,11 @@ export type GameFile = {
   blueprints: Blueprint[];
   camera: Vector;
   backgroundColor?: string;
+  globals?: GameGlobals;
+  editor?: GameEditor;
 };
+
+export type GameEditorSliderDefinition = GameEditorSlider;
 
 export const DEFAULT_SCREEN_SIZE = {
   width: 1,

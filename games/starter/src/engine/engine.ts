@@ -12,6 +12,16 @@ import { createParticleSystem, ParticleSystem } from './particles';
 import { createNoopPhysicsAdapter, PhysicsAdapter } from './physics';
 import { createWebGlRenderer, GameRenderer, renderGame } from './render';
 import {
+  applySliderValuesToGlobals,
+  normalizeSliderValue,
+  parseGameEditorSliders,
+  resolveRuntimeSliders,
+  type GameControlState,
+  type GameEditorSlider,
+  type GameGlobalValue,
+  type GameRuntimeSlider,
+} from '../../../../src/gameRuntimeControls';
+import {
   Blueprint,
   CameraController,
   CollisionMap,
@@ -54,7 +64,8 @@ function cloneDefaultRawGameState(): RawGameState {
     blueprints: [],
     camera: { x: 0, y: 0 },
     screen: { ...DEFAULT_SCREEN_SIZE },
-    backgroundColor: DEFAULT_BACKGROUND_COLOR
+    backgroundColor: DEFAULT_BACKGROUND_COLOR,
+    globals: {}
   };
 }
 
@@ -76,6 +87,7 @@ export class GameEngine {
   private ready = false;
   private cameraModule: CameraController | null = null;
   private inputFrame = EMPTY_TOUCH_INPUT_FRAME;
+  private editorSliders: GameEditorSlider[] = [];
 
   private rawGameState: RawGameState = cloneDefaultRawGameState();
   private gameState: RuntimeGameState = {
@@ -133,17 +145,21 @@ export class GameEngine {
 
   async loadGame(gameDirectory: string): Promise<void> {
     const payload = await this.dependencies.dataSource.loadGame(gameDirectory);
+    const editorSliders = parseGameEditorSliders(payload.game.editor?.sliders) ?? [];
+    const globals = applySliderValuesToGlobals(payload.game.globals, editorSliders) ?? {};
 
     this.gameDirectory = payload.gameDirectory;
     this.createdThingIds.clear();
     this.particleSystem.reset();
+    this.editorSliders = editorSliders;
 
     this.rawGameState = {
       things: payload.game.things.map((thing) => ({ ...thing })),
       blueprints: payload.game.blueprints.map((blueprint) => ({ ...blueprint })),
       camera: { ...payload.game.camera },
       screen: this.getCurrentScreenSize(),
-      backgroundColor: payload.game.backgroundColor ?? DEFAULT_BACKGROUND_COLOR
+      backgroundColor: payload.game.backgroundColor ?? DEFAULT_BACKGROUND_COLOR,
+      globals
     };
 
     this.cameraModule = await this.loadCamera(payload.gameDirectory);
@@ -372,6 +388,53 @@ export class GameEngine {
     return this.blueprintLookup.get(name);
   }
 
+  getSliders(): readonly GameRuntimeSlider[] {
+    return resolveRuntimeSliders(this.gameState.globals, this.editorSliders);
+  }
+
+  setGlobalValue(globalKey: string, value: GameGlobalValue): boolean {
+    if (!(globalKey in this.gameState.globals)) {
+      return false;
+    }
+
+    const slider = this.findSliderByGlobalKey(globalKey);
+    let nextValue = value;
+    if (slider) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return false;
+      }
+
+      nextValue = normalizeSliderValue(slider, value);
+    }
+
+    const globals = {
+      ...this.gameState.globals,
+      [globalKey]: nextValue
+    };
+
+    this.rawGameState = {
+      ...this.rawGameState,
+      globals
+    };
+    this.gameState = {
+      ...this.gameState,
+      globals
+    };
+    return true;
+  }
+
+  serializeControlState(): GameControlState {
+    if (Object.keys(this.gameState.globals).length === 0) {
+      return {};
+    }
+
+    return {
+      globals: {
+        ...this.gameState.globals
+      }
+    };
+  }
+
   destroy(): void {
     this.stopLoop();
 
@@ -393,7 +456,18 @@ export class GameEngine {
     this.gameState = { ...this.rawGameState, things: [] };
     this.blueprintLookup.clear();
     this.createdThingIds.clear();
+    this.editorSliders = [];
     this.particleSystem.reset();
+  }
+
+  private findSliderByGlobalKey(globalKey: string): GameEditorSlider | null {
+    for (const slider of this.editorSliders) {
+      if (slider.globalKey === globalKey) {
+        return slider;
+      }
+    }
+
+    return null;
   }
 
   private createGameContext(

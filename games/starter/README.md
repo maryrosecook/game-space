@@ -3,8 +3,8 @@
 ## The Game
 
 This starter ships with a minimal engine core that mirrors key game-framework runtime concepts (engine loop, blueprints, touch input, particles, render, and camera) without editor/GUI tooling.
-The default scene intentionally contains no game objects and no particles.
-It renders only the background color so new games can start from a blank state.
+The default scene now includes a hidden particle emitter and one runtime settings slider.
+It renders a falling yellow/orange/red particle field over the background color so the settings pipeline has a visible default behavior.
 
 ## Scope and flexibility
 
@@ -36,7 +36,8 @@ Keep `dist/` gitignored.
 
 ## Engine API quick reference
 
-- `createStarterGameFile()` in `src/main.ts` is the default scene contract: empty `things`, empty `blueprints`, camera `{ x: 0, y: 0 }`, and a background color.
+- `createStarterGameFile()` in `src/main.ts` is the default scene contract: one particle-emitter thing/blueprint, camera `{ x: 0, y: 0 }`, background color, `globals`, and `editor.sliders`.
+- Runtime settings live in top-level `globals` and are surfaced through `editor.sliders`.
 - Add visible actors by adding things (and matching blueprints) to `createStarterGameFile()`.
 - Blueprint handlers are `create(thing, game)`, `input(thing, game, input)`, `update(thing, game, input)`, and `collision(thing, otherThing, game)`.
 - Runtime helpers on `game`: `spawn({ blueprint, position, overrides? })`, `spawnParticle({ position, velocity, color, size? })`, and `destroy(thingOrId)`.
@@ -44,7 +45,7 @@ Keep `dist/` gitignored.
 ## How to fork into a new game
 
 1. Keep `src/engine/*` as the runtime base.
-2. In `src/main.ts`, replace `createStarterGameFile()` blueprints/things and `createStarterDataSource()` camera logic.
+2. In `src/main.ts`, replace `createStarterGameFile()` blueprints/things/globals and `createStarterDataSource()` camera logic.
 3. Add or modify blueprint `create`/`input`/`update` handlers for your game loop behavior.
 4. If you need real collisions or physics, replace `createNoopPhysicsAdapter()` with your own adapter in `engine.ts` dependencies.
 5. Keep touch controls in blueprint input handlers to stay mobile-first.

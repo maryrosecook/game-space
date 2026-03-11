@@ -12,3 +12,4 @@ games/starter/node_modules/
 games/starter/snapshots/
 .env
 .DS_Store
+!factory

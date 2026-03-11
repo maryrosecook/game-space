@@ -1,1752 +1,2269 @@
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import vm from 'node:vm';
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import vm from "node:vm";
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
 type TestEvent = {
-  key?: string;
-  data?: unknown;
-  button?: number;
-  pointerId?: number;
-  pointerType?: string;
-  clientX?: number;
-  clientY?: number;
-  preventDefault: () => void;
+	key?: string;
+	data?: unknown;
+	button?: number;
+	pointerId?: number;
+	pointerType?: string;
+	clientX?: number;
+	clientY?: number;
+	preventDefault: () => void;
 };
 
 type EventListener = (event: TestEvent) => void;
 
 type FetchResponse = {
-  ok: boolean;
-  status?: number;
-  json?: () => Promise<unknown>;
-  text?: () => Promise<string>;
+	ok: boolean;
+	status?: number;
+	json?: () => Promise<unknown>;
+	text?: () => Promise<string>;
 };
 
 type FetchCall = {
-  url: string;
-  init: Record<string, unknown> | undefined;
+	url: string;
+	init: Record<string, unknown> | undefined;
 };
 
-type FetchImplementation = (url: string, init?: Record<string, unknown>) => Promise<FetchResponse>;
+type FetchImplementation = (
+	url: string,
+	init?: Record<string, unknown>,
+) => Promise<FetchResponse>;
 
 type TranscriptRenderCall = {
-  sessionId: unknown;
-  messages: unknown;
-  options: { autoScrollToBottom?: boolean } | undefined;
+	sessionId: unknown;
+	messages: unknown;
+	options: { autoScrollToBottom?: boolean } | undefined;
 };
 
 type CanvasOperation =
-  | { type: 'beginPath' }
-  | { type: 'moveTo'; x: number; y: number }
-  | { type: 'lineTo'; x: number; y: number }
-  | { type: 'stroke' }
-  | { type: 'clearRect'; x: number; y: number; width: number; height: number }
-  | { type: 'drawImage'; width: number; height: number };
+	| { type: "beginPath" }
+	| { type: "moveTo"; x: number; y: number }
+	| { type: "lineTo"; x: number; y: number }
+	| { type: "stroke" }
+	| { type: "clearRect"; x: number; y: number; width: number; height: number }
+	| { type: "drawImage"; width: number; height: number };
 
 class TestEventTarget {
-  private readonly listeners = new Map<string, EventListener[]>();
+	private readonly listeners = new Map<string, EventListener[]>();
 
-  addEventListener(type: string, listener: EventListener): void {
-    const existing = this.listeners.get(type);
-    if (existing) {
-      existing.push(listener);
-      return;
-    }
+	addEventListener(type: string, listener: EventListener): void {
+		const existing = this.listeners.get(type);
+		if (existing) {
+			existing.push(listener);
+			return;
+		}
 
-    this.listeners.set(type, [listener]);
-  }
+		this.listeners.set(type, [listener]);
+	}
 
-  dispatchEvent(type: string, event: TestEvent): void {
-    const listeners = this.listeners.get(type);
-    if (!listeners) {
-      return;
-    }
+	dispatchEvent(type: string, event: TestEvent): void {
+		const listeners = this.listeners.get(type);
+		if (!listeners) {
+			return;
+		}
 
-    for (const listener of listeners) {
-      listener(event);
-    }
-  }
+		for (const listener of listeners) {
+			listener(event);
+		}
+	}
 }
 
 class TestClassList {
-  private readonly values = new Set<string>();
+	private readonly values = new Set<string>();
 
-  add(...tokens: string[]): void {
-    for (const token of tokens) {
-      this.values.add(token);
-    }
-  }
+	add(...tokens: string[]): void {
+		for (const token of tokens) {
+			this.values.add(token);
+		}
+	}
 
-  remove(...tokens: string[]): void {
-    for (const token of tokens) {
-      this.values.delete(token);
-    }
-  }
+	remove(...tokens: string[]): void {
+		for (const token of tokens) {
+			this.values.delete(token);
+		}
+	}
 
-  contains(token: string): boolean {
-    return this.values.has(token);
-  }
+	contains(token: string): boolean {
+		return this.values.has(token);
+	}
 
-  toggle(token: string, force?: boolean): boolean {
-    const shouldEnable = force === undefined ? !this.values.has(token) : force;
-    if (shouldEnable) {
-      this.values.add(token);
-      return true;
-    }
+	toggle(token: string, force?: boolean): boolean {
+		const shouldEnable = force === undefined ? !this.values.has(token) : force;
+		if (shouldEnable) {
+			this.values.add(token);
+			return true;
+		}
 
-    this.values.delete(token);
-    return false;
-  }
+		this.values.delete(token);
+		return false;
+	}
+
+	replaceAll(tokens: string): void {
+		this.values.clear();
+		for (const token of tokens
+			.split(/\s+/)
+			.filter((value) => value.length > 0)) {
+			this.values.add(token);
+		}
+	}
+}
+
+class TestStyleDeclaration {
+	private readonly values = new Map<string, string>();
+
+	setProperty(name: string, value: string): void {
+		this.values.set(name, value);
+	}
+
+	getPropertyValue(name: string): string {
+		return this.values.get(name) ?? "";
+	}
 }
 
 class TestHTMLElement extends TestEventTarget {
-  public readonly classList = new TestClassList();
-  private readonly attributes = new Map<string, string>();
-  public focused = false;
-  public textContent: string | null = null;
-  public scrollTop = 0;
-  public scrollHeight = 0;
-  public scrollLeft = 0;
-  public scrollWidth = 0;
+	public readonly classList = new TestClassList();
+	public readonly style = new TestStyleDeclaration();
+	private readonly attributes = new Map<string, string>();
+	private readonly children: TestHTMLElement[] = [];
+	public focused = false;
+	public id = "";
+	public textContent: string | null = null;
+	public scrollTop = 0;
+	public scrollHeight = 0;
+	public scrollLeft = 0;
+	public scrollWidth = 0;
+	public offsetHeight = 180;
+	public firstChild: TestHTMLElement | null = null;
 
-  setAttribute(name: string, value: string): void {
-    this.attributes.set(name, value);
-  }
+	set className(value: string) {
+		this.classList.replaceAll(value);
+	}
 
-  getAttribute(name: string): string | null {
-    return this.attributes.get(name) ?? null;
-  }
+	get className(): string {
+		return "";
+	}
 
-  focus(): void {
-    this.focused = true;
-  }
+	setAttribute(name: string, value: string): void {
+		this.attributes.set(name, value);
+	}
+
+	getAttribute(name: string): string | null {
+		return this.attributes.get(name) ?? null;
+	}
+
+	focus(): void {
+		this.focused = true;
+	}
+
+	appendChild(child: TestHTMLElement): TestHTMLElement {
+		this.children.push(child);
+		this.firstChild = this.children[0] ?? null;
+		return child;
+	}
+
+	removeChild(child: TestHTMLElement): void {
+		const childIndex = this.children.indexOf(child);
+		if (childIndex < 0) {
+			return;
+		}
+
+		this.children.splice(childIndex, 1);
+		this.firstChild = this.children[0] ?? null;
+	}
+
+	childElements(): readonly TestHTMLElement[] {
+		return this.children;
+	}
+
+	getBoundingClientRect(): { left: number; top: number; height: number } {
+		return { left: 0, top: 0, height: this.offsetHeight };
+	}
 }
 
 class TestHTMLButtonElement extends TestHTMLElement {
-  public disabled = false;
+	public disabled = false;
 }
 
 class TestHTMLFormElement extends TestHTMLElement {
-  requestSubmit(): void {
-    this.dispatchEvent('submit', createEvent());
-  }
+	requestSubmit(): void {
+		this.dispatchEvent("submit", createEvent());
+	}
 }
 
 class TestHTMLInputElement extends TestHTMLElement {
-  public value = '';
+	public value = "";
+	public type = "text";
+	public min = "";
+	public max = "";
+	public step = "";
 }
 
 class TestMediaStreamTrack {
-  public stopped = false;
+	public stopped = false;
 
-  stop(): void {
-    this.stopped = true;
-  }
+	stop(): void {
+		this.stopped = true;
+	}
 }
 
 class TestMediaStream {
-  private readonly tracks: TestMediaStreamTrack[];
+	private readonly tracks: TestMediaStreamTrack[];
 
-  constructor(tracks: TestMediaStreamTrack[]) {
-    this.tracks = tracks;
-  }
+	constructor(tracks: TestMediaStreamTrack[]) {
+		this.tracks = tracks;
+	}
 
-  getTracks(): TestMediaStreamTrack[] {
-    return this.tracks;
-  }
+	getTracks(): TestMediaStreamTrack[] {
+		return this.tracks;
+	}
 }
 
 type SessionDescription = {
-  type: string;
-  sdp: string;
+	type: string;
+	sdp: string;
 };
 
 class TestRTCDataChannel extends TestEventTarget {
-  public readyState = 'open';
-  public closed = false;
-  public readonly sentMessages: string[] = [];
+	public readyState = "open";
+	public closed = false;
+	public readonly sentMessages: string[] = [];
 
-  send(message: string): void {
-    this.sentMessages.push(message);
-  }
+	send(message: string): void {
+		this.sentMessages.push(message);
+	}
 
-  close(): void {
-    this.readyState = 'closed';
-    this.closed = true;
-  }
+	close(): void {
+		this.readyState = "closed";
+		this.closed = true;
+	}
 }
 
 class TestRTCPeerConnection {
-  public static latestInstance: TestRTCPeerConnection | null = null;
-  public readonly dataChannel = new TestRTCDataChannel();
-  public localDescription: SessionDescription | null = null;
-  public remoteDescription: SessionDescription | null = null;
-  public closed = false;
+	public static latestInstance: TestRTCPeerConnection | null = null;
+	public readonly dataChannel = new TestRTCDataChannel();
+	public localDescription: SessionDescription | null = null;
+	public remoteDescription: SessionDescription | null = null;
+	public closed = false;
 
-  constructor() {
-    TestRTCPeerConnection.latestInstance = this;
-  }
+	constructor() {
+		TestRTCPeerConnection.latestInstance = this;
+	}
 
-  createDataChannel(label: string): TestRTCDataChannel {
-    void label;
-    return this.dataChannel;
-  }
+	createDataChannel(label: string): TestRTCDataChannel {
+		void label;
+		return this.dataChannel;
+	}
 
-  addTrack(track: TestMediaStreamTrack, stream: TestMediaStream): void {
-    void track;
-    void stream;
-    // Track registration is not asserted directly in these tests.
-  }
+	addTrack(track: TestMediaStreamTrack, stream: TestMediaStream): void {
+		void track;
+		void stream;
+		// Track registration is not asserted directly in these tests.
+	}
 
-  async createOffer(): Promise<SessionDescription> {
-    return { type: 'offer', sdp: 'fake-offer-sdp' };
-  }
+	async createOffer(): Promise<SessionDescription> {
+		return { type: "offer", sdp: "fake-offer-sdp" };
+	}
 
-  async setLocalDescription(description: SessionDescription): Promise<void> {
-    this.localDescription = description;
-  }
+	async setLocalDescription(description: SessionDescription): Promise<void> {
+		this.localDescription = description;
+	}
 
-  async setRemoteDescription(description: SessionDescription): Promise<void> {
-    this.remoteDescription = description;
-  }
+	async setRemoteDescription(description: SessionDescription): Promise<void> {
+		this.remoteDescription = description;
+	}
 
-  close(): void {
-    this.closed = true;
-  }
+	close(): void {
+		this.closed = true;
+	}
 }
 
-
 class TestCanvasRenderingContext2D {
-  public readonly operations: CanvasOperation[] = [];
-  public lineCapValue = '';
-  public lineJoinValue = '';
-  public strokeStyleValue = '';
-  public lineWidthValue = 0;
+	public readonly operations: CanvasOperation[] = [];
+	public lineCapValue = "";
+	public lineJoinValue = "";
+	public strokeStyleValue = "";
+	public lineWidthValue = 0;
 
-  setTransform(...args: number[]): void {
-    void args;
-  }
+	setTransform(...args: number[]): void {
+		void args;
+	}
 
-  beginPath(): void {
-    this.operations.push({ type: 'beginPath' });
-  }
+	beginPath(): void {
+		this.operations.push({ type: "beginPath" });
+	}
 
-  moveTo(x: number, y: number): void {
-    this.operations.push({ type: 'moveTo', x, y });
-  }
+	moveTo(x: number, y: number): void {
+		this.operations.push({ type: "moveTo", x, y });
+	}
 
-  lineTo(x: number, y: number): void {
-    this.operations.push({ type: 'lineTo', x, y });
-  }
+	lineTo(x: number, y: number): void {
+		this.operations.push({ type: "lineTo", x, y });
+	}
 
-  stroke(): void {
-    this.operations.push({ type: 'stroke' });
-  }
+	stroke(): void {
+		this.operations.push({ type: "stroke" });
+	}
 
-  clearRect(x: number, y: number, width: number, height: number): void {
-    this.operations.push({ type: 'clearRect', x, y, width, height });
-  }
+	clearRect(x: number, y: number, width: number, height: number): void {
+		this.operations.push({ type: "clearRect", x, y, width, height });
+	}
 
-  drawImage(image: { width?: number; height?: number }, x: number, y: number, width: number, height: number): void {
-    void image;
-    void x;
-    void y;
-    this.operations.push({ type: 'drawImage', width, height });
-  }
+	drawImage(
+		image: { width?: number; height?: number },
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+	): void {
+		void image;
+		void x;
+		void y;
+		this.operations.push({ type: "drawImage", width, height });
+	}
 
-  set lineCap(value: string) {
-    this.lineCapValue = value;
-  }
+	set lineCap(value: string) {
+		this.lineCapValue = value;
+	}
 
-  set lineJoin(value: string) {
-    this.lineJoinValue = value;
-  }
+	set lineJoin(value: string) {
+		this.lineJoinValue = value;
+	}
 
-  set strokeStyle(value: string) {
-    this.strokeStyleValue = value;
-  }
+	set strokeStyle(value: string) {
+		this.strokeStyleValue = value;
+	}
 
-  set lineWidth(value: number) {
-    this.lineWidthValue = value;
-  }
+	set lineWidth(value: number) {
+		this.lineWidthValue = value;
+	}
 }
 
 class TestHTMLCanvasElement extends TestHTMLElement {
-  public width = 0;
-  public height = 0;
-  public clientWidth = 360;
-  public clientHeight = 640;
-  public toDataUrlCalls = 0;
-  public dataUrlValue = 'data:image/png;base64,test-canvas';
-  private readonly context = new TestCanvasRenderingContext2D();
-  private readonly capturedPointerIds = new Set<number>();
+	public width = 0;
+	public height = 0;
+	public clientWidth = 360;
+	public clientHeight = 640;
+	public toDataUrlCalls = 0;
+	public dataUrlValue = "data:image/png;base64,test-canvas";
+	private readonly context = new TestCanvasRenderingContext2D();
+	private readonly capturedPointerIds = new Set<number>();
 
-  getContext(kind: string): TestCanvasRenderingContext2D | null {
-    if (kind !== '2d') {
-      return null;
-    }
+	getContext(kind: string): TestCanvasRenderingContext2D | null {
+		if (kind !== "2d") {
+			return null;
+		}
 
-    return this.context;
-  }
+		return this.context;
+	}
 
-  toDataURL(type?: string): string {
-    void type;
-    this.toDataUrlCalls += 1;
-    return this.dataUrlValue;
-  }
+	toDataURL(type?: string): string {
+		void type;
+		this.toDataUrlCalls += 1;
+		return this.dataUrlValue;
+	}
 
-  getBoundingClientRect(): { left: number; top: number } {
-    return { left: 0, top: 0 };
-  }
+	override getBoundingClientRect(): {
+		left: number;
+		top: number;
+		height: number;
+	} {
+		return { left: 0, top: 0, height: this.clientHeight };
+	}
 
-  setPointerCapture(pointerId: number): void {
-    this.capturedPointerIds.add(pointerId);
-  }
+	setPointerCapture(pointerId: number): void {
+		this.capturedPointerIds.add(pointerId);
+	}
 
-  hasPointerCapture(pointerId: number): boolean {
-    return this.capturedPointerIds.has(pointerId);
-  }
+	hasPointerCapture(pointerId: number): boolean {
+		return this.capturedPointerIds.has(pointerId);
+	}
 
-  releasePointerCapture(pointerId: number): void {
-    this.capturedPointerIds.delete(pointerId);
-  }
+	releasePointerCapture(pointerId: number): void {
+		this.capturedPointerIds.delete(pointerId);
+	}
 }
 
 class TestBodyElement extends TestHTMLElement {
-  public readonly dataset: {
-    versionId?: string;
-    csrfToken?: string;
-    gameFavorited?: string;
-    codegenProvider?: string;
-    gameReactHydrated?: string;
-  };
+	public readonly dataset: {
+		versionId?: string;
+		csrfToken?: string;
+		gameFavorited?: string;
+		codegenProvider?: string;
+		gameReactHydrated?: string;
+	};
 
-  constructor(
-    versionId: string,
-    csrfToken: string | undefined,
-    gameFavorited: boolean,
-    gameReactHydrated: boolean,
-    codegenProvider?: string
-  ) {
-    super();
-    this.dataset = {
-      versionId,
-      csrfToken,
-      gameFavorited: gameFavorited ? 'true' : 'false',
-      codegenProvider,
-      gameReactHydrated: gameReactHydrated ? 'true' : 'false'
-    };
-  }
+	constructor(
+		versionId: string,
+		csrfToken: string | undefined,
+		gameFavorited: boolean,
+		gameReactHydrated: boolean,
+		codegenProvider?: string,
+	) {
+		super();
+		this.dataset = {
+			versionId,
+			csrfToken,
+			gameFavorited: gameFavorited ? "true" : "false",
+			codegenProvider,
+			gameReactHydrated: gameReactHydrated ? "true" : "false",
+		};
+	}
 }
 
 class TestDocument extends TestEventTarget {
-  public readonly body: TestBodyElement;
-  private readonly elements = new Map<string, unknown>();
+	public readonly body: TestBodyElement;
+	private readonly elements = new Map<string, unknown>();
 
-  constructor(
-    versionId: string,
-    csrfToken: string | undefined,
-    gameFavorited: boolean,
-    gameReactHydrated: boolean,
-    codegenProvider?: string
-  ) {
-    super();
-    this.body = new TestBodyElement(versionId, csrfToken, gameFavorited, gameReactHydrated, codegenProvider);
-  }
+	constructor(
+		versionId: string,
+		csrfToken: string | undefined,
+		gameFavorited: boolean,
+		gameReactHydrated: boolean,
+		codegenProvider?: string,
+	) {
+		super();
+		this.body = new TestBodyElement(
+			versionId,
+			csrfToken,
+			gameFavorited,
+			gameReactHydrated,
+			codegenProvider,
+		);
+	}
 
-  registerElement(id: string, element: unknown): void {
-    this.elements.set(id, element);
-  }
+	registerElement(id: string, element: unknown): void {
+		this.elements.set(id, element);
+	}
 
-  getElementById(id: string): unknown {
-    return this.elements.get(id) ?? null;
-  }
+	getElementById(id: string): unknown {
+		return this.elements.get(id) ?? null;
+	}
 
-  createElement(tagName: string): unknown {
-    if (tagName === 'canvas') {
-      return new TestHTMLCanvasElement();
-    }
+	createElement(tagName: string): unknown {
+		if (tagName === "canvas") {
+			return new TestHTMLCanvasElement();
+		}
 
-    return null;
-  }
+		if (tagName === "input") {
+			return new TestHTMLInputElement();
+		}
+
+		if (
+			tagName === "div" ||
+			tagName === "p" ||
+			tagName === "label" ||
+			tagName === "span"
+		) {
+			return new TestHTMLElement();
+		}
+
+		return null;
+	}
 }
 
 type GameViewHarness = {
-  fetchCalls: FetchCall[];
-  consoleLogs: unknown[][];
-  assignCalls: string[];
-  body: TestBodyElement;
-  transcriptTitle: string | null;
-  editTab: TestHTMLButtonElement;
-  annotationButton: TestHTMLButtonElement;
-  favoriteButton: TestHTMLButtonElement;
-  deleteButton: TestHTMLButtonElement;
-  recordButton: TestHTMLButtonElement;
-  tileCaptureButton: TestHTMLButtonElement;
-  codexToggle: TestHTMLButtonElement;
-  promptForm: TestHTMLFormElement;
-  promptInput: TestHTMLInputElement;
-  promptPanel: TestHTMLElement;
-  promptOverlay: TestHTMLElement;
-  promptDrawingCanvas: TestHTMLCanvasElement;
-  gameCanvas: TestHTMLCanvasElement;
-  renderTranscriptCalls: TranscriptRenderCall[];
-  getScrollToBottomCalls: () => number;
-  intervalCallbacks: Array<() => void>;
-  dispatchWindowEvent: (event: string) => void;
-  getPeerConnection: () => TestRTCPeerConnection | null;
-  mediaTrack: TestMediaStreamTrack;
-  getUserMediaCalls: () => number;
-  readLocalStorageItem: (key: string) => string | null;
+	fetchCalls: FetchCall[];
+	consoleLogs: unknown[][];
+	assignCalls: string[];
+	body: TestBodyElement;
+	transcriptTitle: string | null;
+	editTab: TestHTMLButtonElement;
+	annotationButton: TestHTMLButtonElement;
+	settingsTab: TestHTMLButtonElement;
+	favoriteButton: TestHTMLButtonElement;
+	deleteButton: TestHTMLButtonElement;
+	recordButton: TestHTMLButtonElement;
+	tileCaptureButton: TestHTMLButtonElement;
+	codexToggle: TestHTMLButtonElement;
+	promptForm: TestHTMLFormElement;
+	promptInput: TestHTMLInputElement;
+	promptPanel: TestHTMLElement;
+	settingsPanel: TestHTMLElement;
+	settingsForm: TestHTMLElement;
+	promptOverlay: TestHTMLElement;
+	promptDrawingCanvas: TestHTMLCanvasElement;
+	gameCanvas: TestHTMLCanvasElement;
+	renderTranscriptCalls: TranscriptRenderCall[];
+	getScrollToBottomCalls: () => number;
+	intervalCallbacks: Array<() => void>;
+	dispatchWindowEvent: (event: string) => void;
+	getPeerConnection: () => TestRTCPeerConnection | null;
+	mediaTrack: TestMediaStreamTrack;
+	getUserMediaCalls: () => number;
+	readLocalStorageItem: (key: string) => string | null;
+};
+
+type RuntimeSlider = {
+	id: string;
+	label: string;
+	min: number;
+	max: number;
+	step: number;
+	globalKey: string;
+	value: number;
+};
+
+type RuntimeControls = {
+	getSliders: () => RuntimeSlider[];
+	setGlobalValue: (globalKey: string, value: number) => boolean;
+	serializeControlState: () => { globals?: Record<string, number> };
+};
+
+type RuntimeHost = {
+	versionId: string;
+	loadControlState?: () => Promise<unknown>;
+	saveControlState?: (controlState: unknown) => Promise<void>;
 };
 
 type RunGameViewOptions = {
-  csrfToken?: string | undefined;
-  startTranscriptPolling?: boolean;
-  gameFavorited?: boolean;
-  gameReactHydrated?: boolean;
-  codegenProvider?: string;
-  versionId?: string;
-  localStorageEntries?: Record<string, string>;
-  localStorageAvailable?: boolean;
+	csrfToken?: string | undefined;
+	startTranscriptPolling?: boolean;
+	gameFavorited?: boolean;
+	gameReactHydrated?: boolean;
+	codegenProvider?: string;
+	versionId?: string;
+	localStorageEntries?: Record<string, string>;
+	localStorageAvailable?: boolean;
+	runtimeControls?: RuntimeControls;
+	runtimeHost?: RuntimeHost;
 };
 
+function createRuntimeControls(
+	initialParticleAmount: number,
+): RuntimeControls & { readValue: () => number } {
+	let particleAmount = initialParticleAmount;
+
+	return {
+		getSliders() {
+			return [
+				{
+					id: "particleAmount",
+					label: "Amount of particles",
+					min: 1,
+					max: 10,
+					step: 1,
+					globalKey: "particleAmount",
+					value: particleAmount,
+				},
+			];
+		},
+		setGlobalValue(globalKey: string, value: number): boolean {
+			if (globalKey !== "particleAmount") {
+				return false;
+			}
+
+			particleAmount = Math.max(1, Math.min(10, Math.round(value)));
+			return true;
+		},
+		serializeControlState() {
+			return {
+				globals: {
+					particleAmount,
+				},
+			};
+		},
+		readValue() {
+			return particleAmount;
+		},
+	};
+}
+
 function createEvent(overrides: Partial<TestEvent> = {}): TestEvent {
-  return {
-    key: overrides.key,
-    data: overrides.data,
-    button: overrides.button,
-    pointerId: overrides.pointerId,
-    pointerType: overrides.pointerType,
-    clientX: overrides.clientX,
-    clientY: overrides.clientY,
-    preventDefault: overrides.preventDefault ?? (() => {})
-  };
+	return {
+		key: overrides.key,
+		data: overrides.data,
+		button: overrides.button,
+		pointerId: overrides.pointerId,
+		pointerType: overrides.pointerType,
+		clientX: overrides.clientX,
+		clientY: overrides.clientY,
+		preventDefault: overrides.preventDefault ?? (() => {}),
+	};
 }
 
 async function flushAsyncOperations(): Promise<void> {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    await Promise.resolve();
-  }
+	for (let attempt = 0; attempt < 40; attempt += 1) {
+		await Promise.resolve();
+	}
 
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, 0);
-  });
+	await new Promise<void>((resolve) => {
+		setTimeout(resolve, 0);
+	});
 }
 
 async function runGameViewScript(
-  fetchImplementation: FetchImplementation,
-  options: RunGameViewOptions = {}
+	fetchImplementation: FetchImplementation,
+	options: RunGameViewOptions = {},
 ): Promise<GameViewHarness> {
-  const versionId = options.versionId ?? 'source-version';
-  const csrfToken = Object.hasOwn(options, 'csrfToken') ? options.csrfToken : 'csrf-token-123';
-  const startTranscriptPolling = options.startTranscriptPolling ?? false;
-  const gameFavorited = options.gameFavorited ?? false;
-  const gameReactHydrated = options.gameReactHydrated ?? true;
-  const codegenProvider = options.codegenProvider;
-  const localStorageEntries = options.localStorageEntries ?? {};
-  const localStorageAvailable = options.localStorageAvailable ?? true;
-  const promptPanel = new TestHTMLElement();
-  const promptForm = new TestHTMLFormElement();
-  const promptInput = new TestHTMLInputElement();
-  const editTab = new TestHTMLButtonElement();
-  const annotationButton = new TestHTMLButtonElement();
-  const favoriteButton = new TestHTMLButtonElement();
-  const deleteButton = new TestHTMLButtonElement();
-  const recordButton = new TestHTMLButtonElement();
-  const tileCaptureButton = new TestHTMLButtonElement();
-  const codexToggle = new TestHTMLButtonElement();
-  const codexTranscript = new TestHTMLElement();
-  const promptOverlay = new TestHTMLElement();
-  const gameSessionView = new TestHTMLElement();
-  const promptDrawingCanvas = new TestHTMLCanvasElement();
-  const gameCanvas = new TestHTMLCanvasElement();
+	const versionId = options.versionId ?? "source-version";
+	const csrfToken = Object.hasOwn(options, "csrfToken")
+		? options.csrfToken
+		: "csrf-token-123";
+	const startTranscriptPolling = options.startTranscriptPolling ?? false;
+	const gameFavorited = options.gameFavorited ?? false;
+	const gameReactHydrated = options.gameReactHydrated ?? true;
+	const codegenProvider = options.codegenProvider;
+	const localStorageEntries = options.localStorageEntries ?? {};
+	const localStorageAvailable = options.localStorageAvailable ?? true;
+	const runtimeControls = options.runtimeControls;
+	const runtimeHost = options.runtimeHost;
+	const promptPanel = new TestHTMLElement();
+	const settingsPanel = new TestHTMLElement();
+	const promptForm = new TestHTMLFormElement();
+	const settingsForm = new TestHTMLElement();
+	const promptInput = new TestHTMLInputElement();
+	const editTab = new TestHTMLButtonElement();
 
-  const document = new TestDocument(versionId, csrfToken, gameFavorited, gameReactHydrated, codegenProvider);
-  document.registerElement('prompt-panel', promptPanel);
-  document.registerElement('prompt-form', promptForm);
-  document.registerElement('prompt-input', promptInput);
-  document.registerElement('game-tab-edit', editTab);
-  document.registerElement('game-tab-annotation', annotationButton);
-  document.registerElement('game-tab-favorite', favoriteButton);
-  document.registerElement('game-tab-delete', deleteButton);
-  document.registerElement('prompt-record-button', recordButton);
-  document.registerElement('game-tab-capture-tile', tileCaptureButton);
-  document.registerElement('game-codex-toggle', codexToggle);
-  document.registerElement('game-codex-transcript', codexTranscript);
-  document.registerElement('prompt-overlay', promptOverlay);
-  document.registerElement('prompt-drawing-canvas', promptDrawingCanvas);
-  document.registerElement('game-canvas', gameCanvas);
-  document.registerElement('game-codex-session-view', gameSessionView);
+	const annotationButton = new TestHTMLButtonElement();
 
-  const fetchCalls: FetchCall[] = [];
-  const consoleLogs: unknown[][] = [];
-  const assignCalls: string[] = [];
-  const intervalCallbacks: Array<() => void> = [];
-  const windowEventListeners = new Map<string, Array<() => void>>();
-  const mediaTrack = new TestMediaStreamTrack();
-  const mediaStream = new TestMediaStream([mediaTrack]);
-  let getUserMediaCalls = 0;
-  const localStorageState = new Map<string, string>(Object.entries(localStorageEntries));
-  let transcriptTitle: string | null = null;
-  const renderTranscriptCalls: TranscriptRenderCall[] = [];
-  let scrollToBottomCalls = 0;
-  TestRTCPeerConnection.latestInstance = null;
+	const settingsTab = new TestHTMLButtonElement();
 
-  const navigator = {
-    mediaDevices: {
-      async getUserMedia(): Promise<TestMediaStream> {
-        getUserMediaCalls += 1;
-        return mediaStream;
-      }
-    }
-  };
+	const favoriteButton = new TestHTMLButtonElement();
+	const deleteButton = new TestHTMLButtonElement();
+	const recordButton = new TestHTMLButtonElement();
+	const tileCaptureButton = new TestHTMLButtonElement();
+	const codexToggle = new TestHTMLButtonElement();
+	const codexTranscript = new TestHTMLElement();
+	const promptOverlay = new TestHTMLElement();
+	const gameSessionView = new TestHTMLElement();
+	const promptDrawingCanvas = new TestHTMLCanvasElement();
+	const gameCanvas = new TestHTMLCanvasElement();
 
-  const Image = class extends TestEventTarget {
-    public width = 360;
-    public height = 640;
+	const document = new TestDocument(
+		versionId,
+		csrfToken,
+		gameFavorited,
+		gameReactHydrated,
+		codegenProvider,
+	);
+	document.registerElement("prompt-panel", promptPanel);
+	document.registerElement("settings-panel", settingsPanel);
+	document.registerElement("prompt-form", promptForm);
+	document.registerElement("settings-form", settingsForm);
+	document.registerElement("prompt-input", promptInput);
+	document.registerElement("game-tab-edit", editTab);
+	document.registerElement("game-tab-annotation", annotationButton);
+	document.registerElement("game-tab-settings", settingsTab);
+	document.registerElement("game-tab-favorite", favoriteButton);
+	document.registerElement("game-tab-delete", deleteButton);
+	document.registerElement("prompt-record-button", recordButton);
+	document.registerElement("game-tab-capture-tile", tileCaptureButton);
+	document.registerElement("game-codex-toggle", codexToggle);
+	document.registerElement("game-codex-transcript", codexTranscript);
+	document.registerElement("prompt-overlay", promptOverlay);
+	document.registerElement("prompt-drawing-canvas", promptDrawingCanvas);
+	document.registerElement("game-canvas", gameCanvas);
+	document.registerElement("game-codex-session-view", gameSessionView);
 
-    set src(value: string) {
-      void value;
-      this.dispatchEvent('load', createEvent());
-    }
-  };
+	const fetchCalls: FetchCall[] = [];
+	const consoleLogs: unknown[][] = [];
+	const assignCalls: string[] = [];
+	const intervalCallbacks: Array<() => void> = [];
+	const windowEventListeners = new Map<string, Array<() => void>>();
+	const mediaTrack = new TestMediaStreamTrack();
+	const mediaStream = new TestMediaStream([mediaTrack]);
+	let getUserMediaCalls = 0;
+	const localStorageState = new Map<string, string>(
+		Object.entries(localStorageEntries),
+	);
+	let transcriptTitle: string | null = null;
+	const renderTranscriptCalls: TranscriptRenderCall[] = [];
+	let scrollToBottomCalls = 0;
+	TestRTCPeerConnection.latestInstance = null;
 
-  const window = {
-    requestAnimationFrame(callback: () => void): number {
-      callback();
-      return 1;
-    },
-    location: {
-      assign(url: string): void {
-        assignCalls.push(url);
-      }
-    },
-    setInterval(callback: () => void): number {
-      intervalCallbacks.push(callback);
-      callback();
-      return intervalCallbacks.length;
-    },
-    clearInterval(id: number): void {
-      void id;
-    },
-    setTimeout(callback: () => void): number {
-      callback();
-      return 1;
-    },
-    clearTimeout(id: number): void {
-      void id;
-    },
-    addEventListener(event: string, listener: () => void): void {
-      const listeners = windowEventListeners.get(event);
-      if (listeners) {
-        listeners.push(listener);
-        return;
-      }
+	const navigator = {
+		mediaDevices: {
+			async getUserMedia(): Promise<TestMediaStream> {
+				getUserMediaCalls += 1;
+				return mediaStream;
+			},
+		},
+	};
 
-      windowEventListeners.set(event, [listener]);
-    }
-  };
+	const Image = class extends TestEventTarget {
+		public width = 360;
+		public height = 640;
 
-  const localStorageApi = {
-    getItem(key: string): string | null {
-      return localStorageState.get(String(key)) ?? null;
-    },
-    setItem(key: string, value: string): void {
-      localStorageState.set(String(key), String(value));
-    },
-    removeItem(key: string): void {
-      localStorageState.delete(String(key));
-    }
-  };
+		set src(value: string) {
+			void value;
+			this.dispatchEvent("load", createEvent());
+		}
+	};
 
-  Object.defineProperty(window, 'localStorage', {
-    configurable: true,
-    enumerable: true,
-    get(): unknown {
-      if (!localStorageAvailable) {
-        throw new Error('localStorage unavailable');
-      }
+	const window = {
+		__gameSpaceActiveGameRuntimeControls: runtimeControls,
+		__gameSpaceActiveGameRuntimeHost: runtimeHost,
+		requestAnimationFrame(callback: () => void): number {
+			callback();
+			return 1;
+		},
+		getComputedStyle(): { maxHeight: string } {
+			return { maxHeight: "92px" };
+		},
+		location: {
+			assign(url: string): void {
+				assignCalls.push(url);
+			},
+		},
+		setInterval(callback: () => void): number {
+			intervalCallbacks.push(callback);
+			callback();
+			return intervalCallbacks.length;
+		},
+		clearInterval(id: number): void {
+			void id;
+		},
+		setTimeout(callback: () => void): number {
+			callback();
+			return 1;
+		},
+		clearTimeout(id: number): void {
+			void id;
+		},
+		addEventListener(event: string, listener: () => void): void {
+			const listeners = windowEventListeners.get(event);
+			if (listeners) {
+				listeners.push(listener);
+				return;
+			}
 
-      return localStorageApi;
-    }
-  });
+			windowEventListeners.set(event, [listener]);
+		},
+	};
 
-  const scriptPath = path.join(process.cwd(), 'src/app/game/[versionId]/legacy/game-view-client.js');
-  const source = await readFile(scriptPath, 'utf8');
-  const runnableSource = source
-    .replace(
-      "import { createCodexTranscriptPresenter } from './codex-transcript-presenter.js';\n\n",
-      ''
-    )
-    .replaceAll('startTranscriptPolling();', startTranscriptPolling ? 'startTranscriptPolling();' : '');
+	const localStorageApi = {
+		getItem(key: string): string | null {
+			return localStorageState.get(String(key)) ?? null;
+		},
+		setItem(key: string, value: string): void {
+			localStorageState.set(String(key), String(value));
+		},
+		removeItem(key: string): void {
+			localStorageState.delete(String(key));
+		},
+	};
 
-  const context = {
-    Image,
-    document,
-    window,
-    fetch(url: string, init?: Record<string, unknown>): Promise<FetchResponse> {
-      fetchCalls.push({ url, init });
-      return fetchImplementation(url, init);
-    },
-    console: {
-      log(...args: unknown[]): void {
-        consoleLogs.push(args);
-      }
-    },
-    HTMLButtonElement: TestHTMLButtonElement,
-    HTMLElement: TestHTMLElement,
-    HTMLFormElement: TestHTMLFormElement,
-    HTMLInputElement: TestHTMLInputElement,
-    HTMLCanvasElement: TestHTMLCanvasElement,
-    navigator,
-    RTCPeerConnection: TestRTCPeerConnection,
-    createCodexTranscriptPresenter(_sessionView: unknown, options?: { transcriptTitle?: string }) {
-      transcriptTitle = typeof options?.transcriptTitle === 'string' ? options.transcriptTitle : null;
-      return {
-        showEmptyState() {},
-        renderTranscript(sessionId: unknown, messages: unknown, presenterOptions?: { autoScrollToBottom?: boolean }) {
-          renderTranscriptCalls.push({
-            sessionId,
-            messages,
-            options: presenterOptions
-          });
-        },
-        scrollToBottom() {
-          scrollToBottomCalls += 1;
-        }
-      };
-    },
-    encodeURIComponent,
-    Error
-  };
+	Object.defineProperty(window, "localStorage", {
+		configurable: true,
+		enumerable: true,
+		get(): unknown {
+			if (!localStorageAvailable) {
+				throw new Error("localStorage unavailable");
+			}
 
-  vm.runInNewContext(runnableSource, context, { filename: scriptPath });
+			return localStorageApi;
+		},
+	});
 
-  return {
-    fetchCalls,
-    consoleLogs,
-    assignCalls,
-    body: document.body,
-    transcriptTitle,
-    editTab,
-    annotationButton,
-    favoriteButton,
-    deleteButton,
-    recordButton,
-    tileCaptureButton,
-    codexToggle,
-    promptForm,
-    promptInput,
-    promptPanel,
-    promptOverlay,
-    promptDrawingCanvas,
-    gameCanvas,
-    renderTranscriptCalls,
-    getScrollToBottomCalls: () => scrollToBottomCalls,
-    intervalCallbacks,
-    dispatchWindowEvent(event: string): void {
-      const listeners = windowEventListeners.get(event);
-      if (!listeners) {
-        return;
-      }
+	const scriptPath = path.join(
+		process.cwd(),
+		"src/app/game/[versionId]/legacy/game-view-client.js",
+	);
+	const source = await readFile(scriptPath, "utf8");
+	const runnableSource = source
+		.replace(
+			"import { createCodexTranscriptPresenter } from './codex-transcript-presenter.js';\n\n",
+			"",
+		)
+		.replaceAll(
+			"startTranscriptPolling();",
+			startTranscriptPolling ? "startTranscriptPolling();" : "",
+		);
 
-      for (const listener of listeners) {
-        listener();
-      }
-    },
-    getPeerConnection: () => TestRTCPeerConnection.latestInstance,
-    mediaTrack,
-    getUserMediaCalls: () => getUserMediaCalls,
-    readLocalStorageItem(key: string): string | null {
-      return localStorageState.get(key) ?? null;
-    }
-  };
+	const context = {
+		Image,
+		document,
+		window,
+		fetch(url: string, init?: Record<string, unknown>): Promise<FetchResponse> {
+			fetchCalls.push({ url, init });
+			return fetchImplementation(url, init);
+		},
+		console: {
+			log(...args: unknown[]): void {
+				consoleLogs.push(args);
+			},
+		},
+		HTMLButtonElement: TestHTMLButtonElement,
+		HTMLElement: TestHTMLElement,
+		HTMLFormElement: TestHTMLFormElement,
+		HTMLInputElement: TestHTMLInputElement,
+		HTMLCanvasElement: TestHTMLCanvasElement,
+		navigator,
+		RTCPeerConnection: TestRTCPeerConnection,
+		createCodexTranscriptPresenter(
+			_sessionView: unknown,
+			options?: { transcriptTitle?: string },
+		) {
+			transcriptTitle =
+				typeof options?.transcriptTitle === "string"
+					? options.transcriptTitle
+					: null;
+			return {
+				showEmptyState() {},
+				renderTranscript(
+					sessionId: unknown,
+					messages: unknown,
+					presenterOptions?: { autoScrollToBottom?: boolean },
+				) {
+					renderTranscriptCalls.push({
+						sessionId,
+						messages,
+						options: presenterOptions,
+					});
+				},
+				scrollToBottom() {
+					scrollToBottomCalls += 1;
+				},
+			};
+		},
+		encodeURIComponent,
+		Error,
+	};
+
+	vm.runInNewContext(runnableSource, context, { filename: scriptPath });
+
+	return {
+		fetchCalls,
+		consoleLogs,
+		assignCalls,
+		body: document.body,
+		transcriptTitle,
+		editTab,
+		annotationButton,
+		settingsTab,
+		favoriteButton,
+		deleteButton,
+		recordButton,
+		tileCaptureButton,
+		codexToggle,
+		promptForm,
+		promptInput,
+		promptPanel,
+		settingsPanel,
+		settingsForm,
+		promptOverlay,
+		promptDrawingCanvas,
+		gameCanvas,
+		renderTranscriptCalls,
+		getScrollToBottomCalls: () => scrollToBottomCalls,
+		intervalCallbacks,
+		dispatchWindowEvent(event: string): void {
+			const listeners = windowEventListeners.get(event);
+			if (!listeners) {
+				return;
+			}
+
+			for (const listener of listeners) {
+				listener();
+			}
+		},
+		getPeerConnection: () => TestRTCPeerConnection.latestInstance,
+		mediaTrack,
+		getUserMediaCalls: () => getUserMediaCalls,
+		readLocalStorageItem(key: string): string | null {
+			return localStorageState.get(key) ?? null;
+		},
+	};
 }
 
 function promptDraftStorageKey(versionId: string): string {
-  return `game-space:prompt-draft:${versionId}`;
+	return `game-space:prompt-draft:${versionId}`;
 }
 
-describe('game view prompt submit client', () => {
-  it('waits for the React hydration signal before starting transcript polling', async () => {
-    const harness = await runGameViewScript(
-      async () => ({
-        ok: true,
-        async json() {
-          return { status: 'no-session', eyeState: 'idle' };
-        }
-      }),
-      { gameReactHydrated: false, startTranscriptPolling: true }
-    );
-
-    expect(harness.fetchCalls).toHaveLength(0);
-    harness.dispatchWindowEvent('game-react-hydrated');
-    await flushAsyncOperations();
-    expect(harness.fetchCalls[0]?.url).toBe('/api/codex-sessions/source-version');
-  });
-
-  it('restores a saved prompt draft and autosaves edits for the same game version', async () => {
-    const versionDraftKey = promptDraftStorageKey('source-version');
-    const harness = await runGameViewScript(
-      async () => ({
-        ok: true,
-        async json() {
-          return { status: 'ok' };
-        }
-      }),
-      { localStorageEntries: { [versionDraftKey]: 'add sparkle trail' } }
-    );
-
-    expect(harness.promptInput.value).toBe('add sparkle trail');
-
-    harness.promptInput.value = 'add sparkle trail and glow';
-    harness.promptInput.dispatchEvent('input', createEvent());
-
-    expect(harness.readLocalStorageItem(versionDraftKey)).toBe('add sparkle trail and glow');
-  });
-
-  it('uses a per-game localStorage key and ignores drafts from other games', async () => {
-    const currentVersionId = 'active-version';
-    const currentVersionDraftKey = promptDraftStorageKey(currentVersionId);
-    const otherVersionDraftKey = promptDraftStorageKey('other-version');
-    const harness = await runGameViewScript(
-      async () => ({
-        ok: true,
-        async json() {
-          return { status: 'ok' };
-        }
-      }),
-      {
-        versionId: currentVersionId,
-        localStorageEntries: {
-          [otherVersionDraftKey]: 'draft for other version'
-        }
-      }
-    );
-
-    expect(harness.promptInput.value).toBe('');
-
-    harness.promptInput.value = 'draft for active version';
-    harness.promptInput.dispatchEvent('input', createEvent());
-
-    expect(harness.readLocalStorageItem(currentVersionDraftKey)).toBe('draft for active version');
-    expect(harness.readLocalStorageItem(otherVersionDraftKey)).toBe('draft for other version');
-  });
-
-  it('clears the saved prompt draft after a successful prompt submit', async () => {
-    const versionDraftKey = promptDraftStorageKey('source-version');
-    const harness = await runGameViewScript(
-      async () => ({
-        ok: true,
-        async json() {
-          return { forkId: 'pebble-iris-dawn' };
-        }
-      }),
-      { localStorageEntries: { [versionDraftKey]: 'persisted draft' } }
-    );
-
-    harness.editTab.dispatchEvent('click', createEvent());
-    harness.promptInput.value = 'persisted draft';
-    harness.promptInput.dispatchEvent('input', createEvent());
-    harness.promptForm.dispatchEvent('submit', createEvent());
-    await flushAsyncOperations();
-
-    expect(harness.readLocalStorageItem(versionDraftKey)).toBeNull();
-    expect(harness.assignCalls).toEqual(['/game/pebble-iris-dawn']);
-  });
-
-  it('keeps the saved draft when prompt submit does not succeed', async () => {
-    const versionDraftKey = promptDraftStorageKey('source-version');
-    const harness = await runGameViewScript(
-      async () => ({
-        ok: true,
-        async json() {
-          return { status: 'accepted' };
-        }
-      }),
-      { localStorageEntries: { [versionDraftKey]: 'persisted draft' } }
-    );
-
-    harness.editTab.dispatchEvent('click', createEvent());
-    harness.promptInput.value = 'persisted draft';
-    harness.promptInput.dispatchEvent('input', createEvent());
-    harness.promptForm.dispatchEvent('submit', createEvent());
-    await flushAsyncOperations();
-
-    expect(harness.readLocalStorageItem(versionDraftKey)).toBe('persisted draft');
-    expect(harness.assignCalls).toHaveLength(0);
-  });
-
-  it('clears the saved prompt draft when the prompt form is reset', async () => {
-    const versionDraftKey = promptDraftStorageKey('source-version');
-    const harness = await runGameViewScript(
-      async () => ({
-        ok: true,
-        async json() {
-          return { status: 'ok' };
-        }
-      }),
-      { localStorageEntries: { [versionDraftKey]: 'persisted draft' } }
-    );
-
-    harness.promptInput.value = 'persisted draft';
-    harness.promptInput.dispatchEvent('input', createEvent());
-    harness.promptForm.dispatchEvent('reset', createEvent());
-
-    expect(harness.promptInput.value).toBe('');
-    expect(harness.readLocalStorageItem(versionDraftKey)).toBeNull();
-  });
-
-  it('does not crash when localStorage is unavailable', async () => {
-    const harness = await runGameViewScript(
-      async () => ({
-        ok: true,
-        async json() {
-          return { forkId: 'pebble-iris-dawn' };
-        }
-      }),
-      { localStorageAvailable: false }
-    );
-
-    harness.editTab.dispatchEvent('click', createEvent());
-    harness.promptInput.value = 'darken the ball';
-    harness.promptInput.dispatchEvent('input', createEvent());
-    harness.promptForm.dispatchEvent('submit', createEvent());
-    await flushAsyncOperations();
-
-    expect(harness.fetchCalls).toHaveLength(1);
-    expect(harness.assignCalls).toEqual(['/game/pebble-iris-dawn']);
-  });
-
-  it('redirects to the newly forked game page when prompt submit succeeds', async () => {
-    const harness = await runGameViewScript(async () => ({
-      ok: true,
-      async json() {
-        return { forkId: 'pebble-iris-dawn' };
-      }
-    }));
-
-    harness.editTab.dispatchEvent('click', createEvent());
-    harness.promptInput.value = 'darken the ball';
-    harness.promptForm.dispatchEvent('submit', createEvent());
-    await flushAsyncOperations();
-
-    expect(harness.fetchCalls).toHaveLength(1);
-    expect(harness.fetchCalls[0]).toEqual({
-      url: '/api/games/source-version/prompts',
-      init: {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': 'csrf-token-123'
-        },
-        body: JSON.stringify({ prompt: 'darken the ball', annotationPngDataUrl: null, gameScreenshotPngDataUrl: 'data:image/png;base64,test-canvas' })
-      }
-    });
-    expect(harness.assignCalls).toEqual(['/game/pebble-iris-dawn']);
-    expect(harness.promptInput.value).toBe('');
-    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
-    expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(true);
-  });
-
-  it('omits the CSRF header when no token exists on the page', async () => {
-    const harness = await runGameViewScript(
-      async () => ({
-        ok: true,
-        async json() {
-          return { forkId: 'pebble-iris-dawn' };
-        }
-      }),
-      { csrfToken: undefined }
-    );
-
-    harness.editTab.dispatchEvent('click', createEvent());
-    harness.promptInput.value = 'darken the ball';
-    harness.promptForm.dispatchEvent('submit', createEvent());
-    await flushAsyncOperations();
-
-    expect(harness.fetchCalls).toHaveLength(1);
-    expect(harness.fetchCalls[0]?.init).toEqual({
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ prompt: 'darken the ball', annotationPngDataUrl: null, gameScreenshotPngDataUrl: 'data:image/png;base64,test-canvas' })
-    });
-  });
-
-  it('does not redirect when prompt submit response is missing fork id', async () => {
-    const harness = await runGameViewScript(async () => ({
-      ok: true,
-      async json() {
-        return { status: 'accepted' };
-      }
-    }));
-
-    harness.editTab.dispatchEvent('click', createEvent());
-    harness.promptInput.value = 'add gravity';
-    harness.promptForm.dispatchEvent('submit', createEvent());
-    await flushAsyncOperations();
-
-    expect(harness.fetchCalls).toHaveLength(1);
-    expect(harness.assignCalls).toHaveLength(0);
-  });
-
-  it('toggles the edit panel open and closed from the bottom Edit tab', async () => {
-    const harness = await runGameViewScript(async () => ({
-      ok: true,
-      async json() {
-        return { forkId: 'unused' };
-      }
-    }));
-
-    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('true');
-    expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(false);
-
-    harness.editTab.dispatchEvent('click', createEvent());
-    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
-    expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(true);
-
-    harness.codexToggle.dispatchEvent('click', createEvent());
-    expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(true);
-
-    harness.editTab.dispatchEvent('click', createEvent());
-    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('true');
-    expect(harness.editTab.classList.contains('game-view-tab--active')).toBe(false);
-    expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(false);
-  });
-
-  it('reflects the initial favorite state from page dataset', async () => {
-    const harness = await runGameViewScript(
-      async () => ({
-        ok: true,
-        async json() {
-          return { status: 'ok' };
-        }
-      }),
-      { gameFavorited: true }
-    );
-
-    expect(harness.favoriteButton.classList.contains('game-view-icon-tab--active')).toBe(true);
-    expect(harness.favoriteButton.getAttribute('aria-pressed')).toBe('true');
-    expect(harness.favoriteButton.getAttribute('aria-label')).toBe('Unfavorite game');
-  });
-
-  it('toggles the favorite button state by calling the favorite endpoint', async () => {
-    let toggleCount = 0;
-    const harness = await runGameViewScript(async (url) => {
-      if (url !== '/api/games/source-version/favorite') {
-        throw new Error(`Unexpected fetch URL: ${url}`);
-      }
-
-      toggleCount += 1;
-      return {
-        ok: true,
-        async json() {
-          return { favorite: toggleCount === 1 };
-        }
-      };
-    });
-
-    harness.favoriteButton.dispatchEvent('click', createEvent());
-    await flushAsyncOperations();
-    expect(harness.fetchCalls[0]).toEqual({
-      url: '/api/games/source-version/favorite',
-      init: {
-        method: 'POST',
-        headers: {
-          'X-CSRF-Token': 'csrf-token-123'
-        }
-      }
-    });
-    expect(harness.favoriteButton.classList.contains('game-view-icon-tab--active')).toBe(true);
-    expect(harness.favoriteButton.getAttribute('aria-pressed')).toBe('true');
-    expect(harness.favoriteButton.getAttribute('aria-label')).toBe('Unfavorite game');
-
-    harness.favoriteButton.dispatchEvent('click', createEvent());
-    await flushAsyncOperations();
-    expect(harness.favoriteButton.classList.contains('game-view-icon-tab--active')).toBe(false);
-    expect(harness.favoriteButton.getAttribute('aria-pressed')).toBe('false');
-    expect(harness.favoriteButton.getAttribute('aria-label')).toBe('Favorite game');
-  });
-
-  it('retries tile capture when the first canvas snapshots are blank and posts the first non-blank frame', async () => {
-    const harness = await runGameViewScript(async (url) => {
-      if (url !== '/api/games/source-version/tile-snapshot') {
-        throw new Error(`Unexpected fetch URL: ${url}`);
-      }
-
-      return {
-        ok: true,
-        async json() {
-          return { status: 'ok' };
-        }
-      };
-    });
-
-    let snapshotReadCount = 0;
-    harness.gameCanvas.toDataURL = () => {
-      snapshotReadCount += 1;
-      if (snapshotReadCount < 3) {
-        return 'data:image/png;base64,test-canvas';
-      }
-
-      return 'data:image/png;base64,drawn-canvas';
-    };
-
-    harness.tileCaptureButton.dispatchEvent('click', createEvent());
-    await flushAsyncOperations();
-
-    expect(harness.fetchCalls).toHaveLength(1);
-    expect(harness.fetchCalls[0]).toEqual({
-      url: '/api/games/source-version/tile-snapshot',
-      init: {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': 'csrf-token-123'
-        },
-        body: JSON.stringify({ tilePngDataUrl: 'data:image/png;base64,drawn-canvas' })
-      }
-    });
-    expect(snapshotReadCount).toBe(3);
-    expect(harness.tileCaptureButton.disabled).toBe(false);
-  });
-
-  it('toggles codex transcript expansion from the robot button', async () => {
-    const harness = await runGameViewScript(async () => ({
-      ok: true,
-      async json() {
-        return { forkId: 'unused' };
-      }
-    }));
-
-    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('true');
-    expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(false);
-    expect(harness.codexToggle.getAttribute('aria-expanded')).toBe('false');
-
-    harness.codexToggle.dispatchEvent('click', createEvent());
-    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
-    expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(true);
-    expect(harness.codexToggle.getAttribute('aria-expanded')).toBe('true');
-
-    harness.codexToggle.dispatchEvent('click', createEvent());
-    expect(harness.promptPanel.getAttribute('aria-hidden')).toBe('false');
-    expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(false);
-  });
-
-  it('scrolls transcript to bottom when opening codex transcript after messages load', async () => {
-    const harness = await runGameViewScript(
-      async (url) => {
-        if (url !== '/api/codex-sessions/source-version') {
-          throw new Error(`Unexpected fetch URL: ${url}`);
-        }
-
-        return {
-          ok: true,
-          async json() {
-            return {
-              status: 'ok',
-              eyeState: 'idle',
-              sessionId: 'session-source',
-              messages: [{ role: 'user', text: 'first prompt', timestamp: '2026-02-22T00:00:00.000Z' }]
-            };
-          }
-        };
-      },
-      { startTranscriptPolling: true }
-    );
-
-    await flushAsyncOperations();
-    expect(harness.renderTranscriptCalls).toHaveLength(1);
-    expect(harness.getScrollToBottomCalls()).toBe(0);
-
-    harness.codexToggle.dispatchEvent('click', createEvent());
-
-    expect(harness.getScrollToBottomCalls()).toBe(1);
-    expect(harness.body.classList.contains('game-page--codex-expanded')).toBe(true);
-  });
-
-  it('starts realtime transcription by creating a session and exchanging SDP', async () => {
-    const harness = await runGameViewScript(async (url) => {
-      if (url === '/api/transcribe') {
-        return {
-          ok: true,
-          async json() {
-            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
-          }
-        };
-      }
-
-      if (url === 'https://api.openai.com/v1/realtime/calls') {
-        return {
-          ok: true,
-          async text() {
-            return 'fake-answer-sdp';
-          }
-        };
-      }
-
-      throw new Error(`Unexpected fetch URL: ${url}`);
-    });
-
-    harness.recordButton.dispatchEvent('click', createEvent());
-    await flushAsyncOperations();
-
-    expect(harness.getUserMediaCalls()).toBe(1);
-    expect(harness.fetchCalls).toHaveLength(2);
-    expect(harness.fetchCalls[0]).toEqual({
-      url: '/api/transcribe',
-      init: {
-        method: 'POST',
-        headers: {
-          'X-CSRF-Token': 'csrf-token-123'
-        }
-      }
-    });
-    expect(harness.fetchCalls[1]).toEqual({
-      url: 'https://api.openai.com/v1/realtime/calls',
-      init: {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ephemeral-secret',
-          'Content-Type': 'application/sdp'
-        },
-        body: 'fake-offer-sdp'
-      }
-    });
-    expect(harness.recordButton.getAttribute('aria-label')).toBe('Stop voice recording');
-    expect(harness.recordButton.classList.contains('game-view-icon-tab--recording')).toBe(true);
-
-    const peerConnection = harness.getPeerConnection();
-    expect(peerConnection?.localDescription).toEqual({ type: 'offer', sdp: 'fake-offer-sdp' });
-    expect(peerConnection?.remoteDescription).toEqual({ type: 'answer', sdp: 'fake-answer-sdp' });
-  });
-
-  it('enables annotation and captures the base screenshot when recording starts', async () => {
-    const harness = await runGameViewScript(async (url) => {
-      if (url === '/api/transcribe') {
-        return {
-          ok: true,
-          async json() {
-            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
-          }
-        };
-      }
-
-      if (url === 'https://api.openai.com/v1/realtime/calls') {
-        return {
-          ok: true,
-          async text() {
-            return 'fake-answer-sdp';
-          }
-        };
-      }
-
-      throw new Error(`Unexpected fetch URL: ${url}`);
-    });
-
-    expect(harness.gameCanvas.toDataUrlCalls).toBe(0);
-    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(false);
-    expect(harness.annotationButton.getAttribute('aria-pressed')).toBe('false');
-
-    harness.recordButton.dispatchEvent('click', createEvent());
-    await flushAsyncOperations();
-
-    expect(harness.gameCanvas.toDataUrlCalls).toBeGreaterThan(0);
-    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(true);
-    expect(harness.promptDrawingCanvas.getAttribute('aria-hidden')).toBe('false');
-    expect(harness.annotationButton.getAttribute('aria-pressed')).toBe('true');
-  });
-
-  it('keeps stop busy until flush completes and then submits the final transcript', async () => {
-    const harness = await runGameViewScript(async (url) => {
-      if (url === '/api/transcribe') {
-        return {
-          ok: true,
-          async json() {
-            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
-          }
-        };
-      }
-
-      if (url === 'https://api.openai.com/v1/realtime/calls') {
-        return {
-          ok: true,
-          async text() {
-            return 'fake-answer-sdp';
-          }
-        };
-      }
-
-      if (url === '/api/games/source-version/prompts') {
-        return {
-          ok: true,
-          async json() {
-            return { forkId: 'voice-fork' };
-          }
-        };
-      }
-
-      throw new Error(`Unexpected fetch URL: ${url}`);
-    });
-
-    harness.recordButton.dispatchEvent('click', createEvent());
-    await flushAsyncOperations();
-
-    const peerConnection = harness.getPeerConnection();
-    expect(peerConnection).not.toBeNull();
-
-    harness.recordButton.dispatchEvent('click', createEvent());
-    expect(harness.recordButton.disabled).toBe(true);
-    expect(harness.recordButton.classList.contains('game-view-icon-tab--busy')).toBe(true);
-
-    peerConnection?.dataChannel.dispatchEvent(
-      'message',
-      createEvent({
-        data: JSON.stringify({
-          type: 'conversation.item.input_audio_transcription.completed',
-          transcript: 'wider'
-        })
-      })
-    );
-    peerConnection?.dataChannel.dispatchEvent(
-      'message',
-      createEvent({
-        data: JSON.stringify({
-          type: 'response.done'
-        })
-      })
-    );
-    await flushAsyncOperations();
-
-    expect(harness.fetchCalls[2]).toEqual({
-      url: '/api/games/source-version/prompts',
-      init: {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': 'csrf-token-123'
-        },
-        body: JSON.stringify({
-          prompt: 'wider',
-          annotationPngDataUrl: null,
-          gameScreenshotPngDataUrl: 'data:image/png;base64,test-canvas'
-        })
-      }
-    });
-    expect(peerConnection?.dataChannel.sentMessages).toContain(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-    expect(harness.recordButton.disabled).toBe(false);
-    expect(harness.recordButton.classList.contains('game-view-icon-tab--busy')).toBe(false);
-    expect(harness.assignCalls).toEqual(['/game/voice-fork']);
-    expect(harness.consoleLogs).not.toContainEqual(['[realtime-transcription] flush timeout fallback']);
-  });
-
-  it('uses timeout fallback to exit stop flow when realtime flush never signals completion', async () => {
-    const harness = await runGameViewScript(async (url) => {
-      if (url === '/api/transcribe') {
-        return {
-          ok: true,
-          async json() {
-            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
-          }
-        };
-      }
-
-      if (url === 'https://api.openai.com/v1/realtime/calls') {
-        return {
-          ok: true,
-          async text() {
-            return 'fake-answer-sdp';
-          }
-        };
-      }
-
-      throw new Error(`Unexpected fetch URL: ${url}`);
-    });
-
-    harness.recordButton.dispatchEvent('click', createEvent());
-    await flushAsyncOperations();
-
-    const peerConnection = harness.getPeerConnection();
-    expect(peerConnection).not.toBeNull();
-
-    harness.recordButton.dispatchEvent('click', createEvent());
-    expect(harness.recordButton.disabled).toBe(true);
-    expect(harness.recordButton.classList.contains('game-view-icon-tab--busy')).toBe(true);
-
-    for (let attempt = 0; attempt < 80; attempt += 1) {
-      for (const intervalCallback of harness.intervalCallbacks) {
-        intervalCallback();
-      }
-    }
-    await flushAsyncOperations();
-
-    expect(harness.fetchCalls).toHaveLength(2);
-    expect(harness.mediaTrack.stopped).toBe(true);
-    expect(peerConnection?.closed).toBe(true);
-    expect(harness.recordButton.disabled).toBe(false);
-    expect(harness.recordButton.classList.contains('game-view-icon-tab--busy')).toBe(false);
-    expect(harness.recordButton.getAttribute('aria-label')).toBe('Start voice recording');
-    expect(harness.consoleLogs).toContainEqual(['[realtime-transcription] flush timeout fallback']);
-  });
-
-  it('submits the annotated prompt on recording stop even while the edit drawer is open', async () => {
-    const harness = await runGameViewScript(async (url) => {
-      if (url === '/api/transcribe') {
-        return {
-          ok: true,
-          async json() {
-            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
-          }
-        };
-      }
-
-      if (url === 'https://api.openai.com/v1/realtime/calls') {
-        return {
-          ok: true,
-          async text() {
-            return 'fake-answer-sdp';
-          }
-        };
-      }
-
-      if (url === '/api/games/source-version/prompts') {
-        return {
-          ok: true,
-          async json() {
-            return { forkId: 'voice-fork' };
-          }
-        };
-      }
-
-      throw new Error(`Unexpected fetch URL: ${url}`);
-    });
-
-    harness.editTab.dispatchEvent('click', createEvent());
-    harness.annotationButton.dispatchEvent('click', createEvent());
-    await flushAsyncOperations();
-
-    const annotationCaptureCallCount = harness.gameCanvas.toDataUrlCalls;
-    expect(annotationCaptureCallCount).toBeGreaterThan(0);
-    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(true);
-    expect(harness.promptDrawingCanvas.getAttribute('aria-hidden')).toBe('false');
-    expect(harness.annotationButton.getAttribute('aria-pressed')).toBe('true');
-
-    const drawingContext = harness.promptDrawingCanvas.getContext('2d');
-    if (!drawingContext) {
-      throw new Error('drawing context missing from test harness');
-    }
-
-    harness.promptDrawingCanvas.dispatchEvent(
-      'pointerdown',
-      createEvent({ pointerId: 12, pointerType: 'mouse', button: 0, clientX: 25, clientY: 35 })
-    );
-    harness.promptDrawingCanvas.dispatchEvent(
-      'pointermove',
-      createEvent({ pointerId: 12, pointerType: 'mouse', button: 0, clientX: 70, clientY: 96 })
-    );
-    harness.promptDrawingCanvas.dispatchEvent(
-      'pointerup',
-      createEvent({ pointerId: 12, pointerType: 'mouse', button: 0, clientX: 70, clientY: 96 })
-    );
-
-    harness.recordButton.dispatchEvent('click', createEvent());
-    await flushAsyncOperations();
-
-    expect(harness.gameCanvas.toDataUrlCalls).toBe(annotationCaptureCallCount);
-    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(true);
-
-    const peerConnection = harness.getPeerConnection();
-    peerConnection?.dataChannel.dispatchEvent(
-      'message',
-      createEvent({
-        data: JSON.stringify({
-          type: 'conversation.item.input_audio_transcription.completed',
-          transcript: 'make the paddle bigger'
-        })
-      })
-    );
-    harness.intervalCallbacks[0]?.();
-    harness.intervalCallbacks[0]?.();
-    harness.intervalCallbacks[0]?.();
-
-    harness.recordButton.dispatchEvent('click', createEvent());
-    peerConnection?.dataChannel.dispatchEvent(
-      'message',
-      createEvent({
-        data: JSON.stringify({
-          type: 'response.done'
-        })
-      })
-    );
-    await flushAsyncOperations();
-
-    expect(drawingContext.strokeStyleValue).toBe('rgba(250, 204, 21, 0.95)');
-    expect(drawingContext.operations).toContainEqual({ type: 'moveTo', x: 25, y: 35 });
-    expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 25, y: 35 });
-    expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 70, y: 96 });
-    expect(drawingContext.operations).toContainEqual({ type: 'stroke' });
-    await flushAsyncOperations();
-
-    expect(harness.fetchCalls[2]).toEqual({
-      url: '/api/games/source-version/prompts',
-      init: {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': 'csrf-token-123'
-        },
-        body: JSON.stringify({
-          prompt: 'make the paddle bigger',
-          annotationPngDataUrl: 'data:image/png;base64,test-canvas',
-          gameScreenshotPngDataUrl: 'data:image/png;base64,test-canvas'
-        })
-      }
-    });
-    expect(harness.gameCanvas.toDataUrlCalls).toBe(annotationCaptureCallCount);
-    expect(harness.assignCalls).toEqual(['/game/voice-fork']);
-    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(false);
-    expect(harness.promptDrawingCanvas.getAttribute('aria-hidden')).toBe('true');
-    expect(harness.annotationButton.getAttribute('aria-pressed')).toBe('false');
-  });
-
-  it('draws from touch pointer events after paintbrush activation', async () => {
-    const harness = await runGameViewScript(async (url) => {
-      if (url === '/api/games/source-version/prompts') {
-        return {
-          ok: true,
-          async json() {
-            return { forkId: 'draw-fork' };
-          }
-        };
-      }
-
-      throw new Error(`Unexpected fetch URL: ${url}`);
-    });
-
-    harness.editTab.dispatchEvent('click', createEvent());
-    harness.annotationButton.dispatchEvent('click', createEvent());
-    await flushAsyncOperations();
-
-    const drawingContext = harness.promptDrawingCanvas.getContext('2d');
-    if (!drawingContext) {
-      throw new Error('drawing context missing from test harness');
-    }
-
-    harness.promptDrawingCanvas.dispatchEvent(
-      'pointerdown',
-      createEvent({ pointerId: 3, pointerType: 'touch', clientX: 11, clientY: 17 })
-    );
-    harness.promptDrawingCanvas.dispatchEvent(
-      'pointermove',
-      createEvent({ pointerId: 3, pointerType: 'touch', clientX: 38, clientY: 61 })
-    );
-    harness.promptDrawingCanvas.dispatchEvent(
-      'pointerup',
-      createEvent({ pointerId: 3, pointerType: 'touch', clientX: 38, clientY: 61 })
-    );
-
-    expect(drawingContext.operations).toContainEqual({ type: 'moveTo', x: 11, y: 17 });
-    expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 11, y: 17 });
-    expect(drawingContext.operations).toContainEqual({ type: 'lineTo', x: 38, y: 61 });
-    expect(harness.promptDrawingCanvas.classList.contains('prompt-drawing-canvas--active')).toBe(true);
-  });
-
-  it('does not retry a fallback endpoint when realtime calls returns 400', async () => {
-    const harness = await runGameViewScript(async (url) => {
-      if (url === '/api/transcribe') {
-        return {
-          ok: true,
-          async json() {
-            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
-          }
-        };
-      }
-
-      if (url === 'https://api.openai.com/v1/realtime/calls') {
-        return {
-          ok: false,
-          status: 400,
-          async text() {
-            return 'invalid request';
-          }
-        };
-      }
-
-      throw new Error(`Unexpected fetch URL: ${url}`);
-    });
-
-    harness.recordButton.dispatchEvent('click', createEvent());
-    await flushAsyncOperations();
-
-    expect(harness.fetchCalls).toHaveLength(2);
-    expect(harness.fetchCalls[1]).toEqual({
-      url: 'https://api.openai.com/v1/realtime/calls',
-      init: {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ephemeral-secret',
-          'Content-Type': 'application/sdp'
-        },
-        body: 'fake-offer-sdp'
-      }
-    });
-
-    const peerConnection = harness.getPeerConnection();
-    expect(peerConnection?.remoteDescription).toBeNull();
-    expect(peerConnection?.closed).toBe(true);
-    expect(harness.mediaTrack.stopped).toBe(true);
-    expect(harness.recordButton.classList.contains('game-view-icon-tab--recording')).toBe(false);
-  });
-
-  it('logs transcribe endpoint errors and does not start recording', async () => {
-    const harness = await runGameViewScript(async (url) => {
-      if (url === '/api/transcribe') {
-        return {
-          ok: false,
-          status: 503,
-          async json() {
-            return { error: 'OpenAI realtime model gpt-realtime-1.5 is unavailable for this API key' };
-          }
-        };
-      }
-
-      throw new Error(`Unexpected fetch URL: ${url}`);
-    });
-
-    harness.recordButton.dispatchEvent('click', createEvent());
-    await flushAsyncOperations();
-
-    expect(harness.fetchCalls).toHaveLength(1);
-    expect(harness.getUserMediaCalls()).toBe(0);
-    expect(harness.recordButton.classList.contains('game-view-icon-tab--recording')).toBe(false);
-    expect(harness.consoleLogs).toContainEqual([
-      '[realtime-transcription] session request failed',
-      'status 503: OpenAI realtime model gpt-realtime-1.5 is unavailable for this API key'
-    ]);
-  });
-
-  it('buffers realtime transcript into overlay when edit tab is closed', async () => {
-    const harness = await runGameViewScript(async (url) => {
-      if (url === '/api/transcribe') {
-        return {
-          ok: true,
-          async json() {
-            return { clientSecret: 'ephemeral-secret', model: 'gpt-realtime-1.5' };
-          }
-        };
-      }
-
-      if (url === 'https://api.openai.com/v1/realtime/calls') {
-        return {
-          ok: true,
-          async text() {
-            return 'fake-answer-sdp';
-          }
-        };
-      }
-
-      if (url === '/api/games/source-version/prompts') {
-        return {
-          ok: true,
-          async json() {
-            return { forkId: 'voice-fork' };
-          }
-        };
-      }
-
-      throw new Error(`Unexpected fetch URL: ${url}`);
-    });
-
-    harness.recordButton.dispatchEvent('click', createEvent());
-    await flushAsyncOperations();
-
-    const peerConnection = harness.getPeerConnection();
-    expect(peerConnection).not.toBeNull();
-    harness.promptOverlay.scrollWidth = 480;
-    peerConnection?.dataChannel.dispatchEvent(
-      'message',
-      createEvent({
-        data: JSON.stringify({
-          type: 'conversation.item.input_audio_transcription.completed',
-          transcript: 'make the paddle bigger'
-        })
-      })
-    );
-    expect(harness.promptOverlay.textContent).toBe('make');
-    harness.intervalCallbacks[0]?.();
-    harness.intervalCallbacks[0]?.();
-    harness.intervalCallbacks[0]?.();
-    expect(harness.promptOverlay.textContent).toBe('make the paddle bigger');
-    expect(harness.promptOverlay.classList.contains('prompt-overlay--visible')).toBe(true);
-    expect(harness.promptOverlay.getAttribute('aria-hidden')).toBe('false');
-    expect(harness.promptOverlay.scrollLeft).toBe(480);
-
-    harness.recordButton.dispatchEvent('click', createEvent());
-    expect(harness.recordButton.disabled).toBe(true);
-    peerConnection?.dataChannel.dispatchEvent(
-      'message',
-      createEvent({
-        data: JSON.stringify({
-          type: 'response.done'
-        })
-      })
-    );
-    await flushAsyncOperations();
-
-    expect(harness.promptInput.value).toBe('');
-    expect(harness.promptOverlay.textContent).toBe('');
-    expect(peerConnection?.dataChannel.sentMessages).toContain(JSON.stringify({ type: 'input_audio_buffer.commit' }));
-    expect(harness.mediaTrack.stopped).toBe(true);
-    expect(peerConnection?.closed).toBe(true);
-    expect(harness.recordButton.getAttribute('aria-label')).toBe('Start voice recording');
-    expect(harness.fetchCalls[2]).toEqual({
-      url: '/api/games/source-version/prompts',
-      init: {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': 'csrf-token-123'
-        },
-        body: JSON.stringify({ prompt: 'make the paddle bigger', annotationPngDataUrl: null, gameScreenshotPngDataUrl: 'data:image/png;base64,test-canvas' })
-      }
-    });
-    expect(harness.assignCalls).toEqual(['/game/voice-fork']);
-    expect(harness.recordButton.classList.contains('game-view-icon-tab--recording')).toBe(false);
-    expect(harness.consoleLogs).toContainEqual(['[realtime-transcription] started']);
-    expect(harness.consoleLogs).toContainEqual([
-      '[realtime-transcription] data received',
-      JSON.stringify({
-        type: 'conversation.item.input_audio_transcription.completed',
-        transcript: 'make the paddle bigger'
-      })
-    ]);
-    expect(harness.consoleLogs).toContainEqual(['[realtime-transcription] stopped']);
-    expect(harness.consoleLogs).toContainEqual([
-      '[realtime-transcription] final transcribed text',
-      ''
-    ]);
-  });
-
-  it('adds and removes the generating class using eyeState from polling responses', async () => {
-    let requestCount = 0;
-    const harness = await runGameViewScript(
-      async () => {
-        requestCount += 1;
-        if (requestCount === 1) {
-          return {
-            ok: true,
-            async json() {
-              return { status: 'no-session', eyeState: 'generating' };
-            }
-          };
-        }
-
-        return {
-          ok: true,
-          async json() {
-            return { status: 'no-session', eyeState: 'idle' };
-          }
-        };
-      },
-      { startTranscriptPolling: true }
-    );
-
-    await flushAsyncOperations();
-    expect(harness.editTab.classList.contains('game-view-tab--generating')).toBe(true);
-    expect(harness.editTab.getAttribute('aria-busy')).toBe('true');
-
-    harness.intervalCallbacks[0]?.();
-    await flushAsyncOperations();
-    expect(harness.editTab.classList.contains('game-view-tab--generating')).toBe(false);
-    expect(harness.editTab.getAttribute('aria-busy')).toBe('false');
-  });
-
-  it('renders polling transcript updates with auto-scroll enabled', async () => {
-    let requestCount = 0;
-    const harness = await runGameViewScript(
-      async (url) => {
-        if (url !== '/api/codex-sessions/source-version') {
-          throw new Error(`Unexpected fetch URL: ${url}`);
-        }
-
-        requestCount += 1;
-        if (requestCount === 1) {
-          return {
-            ok: true,
-            async json() {
-              return {
-                status: 'ok',
-                eyeState: 'idle',
-                sessionId: 'session-source',
-                messages: [{ role: 'user', text: 'first prompt', timestamp: '2026-02-22T00:00:00.000Z' }]
-              };
-            }
-          };
-        }
-
-        return {
-          ok: true,
-          async json() {
-            return {
-              status: 'ok',
-              eyeState: 'idle',
-              sessionId: 'session-source',
-              messages: [
-                { role: 'user', text: 'first prompt', timestamp: '2026-02-22T00:00:00.000Z' },
-                { role: 'assistant', text: 'second reply', timestamp: '2026-02-22T00:00:01.000Z' }
-              ]
-            };
-          }
-        };
-      },
-      { startTranscriptPolling: true }
-    );
-
-    await flushAsyncOperations();
-    expect(harness.renderTranscriptCalls).toHaveLength(1);
-    expect(harness.renderTranscriptCalls[0]).toMatchObject({
-      options: { autoScrollToBottom: true }
-    });
-
-    harness.intervalCallbacks[0]?.();
-    await flushAsyncOperations();
-
-    expect(harness.renderTranscriptCalls).toHaveLength(2);
-    expect(harness.renderTranscriptCalls[1]).toMatchObject({
-      options: { autoScrollToBottom: true }
-    });
-  });
-
-  it('shows generating spinner behavior for claude provider', async () => {
-    const harness = await runGameViewScript(
-      async () => ({
-        ok: true,
-        async json() {
-          return { status: 'no-session', eyeState: 'generating' };
-        }
-      }),
-      { startTranscriptPolling: true, codegenProvider: 'claude' }
-    );
-
-    await flushAsyncOperations();
-    expect(harness.transcriptTitle).toBe('Claude Transcript');
-    expect(harness.editTab.classList.contains('game-view-tab--generating')).toBe(true);
-    expect(harness.editTab.getAttribute('aria-busy')).toBe('true');
-  });
-
-  it('uses codex transcript title by default', async () => {
-    const harness = await runGameViewScript(async () => ({
-      ok: true,
-      async json() {
-        return { status: 'no-session', eyeState: 'idle' };
-      }
-    }));
-
-    expect(harness.transcriptTitle).toBe('Codex Transcript');
-  });
+describe("game view prompt submit client", () => {
+	it("waits for the React hydration signal before starting transcript polling", async () => {
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { status: "no-session", eyeState: "idle" };
+				},
+			}),
+			{ gameReactHydrated: false, startTranscriptPolling: true },
+		);
+
+		expect(harness.fetchCalls).toHaveLength(0);
+		harness.dispatchWindowEvent("game-react-hydrated");
+		await flushAsyncOperations();
+		expect(harness.fetchCalls[0]?.url).toBe(
+			"/api/codex-sessions/source-version",
+		);
+	});
+
+	it("saves prompt draft edits before the React hydration signal fires", async () => {
+		const versionDraftKey = promptDraftStorageKey("source-version");
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { status: "ok" };
+				},
+			}),
+			{ gameReactHydrated: false },
+		);
+
+		harness.promptInput.value = "pre-hydration draft";
+		harness.promptInput.dispatchEvent("input", createEvent());
+
+		expect(harness.readLocalStorageItem(versionDraftKey)).toBe(
+			"pre-hydration draft",
+		);
+		expect(harness.fetchCalls).toHaveLength(0);
+	});
+
+	it("restores a saved prompt draft and autosaves edits for the same game version", async () => {
+		const versionDraftKey = promptDraftStorageKey("source-version");
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { status: "ok" };
+				},
+			}),
+			{ localStorageEntries: { [versionDraftKey]: "add sparkle trail" } },
+		);
+
+		expect(harness.promptInput.value).toBe("add sparkle trail");
+
+		harness.promptInput.value = "add sparkle trail and glow";
+		harness.promptInput.dispatchEvent("input", createEvent());
+
+		expect(harness.readLocalStorageItem(versionDraftKey)).toBe(
+			"add sparkle trail and glow",
+		);
+	});
+
+	it("uses a per-game localStorage key and ignores drafts from other games", async () => {
+		const currentVersionId = "active-version";
+		const currentVersionDraftKey = promptDraftStorageKey(currentVersionId);
+		const otherVersionDraftKey = promptDraftStorageKey("other-version");
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { status: "ok" };
+				},
+			}),
+			{
+				versionId: currentVersionId,
+				localStorageEntries: {
+					[otherVersionDraftKey]: "draft for other version",
+				},
+			},
+		);
+
+		expect(harness.promptInput.value).toBe("");
+
+		harness.promptInput.value = "draft for active version";
+		harness.promptInput.dispatchEvent("input", createEvent());
+
+		expect(harness.readLocalStorageItem(currentVersionDraftKey)).toBe(
+			"draft for active version",
+		);
+		expect(harness.readLocalStorageItem(otherVersionDraftKey)).toBe(
+			"draft for other version",
+		);
+	});
+
+	it("clears the saved prompt draft after a successful prompt submit", async () => {
+		const versionDraftKey = promptDraftStorageKey("source-version");
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { forkId: "pebble-iris-dawn" };
+				},
+			}),
+			{ localStorageEntries: { [versionDraftKey]: "persisted draft" } },
+		);
+
+		harness.editTab.dispatchEvent("click", createEvent());
+		harness.promptInput.value = "persisted draft";
+		harness.promptInput.dispatchEvent("input", createEvent());
+		harness.promptForm.dispatchEvent("submit", createEvent());
+		await flushAsyncOperations();
+
+		expect(harness.readLocalStorageItem(versionDraftKey)).toBeNull();
+		expect(harness.assignCalls).toEqual(["/game/pebble-iris-dawn"]);
+	});
+
+	it("keeps the saved draft when prompt submit does not succeed", async () => {
+		const versionDraftKey = promptDraftStorageKey("source-version");
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { status: "accepted" };
+				},
+			}),
+			{ localStorageEntries: { [versionDraftKey]: "persisted draft" } },
+		);
+
+		harness.editTab.dispatchEvent("click", createEvent());
+		harness.promptInput.value = "persisted draft";
+		harness.promptInput.dispatchEvent("input", createEvent());
+		harness.promptForm.dispatchEvent("submit", createEvent());
+		await flushAsyncOperations();
+
+		expect(harness.readLocalStorageItem(versionDraftKey)).toBe(
+			"persisted draft",
+		);
+		expect(harness.assignCalls).toHaveLength(0);
+	});
+
+	it("clears the saved prompt draft when the prompt form is reset", async () => {
+		const versionDraftKey = promptDraftStorageKey("source-version");
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { status: "ok" };
+				},
+			}),
+			{ localStorageEntries: { [versionDraftKey]: "persisted draft" } },
+		);
+
+		harness.promptInput.value = "persisted draft";
+		harness.promptInput.dispatchEvent("input", createEvent());
+		harness.promptForm.dispatchEvent("reset", createEvent());
+
+		expect(harness.promptInput.value).toBe("");
+		expect(harness.readLocalStorageItem(versionDraftKey)).toBeNull();
+	});
+
+	it("does not crash when localStorage is unavailable", async () => {
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { forkId: "pebble-iris-dawn" };
+				},
+			}),
+			{ localStorageAvailable: false },
+		);
+
+		harness.editTab.dispatchEvent("click", createEvent());
+		harness.promptInput.value = "darken the ball";
+		harness.promptInput.dispatchEvent("input", createEvent());
+		harness.promptForm.dispatchEvent("submit", createEvent());
+		await flushAsyncOperations();
+
+		expect(harness.fetchCalls).toHaveLength(1);
+		expect(harness.assignCalls).toEqual(["/game/pebble-iris-dawn"]);
+	});
+
+	it("redirects to the newly forked game page when prompt submit succeeds", async () => {
+		const harness = await runGameViewScript(async () => ({
+			ok: true,
+			async json() {
+				return { forkId: "pebble-iris-dawn" };
+			},
+		}));
+
+		harness.editTab.dispatchEvent("click", createEvent());
+		harness.promptInput.value = "darken the ball";
+		harness.promptForm.dispatchEvent("submit", createEvent());
+		await flushAsyncOperations();
+
+		expect(harness.fetchCalls).toHaveLength(1);
+		expect(harness.fetchCalls[0]).toEqual({
+			url: "/api/games/source-version/prompts",
+			init: {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-CSRF-Token": "csrf-token-123",
+				},
+				body: JSON.stringify({
+					prompt: "darken the ball",
+					annotationPngDataUrl: null,
+					gameScreenshotPngDataUrl: "data:image/png;base64,test-canvas",
+				}),
+			},
+		});
+		expect(harness.assignCalls).toEqual(["/game/pebble-iris-dawn"]);
+		expect(harness.promptInput.value).toBe("");
+		expect(harness.promptPanel.getAttribute("aria-hidden")).toBe("false");
+		expect(harness.editTab.classList.contains("game-view-tab--active")).toBe(
+			true,
+		);
+	});
+
+	it("omits the CSRF header when no token exists on the page", async () => {
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { forkId: "pebble-iris-dawn" };
+				},
+			}),
+			{ csrfToken: undefined },
+		);
+
+		harness.editTab.dispatchEvent("click", createEvent());
+		harness.promptInput.value = "darken the ball";
+		harness.promptForm.dispatchEvent("submit", createEvent());
+		await flushAsyncOperations();
+
+		expect(harness.fetchCalls).toHaveLength(1);
+		expect(harness.fetchCalls[0]?.init).toEqual({
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				prompt: "darken the ball",
+				annotationPngDataUrl: null,
+				gameScreenshotPngDataUrl: "data:image/png;base64,test-canvas",
+			}),
+		});
+	});
+
+	it("does not redirect when prompt submit response is missing fork id", async () => {
+		const harness = await runGameViewScript(async () => ({
+			ok: true,
+			async json() {
+				return { status: "accepted" };
+			},
+		}));
+
+		harness.editTab.dispatchEvent("click", createEvent());
+		harness.promptInput.value = "add gravity";
+		harness.promptForm.dispatchEvent("submit", createEvent());
+		await flushAsyncOperations();
+
+		expect(harness.fetchCalls).toHaveLength(1);
+		expect(harness.assignCalls).toHaveLength(0);
+	});
+
+	it("toggles the edit panel open and closed from the bottom Edit tab", async () => {
+		const harness = await runGameViewScript(async () => ({
+			ok: true,
+			async json() {
+				return { forkId: "unused" };
+			},
+		}));
+
+		expect(harness.promptPanel.getAttribute("aria-hidden")).toBe("true");
+		expect(harness.editTab.classList.contains("game-view-tab--active")).toBe(
+			false,
+		);
+
+		harness.editTab.dispatchEvent("click", createEvent());
+		expect(harness.promptPanel.getAttribute("aria-hidden")).toBe("false");
+		expect(harness.editTab.classList.contains("game-view-tab--active")).toBe(
+			true,
+		);
+
+		harness.codexToggle.dispatchEvent("click", createEvent());
+		expect(harness.body.classList.contains("game-page--codex-expanded")).toBe(
+			true,
+		);
+
+		harness.editTab.dispatchEvent("click", createEvent());
+		expect(harness.promptPanel.getAttribute("aria-hidden")).toBe("true");
+		expect(harness.editTab.classList.contains("game-view-tab--active")).toBe(
+			false,
+		);
+		expect(harness.body.classList.contains("game-page--codex-expanded")).toBe(
+			false,
+		);
+	});
+
+	it("opens the settings drawer, renders runtime sliders, and persists slider changes", async () => {
+		const runtimeControls = createRuntimeControls(4);
+		const saveCalls: unknown[] = [];
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { status: "ok" };
+				},
+			}),
+			{
+				runtimeControls,
+				runtimeHost: {
+					versionId: "source-version",
+					saveControlState(controlState: unknown) {
+						saveCalls.push(controlState);
+						return Promise.resolve();
+					},
+				},
+			},
+		);
+
+		expect(harness.settingsPanel.getAttribute("aria-hidden")).toBe("true");
+
+		harness.settingsTab.dispatchEvent("click", createEvent());
+		expect(harness.settingsPanel.getAttribute("aria-hidden")).toBe("false");
+		expect(
+			harness.settingsTab.classList.contains("game-view-tab--active"),
+		).toBe(true);
+		expect(harness.promptPanel.getAttribute("aria-hidden")).toBe("true");
+
+		const settingsCard = harness.settingsForm.childElements()[0];
+		if (!(settingsCard instanceof TestHTMLElement)) {
+			throw new Error("Expected settings control card");
+		}
+
+		const sliderInput = settingsCard.childElements()[1];
+		if (!(sliderInput instanceof TestHTMLInputElement)) {
+			throw new Error("Expected settings slider input");
+		}
+
+		expect(sliderInput.value).toBe("4");
+		sliderInput.value = "7";
+		sliderInput.dispatchEvent("input", createEvent());
+		await flushAsyncOperations();
+
+		expect(runtimeControls.readValue()).toBe(7);
+		expect(saveCalls).toEqual([
+			{
+				globals: {
+					particleAmount: 7,
+				},
+			},
+		]);
+	});
+
+	it("reflects the initial favorite state from page dataset", async () => {
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { status: "ok" };
+				},
+			}),
+			{ gameFavorited: true },
+		);
+
+		expect(
+			harness.favoriteButton.classList.contains("game-view-icon-tab--active"),
+		).toBe(true);
+		expect(harness.favoriteButton.getAttribute("aria-pressed")).toBe("true");
+		expect(harness.favoriteButton.getAttribute("aria-label")).toBe(
+			"Unfavorite game",
+		);
+	});
+
+	it("toggles the favorite button state by calling the favorite endpoint", async () => {
+		let toggleCount = 0;
+		const harness = await runGameViewScript(async (url) => {
+			if (url !== "/api/games/source-version/favorite") {
+				throw new Error(`Unexpected fetch URL: ${url}`);
+			}
+
+			toggleCount += 1;
+			return {
+				ok: true,
+				async json() {
+					return { favorite: toggleCount === 1 };
+				},
+			};
+		});
+
+		harness.favoriteButton.dispatchEvent("click", createEvent());
+		await flushAsyncOperations();
+		expect(harness.fetchCalls[0]).toEqual({
+			url: "/api/games/source-version/favorite",
+			init: {
+				method: "POST",
+				headers: {
+					"X-CSRF-Token": "csrf-token-123",
+				},
+			},
+		});
+		expect(
+			harness.favoriteButton.classList.contains("game-view-icon-tab--active"),
+		).toBe(true);
+		expect(harness.favoriteButton.getAttribute("aria-pressed")).toBe("true");
+		expect(harness.favoriteButton.getAttribute("aria-label")).toBe(
+			"Unfavorite game",
+		);
+
+		harness.favoriteButton.dispatchEvent("click", createEvent());
+		await flushAsyncOperations();
+		expect(
+			harness.favoriteButton.classList.contains("game-view-icon-tab--active"),
+		).toBe(false);
+		expect(harness.favoriteButton.getAttribute("aria-pressed")).toBe("false");
+		expect(harness.favoriteButton.getAttribute("aria-label")).toBe(
+			"Favorite game",
+		);
+	});
+
+	it("retries tile capture when the first canvas snapshots are blank and posts the first non-blank frame", async () => {
+		const harness = await runGameViewScript(async (url) => {
+			if (url !== "/api/games/source-version/tile-snapshot") {
+				throw new Error(`Unexpected fetch URL: ${url}`);
+			}
+
+			return {
+				ok: true,
+				async json() {
+					return { status: "ok" };
+				},
+			};
+		});
+
+		let snapshotReadCount = 0;
+		harness.gameCanvas.toDataURL = () => {
+			snapshotReadCount += 1;
+			if (snapshotReadCount < 3) {
+				return "data:image/png;base64,test-canvas";
+			}
+
+			return "data:image/png;base64,drawn-canvas";
+		};
+
+		harness.tileCaptureButton.dispatchEvent("click", createEvent());
+		await flushAsyncOperations();
+
+		expect(harness.fetchCalls).toHaveLength(1);
+		expect(harness.fetchCalls[0]).toEqual({
+			url: "/api/games/source-version/tile-snapshot",
+			init: {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-CSRF-Token": "csrf-token-123",
+				},
+				body: JSON.stringify({
+					tilePngDataUrl: "data:image/png;base64,drawn-canvas",
+				}),
+			},
+		});
+		expect(snapshotReadCount).toBe(3);
+		expect(harness.tileCaptureButton.disabled).toBe(false);
+	});
+
+	it("toggles codex transcript expansion from the robot button", async () => {
+		const harness = await runGameViewScript(async () => ({
+			ok: true,
+			async json() {
+				return { forkId: "unused" };
+			},
+		}));
+
+		expect(harness.promptPanel.getAttribute("aria-hidden")).toBe("true");
+		expect(harness.body.classList.contains("game-page--codex-expanded")).toBe(
+			false,
+		);
+		expect(harness.codexToggle.getAttribute("aria-expanded")).toBe("false");
+
+		harness.codexToggle.dispatchEvent("click", createEvent());
+		expect(harness.promptPanel.getAttribute("aria-hidden")).toBe("false");
+		expect(harness.body.classList.contains("game-page--codex-expanded")).toBe(
+			true,
+		);
+		expect(harness.codexToggle.getAttribute("aria-expanded")).toBe("true");
+
+		harness.codexToggle.dispatchEvent("click", createEvent());
+		expect(harness.promptPanel.getAttribute("aria-hidden")).toBe("false");
+		expect(harness.body.classList.contains("game-page--codex-expanded")).toBe(
+			false,
+		);
+	});
+
+	it("scrolls transcript to bottom when opening codex transcript after messages load", async () => {
+		const harness = await runGameViewScript(
+			async (url) => {
+				if (url !== "/api/codex-sessions/source-version") {
+					throw new Error(`Unexpected fetch URL: ${url}`);
+				}
+
+				return {
+					ok: true,
+					async json() {
+						return {
+							status: "ok",
+							eyeState: "idle",
+							sessionId: "session-source",
+							messages: [
+								{
+									role: "user",
+									text: "first prompt",
+									timestamp: "2026-02-22T00:00:00.000Z",
+								},
+							],
+						};
+					},
+				};
+			},
+			{ startTranscriptPolling: true },
+		);
+
+		await flushAsyncOperations();
+		expect(harness.renderTranscriptCalls).toHaveLength(1);
+		expect(harness.getScrollToBottomCalls()).toBe(0);
+
+		harness.codexToggle.dispatchEvent("click", createEvent());
+
+		expect(harness.getScrollToBottomCalls()).toBe(1);
+		expect(harness.body.classList.contains("game-page--codex-expanded")).toBe(
+			true,
+		);
+	});
+
+	it("starts realtime transcription by creating a session and exchanging SDP", async () => {
+		const harness = await runGameViewScript(async (url) => {
+			if (url === "/api/transcribe") {
+				return {
+					ok: true,
+					async json() {
+						return {
+							clientSecret: "ephemeral-secret",
+							model: "gpt-realtime-1.5",
+						};
+					},
+				};
+			}
+
+			if (url === "https://api.openai.com/v1/realtime/calls") {
+				return {
+					ok: true,
+					async text() {
+						return "fake-answer-sdp";
+					},
+				};
+			}
+
+			throw new Error(`Unexpected fetch URL: ${url}`);
+		});
+
+		harness.recordButton.dispatchEvent("click", createEvent());
+		await flushAsyncOperations();
+
+		expect(harness.getUserMediaCalls()).toBe(1);
+		expect(harness.fetchCalls).toHaveLength(2);
+		expect(harness.fetchCalls[0]).toEqual({
+			url: "/api/transcribe",
+			init: {
+				method: "POST",
+				headers: {
+					"X-CSRF-Token": "csrf-token-123",
+				},
+			},
+		});
+		expect(harness.fetchCalls[1]).toEqual({
+			url: "https://api.openai.com/v1/realtime/calls",
+			init: {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer ephemeral-secret",
+					"Content-Type": "application/sdp",
+				},
+				body: "fake-offer-sdp",
+			},
+		});
+		expect(harness.recordButton.getAttribute("aria-label")).toBe(
+			"Stop voice recording",
+		);
+		expect(
+			harness.recordButton.classList.contains("game-view-icon-tab--recording"),
+		).toBe(true);
+
+		const peerConnection = harness.getPeerConnection();
+		expect(peerConnection?.localDescription).toEqual({
+			type: "offer",
+			sdp: "fake-offer-sdp",
+		});
+		expect(peerConnection?.remoteDescription).toEqual({
+			type: "answer",
+			sdp: "fake-answer-sdp",
+		});
+	});
+
+	it("enables annotation and captures the base screenshot when recording starts", async () => {
+		const harness = await runGameViewScript(async (url) => {
+			if (url === "/api/transcribe") {
+				return {
+					ok: true,
+					async json() {
+						return {
+							clientSecret: "ephemeral-secret",
+							model: "gpt-realtime-1.5",
+						};
+					},
+				};
+			}
+
+			if (url === "https://api.openai.com/v1/realtime/calls") {
+				return {
+					ok: true,
+					async text() {
+						return "fake-answer-sdp";
+					},
+				};
+			}
+
+			throw new Error(`Unexpected fetch URL: ${url}`);
+		});
+
+		expect(harness.gameCanvas.toDataUrlCalls).toBe(0);
+		expect(
+			harness.promptDrawingCanvas.classList.contains(
+				"prompt-drawing-canvas--active",
+			),
+		).toBe(false);
+		expect(harness.annotationButton.getAttribute("aria-pressed")).toBe("false");
+
+		harness.recordButton.dispatchEvent("click", createEvent());
+		await flushAsyncOperations();
+
+		expect(harness.gameCanvas.toDataUrlCalls).toBeGreaterThan(0);
+		expect(
+			harness.promptDrawingCanvas.classList.contains(
+				"prompt-drawing-canvas--active",
+			),
+		).toBe(true);
+		expect(harness.promptDrawingCanvas.getAttribute("aria-hidden")).toBe(
+			"false",
+		);
+		expect(harness.annotationButton.getAttribute("aria-pressed")).toBe("true");
+	});
+
+	it("keeps stop busy until flush completes and then submits the final transcript", async () => {
+		const harness = await runGameViewScript(async (url) => {
+			if (url === "/api/transcribe") {
+				return {
+					ok: true,
+					async json() {
+						return {
+							clientSecret: "ephemeral-secret",
+							model: "gpt-realtime-1.5",
+						};
+					},
+				};
+			}
+
+			if (url === "https://api.openai.com/v1/realtime/calls") {
+				return {
+					ok: true,
+					async text() {
+						return "fake-answer-sdp";
+					},
+				};
+			}
+
+			if (url === "/api/games/source-version/prompts") {
+				return {
+					ok: true,
+					async json() {
+						return { forkId: "voice-fork" };
+					},
+				};
+			}
+
+			throw new Error(`Unexpected fetch URL: ${url}`);
+		});
+
+		harness.recordButton.dispatchEvent("click", createEvent());
+		await flushAsyncOperations();
+
+		const peerConnection = harness.getPeerConnection();
+		expect(peerConnection).not.toBeNull();
+
+		harness.recordButton.dispatchEvent("click", createEvent());
+		expect(harness.recordButton.disabled).toBe(true);
+		expect(
+			harness.recordButton.classList.contains("game-view-icon-tab--busy"),
+		).toBe(true);
+
+		peerConnection?.dataChannel.dispatchEvent(
+			"message",
+			createEvent({
+				data: JSON.stringify({
+					type: "conversation.item.input_audio_transcription.completed",
+					transcript: "wider",
+				}),
+			}),
+		);
+		peerConnection?.dataChannel.dispatchEvent(
+			"message",
+			createEvent({
+				data: JSON.stringify({
+					type: "response.done",
+				}),
+			}),
+		);
+		await flushAsyncOperations();
+
+		expect(harness.fetchCalls[2]).toEqual({
+			url: "/api/games/source-version/prompts",
+			init: {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-CSRF-Token": "csrf-token-123",
+				},
+				body: JSON.stringify({
+					prompt: "wider",
+					annotationPngDataUrl: null,
+					gameScreenshotPngDataUrl: "data:image/png;base64,test-canvas",
+				}),
+			},
+		});
+		expect(peerConnection?.dataChannel.sentMessages).toContain(
+			JSON.stringify({ type: "input_audio_buffer.commit" }),
+		);
+		expect(harness.recordButton.disabled).toBe(false);
+		expect(
+			harness.recordButton.classList.contains("game-view-icon-tab--busy"),
+		).toBe(false);
+		expect(harness.assignCalls).toEqual(["/game/voice-fork"]);
+		expect(harness.consoleLogs).not.toContainEqual([
+			"[realtime-transcription] flush timeout fallback",
+		]);
+	});
+
+	it("uses timeout fallback to exit stop flow when realtime flush never signals completion", async () => {
+		const harness = await runGameViewScript(async (url) => {
+			if (url === "/api/transcribe") {
+				return {
+					ok: true,
+					async json() {
+						return {
+							clientSecret: "ephemeral-secret",
+							model: "gpt-realtime-1.5",
+						};
+					},
+				};
+			}
+
+			if (url === "https://api.openai.com/v1/realtime/calls") {
+				return {
+					ok: true,
+					async text() {
+						return "fake-answer-sdp";
+					},
+				};
+			}
+
+			throw new Error(`Unexpected fetch URL: ${url}`);
+		});
+
+		harness.recordButton.dispatchEvent("click", createEvent());
+		await flushAsyncOperations();
+
+		const peerConnection = harness.getPeerConnection();
+		expect(peerConnection).not.toBeNull();
+
+		harness.recordButton.dispatchEvent("click", createEvent());
+		expect(harness.recordButton.disabled).toBe(true);
+		expect(
+			harness.recordButton.classList.contains("game-view-icon-tab--busy"),
+		).toBe(true);
+
+		for (let attempt = 0; attempt < 80; attempt += 1) {
+			for (const intervalCallback of harness.intervalCallbacks) {
+				intervalCallback();
+			}
+		}
+		await flushAsyncOperations();
+
+		expect(harness.fetchCalls).toHaveLength(2);
+		expect(harness.mediaTrack.stopped).toBe(true);
+		expect(peerConnection?.closed).toBe(true);
+		expect(harness.recordButton.disabled).toBe(false);
+		expect(
+			harness.recordButton.classList.contains("game-view-icon-tab--busy"),
+		).toBe(false);
+		expect(harness.recordButton.getAttribute("aria-label")).toBe(
+			"Start voice recording",
+		);
+		expect(harness.consoleLogs).toContainEqual([
+			"[realtime-transcription] flush timeout fallback",
+		]);
+	});
+
+	it("submits the annotated prompt on recording stop even while the edit drawer is open", async () => {
+		const harness = await runGameViewScript(async (url) => {
+			if (url === "/api/transcribe") {
+				return {
+					ok: true,
+					async json() {
+						return {
+							clientSecret: "ephemeral-secret",
+							model: "gpt-realtime-1.5",
+						};
+					},
+				};
+			}
+
+			if (url === "https://api.openai.com/v1/realtime/calls") {
+				return {
+					ok: true,
+					async text() {
+						return "fake-answer-sdp";
+					},
+				};
+			}
+
+			if (url === "/api/games/source-version/prompts") {
+				return {
+					ok: true,
+					async json() {
+						return { forkId: "voice-fork" };
+					},
+				};
+			}
+
+			throw new Error(`Unexpected fetch URL: ${url}`);
+		});
+
+		harness.editTab.dispatchEvent("click", createEvent());
+		harness.annotationButton.dispatchEvent("click", createEvent());
+		await flushAsyncOperations();
+
+		const annotationCaptureCallCount = harness.gameCanvas.toDataUrlCalls;
+		expect(annotationCaptureCallCount).toBeGreaterThan(0);
+		expect(
+			harness.promptDrawingCanvas.classList.contains(
+				"prompt-drawing-canvas--active",
+			),
+		).toBe(true);
+		expect(harness.promptDrawingCanvas.getAttribute("aria-hidden")).toBe(
+			"false",
+		);
+		expect(harness.annotationButton.getAttribute("aria-pressed")).toBe("true");
+
+		const drawingContext = harness.promptDrawingCanvas.getContext("2d");
+		if (!drawingContext) {
+			throw new Error("drawing context missing from test harness");
+		}
+
+		harness.promptDrawingCanvas.dispatchEvent(
+			"pointerdown",
+			createEvent({
+				pointerId: 12,
+				pointerType: "mouse",
+				button: 0,
+				clientX: 25,
+				clientY: 35,
+			}),
+		);
+		harness.promptDrawingCanvas.dispatchEvent(
+			"pointermove",
+			createEvent({
+				pointerId: 12,
+				pointerType: "mouse",
+				button: 0,
+				clientX: 70,
+				clientY: 96,
+			}),
+		);
+		harness.promptDrawingCanvas.dispatchEvent(
+			"pointerup",
+			createEvent({
+				pointerId: 12,
+				pointerType: "mouse",
+				button: 0,
+				clientX: 70,
+				clientY: 96,
+			}),
+		);
+
+		harness.recordButton.dispatchEvent("click", createEvent());
+		await flushAsyncOperations();
+
+		expect(harness.gameCanvas.toDataUrlCalls).toBe(annotationCaptureCallCount);
+		expect(
+			harness.promptDrawingCanvas.classList.contains(
+				"prompt-drawing-canvas--active",
+			),
+		).toBe(true);
+
+		const peerConnection = harness.getPeerConnection();
+		peerConnection?.dataChannel.dispatchEvent(
+			"message",
+			createEvent({
+				data: JSON.stringify({
+					type: "conversation.item.input_audio_transcription.completed",
+					transcript: "make the paddle bigger",
+				}),
+			}),
+		);
+		harness.intervalCallbacks[0]?.();
+		harness.intervalCallbacks[0]?.();
+		harness.intervalCallbacks[0]?.();
+
+		harness.recordButton.dispatchEvent("click", createEvent());
+		peerConnection?.dataChannel.dispatchEvent(
+			"message",
+			createEvent({
+				data: JSON.stringify({
+					type: "response.done",
+				}),
+			}),
+		);
+		await flushAsyncOperations();
+
+		expect(drawingContext.strokeStyleValue).toBe("rgba(250, 204, 21, 0.95)");
+		expect(drawingContext.operations).toContainEqual({
+			type: "moveTo",
+			x: 25,
+			y: 35,
+		});
+		expect(drawingContext.operations).toContainEqual({
+			type: "lineTo",
+			x: 25,
+			y: 35,
+		});
+		expect(drawingContext.operations).toContainEqual({
+			type: "lineTo",
+			x: 70,
+			y: 96,
+		});
+		expect(drawingContext.operations).toContainEqual({ type: "stroke" });
+		await flushAsyncOperations();
+
+		expect(harness.fetchCalls[2]).toEqual({
+			url: "/api/games/source-version/prompts",
+			init: {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-CSRF-Token": "csrf-token-123",
+				},
+				body: JSON.stringify({
+					prompt: "make the paddle bigger",
+					annotationPngDataUrl: "data:image/png;base64,test-canvas",
+					gameScreenshotPngDataUrl: "data:image/png;base64,test-canvas",
+				}),
+			},
+		});
+		expect(harness.gameCanvas.toDataUrlCalls).toBe(annotationCaptureCallCount);
+		expect(harness.assignCalls).toEqual(["/game/voice-fork"]);
+		expect(
+			harness.promptDrawingCanvas.classList.contains(
+				"prompt-drawing-canvas--active",
+			),
+		).toBe(false);
+		expect(harness.promptDrawingCanvas.getAttribute("aria-hidden")).toBe(
+			"true",
+		);
+		expect(harness.annotationButton.getAttribute("aria-pressed")).toBe("false");
+	});
+
+	it("draws from touch pointer events after paintbrush activation", async () => {
+		const harness = await runGameViewScript(async (url) => {
+			if (url === "/api/games/source-version/prompts") {
+				return {
+					ok: true,
+					async json() {
+						return { forkId: "draw-fork" };
+					},
+				};
+			}
+
+			throw new Error(`Unexpected fetch URL: ${url}`);
+		});
+
+		harness.editTab.dispatchEvent("click", createEvent());
+		harness.annotationButton.dispatchEvent("click", createEvent());
+		await flushAsyncOperations();
+
+		const drawingContext = harness.promptDrawingCanvas.getContext("2d");
+		if (!drawingContext) {
+			throw new Error("drawing context missing from test harness");
+		}
+
+		harness.promptDrawingCanvas.dispatchEvent(
+			"pointerdown",
+			createEvent({
+				pointerId: 3,
+				pointerType: "touch",
+				clientX: 11,
+				clientY: 17,
+			}),
+		);
+		harness.promptDrawingCanvas.dispatchEvent(
+			"pointermove",
+			createEvent({
+				pointerId: 3,
+				pointerType: "touch",
+				clientX: 38,
+				clientY: 61,
+			}),
+		);
+		harness.promptDrawingCanvas.dispatchEvent(
+			"pointerup",
+			createEvent({
+				pointerId: 3,
+				pointerType: "touch",
+				clientX: 38,
+				clientY: 61,
+			}),
+		);
+
+		expect(drawingContext.operations).toContainEqual({
+			type: "moveTo",
+			x: 11,
+			y: 17,
+		});
+		expect(drawingContext.operations).toContainEqual({
+			type: "lineTo",
+			x: 11,
+			y: 17,
+		});
+		expect(drawingContext.operations).toContainEqual({
+			type: "lineTo",
+			x: 38,
+			y: 61,
+		});
+		expect(
+			harness.promptDrawingCanvas.classList.contains(
+				"prompt-drawing-canvas--active",
+			),
+		).toBe(true);
+	});
+
+	it("does not retry a fallback endpoint when realtime calls returns 400", async () => {
+		const harness = await runGameViewScript(async (url) => {
+			if (url === "/api/transcribe") {
+				return {
+					ok: true,
+					async json() {
+						return {
+							clientSecret: "ephemeral-secret",
+							model: "gpt-realtime-1.5",
+						};
+					},
+				};
+			}
+
+			if (url === "https://api.openai.com/v1/realtime/calls") {
+				return {
+					ok: false,
+					status: 400,
+					async text() {
+						return "invalid request";
+					},
+				};
+			}
+
+			throw new Error(`Unexpected fetch URL: ${url}`);
+		});
+
+		harness.recordButton.dispatchEvent("click", createEvent());
+		await flushAsyncOperations();
+
+		expect(harness.fetchCalls).toHaveLength(2);
+		expect(harness.fetchCalls[1]).toEqual({
+			url: "https://api.openai.com/v1/realtime/calls",
+			init: {
+				method: "POST",
+				headers: {
+					Authorization: "Bearer ephemeral-secret",
+					"Content-Type": "application/sdp",
+				},
+				body: "fake-offer-sdp",
+			},
+		});
+
+		const peerConnection = harness.getPeerConnection();
+		expect(peerConnection?.remoteDescription).toBeNull();
+		expect(peerConnection?.closed).toBe(true);
+		expect(harness.mediaTrack.stopped).toBe(true);
+		expect(
+			harness.recordButton.classList.contains("game-view-icon-tab--recording"),
+		).toBe(false);
+	});
+
+	it("logs transcribe endpoint errors and does not start recording", async () => {
+		const harness = await runGameViewScript(async (url) => {
+			if (url === "/api/transcribe") {
+				return {
+					ok: false,
+					status: 503,
+					async json() {
+						return {
+							error:
+								"OpenAI realtime model gpt-realtime-1.5 is unavailable for this API key",
+						};
+					},
+				};
+			}
+
+			throw new Error(`Unexpected fetch URL: ${url}`);
+		});
+
+		harness.recordButton.dispatchEvent("click", createEvent());
+		await flushAsyncOperations();
+
+		expect(harness.fetchCalls).toHaveLength(1);
+		expect(harness.getUserMediaCalls()).toBe(0);
+		expect(
+			harness.recordButton.classList.contains("game-view-icon-tab--recording"),
+		).toBe(false);
+		expect(harness.consoleLogs).toContainEqual([
+			"[realtime-transcription] session request failed",
+			"status 503: OpenAI realtime model gpt-realtime-1.5 is unavailable for this API key",
+		]);
+	});
+
+	it("buffers realtime transcript into overlay when edit tab is closed", async () => {
+		const harness = await runGameViewScript(async (url) => {
+			if (url === "/api/transcribe") {
+				return {
+					ok: true,
+					async json() {
+						return {
+							clientSecret: "ephemeral-secret",
+							model: "gpt-realtime-1.5",
+						};
+					},
+				};
+			}
+
+			if (url === "https://api.openai.com/v1/realtime/calls") {
+				return {
+					ok: true,
+					async text() {
+						return "fake-answer-sdp";
+					},
+				};
+			}
+
+			if (url === "/api/games/source-version/prompts") {
+				return {
+					ok: true,
+					async json() {
+						return { forkId: "voice-fork" };
+					},
+				};
+			}
+
+			throw new Error(`Unexpected fetch URL: ${url}`);
+		});
+
+		harness.recordButton.dispatchEvent("click", createEvent());
+		await flushAsyncOperations();
+
+		const peerConnection = harness.getPeerConnection();
+		expect(peerConnection).not.toBeNull();
+		harness.promptOverlay.scrollWidth = 480;
+		peerConnection?.dataChannel.dispatchEvent(
+			"message",
+			createEvent({
+				data: JSON.stringify({
+					type: "conversation.item.input_audio_transcription.completed",
+					transcript: "make the paddle bigger",
+				}),
+			}),
+		);
+		expect(harness.promptOverlay.textContent).toBe("make");
+		harness.intervalCallbacks[0]?.();
+		harness.intervalCallbacks[0]?.();
+		harness.intervalCallbacks[0]?.();
+		expect(harness.promptOverlay.textContent).toBe("make the paddle bigger");
+		expect(
+			harness.promptOverlay.classList.contains("prompt-overlay--visible"),
+		).toBe(true);
+		expect(harness.promptOverlay.getAttribute("aria-hidden")).toBe("false");
+		expect(harness.promptOverlay.scrollLeft).toBe(480);
+
+		harness.recordButton.dispatchEvent("click", createEvent());
+		expect(harness.recordButton.disabled).toBe(true);
+		peerConnection?.dataChannel.dispatchEvent(
+			"message",
+			createEvent({
+				data: JSON.stringify({
+					type: "response.done",
+				}),
+			}),
+		);
+		await flushAsyncOperations();
+
+		expect(harness.promptInput.value).toBe("");
+		expect(harness.promptOverlay.textContent).toBe("");
+		expect(peerConnection?.dataChannel.sentMessages).toContain(
+			JSON.stringify({ type: "input_audio_buffer.commit" }),
+		);
+		expect(harness.mediaTrack.stopped).toBe(true);
+		expect(peerConnection?.closed).toBe(true);
+		expect(harness.recordButton.getAttribute("aria-label")).toBe(
+			"Start voice recording",
+		);
+		expect(harness.fetchCalls[2]).toEqual({
+			url: "/api/games/source-version/prompts",
+			init: {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-CSRF-Token": "csrf-token-123",
+				},
+				body: JSON.stringify({
+					prompt: "make the paddle bigger",
+					annotationPngDataUrl: null,
+					gameScreenshotPngDataUrl: "data:image/png;base64,test-canvas",
+				}),
+			},
+		});
+		expect(harness.assignCalls).toEqual(["/game/voice-fork"]);
+		expect(
+			harness.recordButton.classList.contains("game-view-icon-tab--recording"),
+		).toBe(false);
+		expect(harness.consoleLogs).toContainEqual([
+			"[realtime-transcription] started",
+		]);
+		expect(harness.consoleLogs).toContainEqual([
+			"[realtime-transcription] data received",
+			JSON.stringify({
+				type: "conversation.item.input_audio_transcription.completed",
+				transcript: "make the paddle bigger",
+			}),
+		]);
+		expect(harness.consoleLogs).toContainEqual([
+			"[realtime-transcription] stopped",
+		]);
+		expect(harness.consoleLogs).toContainEqual([
+			"[realtime-transcription] final transcribed text",
+			"",
+		]);
+	});
+
+	it("adds and removes the generating class using eyeState from polling responses", async () => {
+		let requestCount = 0;
+		const harness = await runGameViewScript(
+			async () => {
+				requestCount += 1;
+				if (requestCount === 1) {
+					return {
+						ok: true,
+						async json() {
+							return { status: "no-session", eyeState: "generating" };
+						},
+					};
+				}
+
+				return {
+					ok: true,
+					async json() {
+						return { status: "no-session", eyeState: "idle" };
+					},
+				};
+			},
+			{ startTranscriptPolling: true },
+		);
+
+		await flushAsyncOperations();
+		expect(
+			harness.editTab.classList.contains("game-view-tab--generating"),
+		).toBe(true);
+		expect(harness.editTab.getAttribute("aria-busy")).toBe("true");
+
+		harness.intervalCallbacks[0]?.();
+		await flushAsyncOperations();
+		expect(
+			harness.editTab.classList.contains("game-view-tab--generating"),
+		).toBe(false);
+		expect(harness.editTab.getAttribute("aria-busy")).toBe("false");
+	});
+
+	it("renders polling transcript updates with auto-scroll enabled", async () => {
+		let requestCount = 0;
+		const harness = await runGameViewScript(
+			async (url) => {
+				if (url !== "/api/codex-sessions/source-version") {
+					throw new Error(`Unexpected fetch URL: ${url}`);
+				}
+
+				requestCount += 1;
+				if (requestCount === 1) {
+					return {
+						ok: true,
+						async json() {
+							return {
+								status: "ok",
+								eyeState: "idle",
+								sessionId: "session-source",
+								messages: [
+									{
+										role: "user",
+										text: "first prompt",
+										timestamp: "2026-02-22T00:00:00.000Z",
+									},
+								],
+							};
+						},
+					};
+				}
+
+				return {
+					ok: true,
+					async json() {
+						return {
+							status: "ok",
+							eyeState: "idle",
+							sessionId: "session-source",
+							messages: [
+								{
+									role: "user",
+									text: "first prompt",
+									timestamp: "2026-02-22T00:00:00.000Z",
+								},
+								{
+									role: "assistant",
+									text: "second reply",
+									timestamp: "2026-02-22T00:00:01.000Z",
+								},
+							],
+						};
+					},
+				};
+			},
+			{ startTranscriptPolling: true },
+		);
+
+		await flushAsyncOperations();
+		expect(harness.renderTranscriptCalls).toHaveLength(1);
+		expect(harness.renderTranscriptCalls[0]).toMatchObject({
+			options: { autoScrollToBottom: true },
+		});
+
+		harness.intervalCallbacks[0]?.();
+		await flushAsyncOperations();
+
+		expect(harness.renderTranscriptCalls).toHaveLength(2);
+		expect(harness.renderTranscriptCalls[1]).toMatchObject({
+			options: { autoScrollToBottom: true },
+		});
+	});
+
+	it("shows generating spinner behavior for claude provider", async () => {
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { status: "no-session", eyeState: "generating" };
+				},
+			}),
+			{ startTranscriptPolling: true, codegenProvider: "claude" },
+		);
+
+		await flushAsyncOperations();
+		expect(harness.transcriptTitle).toBe("Claude Transcript");
+		expect(
+			harness.editTab.classList.contains("game-view-tab--generating"),
+		).toBe(true);
+		expect(harness.editTab.getAttribute("aria-busy")).toBe("true");
+	});
+
+	it("uses codex transcript title by default", async () => {
+		const harness = await runGameViewScript(async () => ({
+			ok: true,
+			async json() {
+				return { status: "no-session", eyeState: "idle" };
+			},
+		}));
+
+		expect(harness.transcriptTitle).toBe("Codex Transcript");
+	});
 });

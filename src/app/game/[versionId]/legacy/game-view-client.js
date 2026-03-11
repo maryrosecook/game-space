@@ -1,32 +1,38 @@
+import { createCodexTranscriptPresenter } from "./codex-transcript-presenter.js";
 
-import { createCodexTranscriptPresenter } from './codex-transcript-presenter.js';
-
-const promptPanel = document.getElementById('prompt-panel');
-const promptForm = document.getElementById('prompt-form');
-const promptInput = document.getElementById('prompt-input');
-const editTab = document.getElementById('game-tab-edit');
-const annotationButton = document.getElementById('game-tab-annotation');
-const favoriteButton = document.getElementById('game-tab-favorite');
-const recordButton = document.getElementById('prompt-record-button');
-const tileCaptureButton = document.getElementById('game-tab-capture-tile');
-const codexToggle = document.getElementById('game-codex-toggle');
-const deleteButton = document.getElementById('game-tab-delete');
-const promptOverlay = document.getElementById('prompt-overlay');
-const promptDrawingCanvas = document.getElementById('prompt-drawing-canvas');
-const gameCanvas = document.getElementById('game-canvas');
-const codexTranscript = document.getElementById('game-codex-transcript');
-const gameSessionView = document.getElementById('game-codex-session-view');
+const promptPanel = document.getElementById("prompt-panel");
+const settingsPanel = document.getElementById("settings-panel");
+const promptForm = document.getElementById("prompt-form");
+const settingsForm = document.getElementById("settings-form");
+const promptInput = document.getElementById("prompt-input");
+const editTab = document.getElementById("game-tab-edit");
+const annotationButton = document.getElementById("game-tab-annotation");
+const settingsTab = document.getElementById("game-tab-settings");
+const favoriteButton = document.getElementById("game-tab-favorite");
+const recordButton = document.getElementById("prompt-record-button");
+const tileCaptureButton = document.getElementById("game-tab-capture-tile");
+const codexToggle = document.getElementById("game-codex-toggle");
+const deleteButton = document.getElementById("game-tab-delete");
+const promptOverlay = document.getElementById("prompt-overlay");
+const promptDrawingCanvas = document.getElementById("prompt-drawing-canvas");
+const gameCanvas = document.getElementById("game-canvas");
+const codexTranscript = document.getElementById("game-codex-transcript");
+const gameSessionView = document.getElementById("game-codex-session-view");
 
 const promptInputIsTextEntry =
   promptInput instanceof HTMLInputElement ||
-  (typeof HTMLTextAreaElement === 'function' && promptInput instanceof HTMLTextAreaElement);
+  (typeof HTMLTextAreaElement === "function" &&
+    promptInput instanceof HTMLTextAreaElement);
 
 if (
   !(promptPanel instanceof HTMLElement) ||
+  !(settingsPanel instanceof HTMLElement) ||
   !(promptForm instanceof HTMLFormElement) ||
+  !(settingsForm instanceof HTMLElement) ||
   !promptInputIsTextEntry ||
   !(editTab instanceof HTMLButtonElement) ||
   !(annotationButton instanceof HTMLButtonElement) ||
+  !(settingsTab instanceof HTMLButtonElement) ||
   !(favoriteButton instanceof HTMLButtonElement) ||
   !(recordButton instanceof HTMLButtonElement) ||
   !(tileCaptureButton instanceof HTMLButtonElement) ||
@@ -36,41 +42,48 @@ if (
   !(gameSessionView instanceof HTMLElement) ||
   !(promptDrawingCanvas instanceof HTMLCanvasElement)
 ) {
-  throw new Error('Game view controls missing from page');
+  throw new Error("Game view controls missing from page");
 }
 
 const versionId = document.body.dataset.versionId;
 const csrfToken = document.body.dataset.csrfToken;
-const initialFavorite = document.body.dataset.gameFavorited === 'true';
-const codegenProvider = document.body.dataset.codegenProvider === 'claude' ? 'claude' : 'codex';
-const transcriptProviderLabel = codegenProvider === 'claude' ? 'Claude' : 'Codex';
+const initialFavorite = document.body.dataset.gameFavorited === "true";
+const codegenProvider =
+  document.body.dataset.codegenProvider === "claude" ? "claude" : "codex";
+const transcriptProviderLabel =
+  codegenProvider === "claude" ? "Claude" : "Codex";
 const transcriptPresenter = createCodexTranscriptPresenter(gameSessionView, {
-  transcriptTitle: `${transcriptProviderLabel} Transcript`
+  transcriptTitle: `${transcriptProviderLabel} Transcript`,
 });
 const transcriptPollIntervalMs = 2000;
-const generatingClassName = 'game-view-tab--generating';
-const annotationStrokeColor = 'rgba(250, 204, 21, 0.95)';
+const generatingClassName = "game-view-tab--generating";
+const gameRuntimeControlsChangedEvent = "game-runtime-controls-changed";
+const settingsSaveDebounceMs = 120;
+const annotationStrokeColor = "rgba(250, 204, 21, 0.95)";
 const annotationStrokeWidth = 4;
-let transcriptStatusKey = '';
-let transcriptSignature = '';
+let transcriptStatusKey = "";
+let transcriptSignature = "";
 let transcriptRequestInFlight = false;
 let favoriteRequestInFlight = false;
 let deleteRequestInFlight = false;
 let tileCaptureInFlight = false;
+let settingsSaveTimerId = null;
+let settingsSaveInFlight = false;
+let pendingSettingsSave = false;
 const initialUiState = Object.freeze({
-  editPanelOpen: false,
+  activeDrawer: null,
   codexPanelExpanded: false,
   gameFavorited: initialFavorite,
   annotationEnabled: false,
   recordingInProgress: false,
-  transcriptionInFlight: false
+  transcriptionInFlight: false,
 });
-const promptDraftStorageKeyPrefix = 'game-space:prompt-draft:';
+const promptDraftStorageKeyPrefix = "game-space:prompt-draft:";
 
 let uiState = initialUiState;
 
 function promptDraftStorageKey() {
-  if (typeof versionId !== 'string' || versionId.length === 0) {
+  if (typeof versionId !== "string" || versionId.length === 0) {
     return null;
   }
 
@@ -78,7 +91,11 @@ function promptDraftStorageKey() {
 }
 
 function promptDraftStorage() {
-  if (typeof window !== 'object' || window === null || !('localStorage' in window)) {
+  if (
+    typeof window !== "object" ||
+    window === null ||
+    !("localStorage" in window)
+  ) {
     return null;
   }
 
@@ -97,7 +114,7 @@ function writePromptDraftToStorage(promptDraft) {
   }
 
   try {
-    if (typeof promptDraft === 'string' && promptDraft.length > 0) {
+    if (typeof promptDraft === "string" && promptDraft.length > 0) {
       storage.setItem(storageKey, promptDraft);
       return;
     }
@@ -109,7 +126,7 @@ function writePromptDraftToStorage(promptDraft) {
 }
 
 function clearPromptDraftFromStorage() {
-  writePromptDraftToStorage('');
+  writePromptDraftToStorage("");
 }
 
 function restorePromptDraftFromStorage() {
@@ -121,7 +138,7 @@ function restorePromptDraftFromStorage() {
 
   try {
     const storedDraft = storage.getItem(storageKey);
-    if (typeof storedDraft !== 'string' || storedDraft.length === 0) {
+    if (typeof storedDraft !== "string" || storedDraft.length === 0) {
       return;
     }
 
@@ -133,53 +150,53 @@ function restorePromptDraftFromStorage() {
 
 function reduceUiState(state, action) {
   switch (action.type) {
-    case 'set-edit-panel-open':
-      if (state.editPanelOpen === action.open) {
+    case "set-active-drawer":
+      if (state.activeDrawer === action.drawer) {
         return state;
       }
       return {
         ...state,
-        editPanelOpen: action.open
+        activeDrawer: action.drawer,
       };
-    case 'set-codex-panel-expanded':
+    case "set-codex-panel-expanded":
       if (state.codexPanelExpanded === action.expanded) {
         return state;
       }
       return {
         ...state,
-        codexPanelExpanded: action.expanded
+        codexPanelExpanded: action.expanded,
       };
-    case 'set-game-favorited':
+    case "set-game-favorited":
       if (state.gameFavorited === action.favorited) {
         return state;
       }
       return {
         ...state,
-        gameFavorited: action.favorited
+        gameFavorited: action.favorited,
       };
-    case 'set-annotation-enabled':
+    case "set-annotation-enabled":
       if (state.annotationEnabled === action.enabled) {
         return state;
       }
       return {
         ...state,
-        annotationEnabled: action.enabled
+        annotationEnabled: action.enabled,
       };
-    case 'set-recording-in-progress':
+    case "set-recording-in-progress":
       if (state.recordingInProgress === action.inProgress) {
         return state;
       }
       return {
         ...state,
-        recordingInProgress: action.inProgress
+        recordingInProgress: action.inProgress,
       };
-    case 'set-transcription-in-flight':
+    case "set-transcription-in-flight":
       if (state.transcriptionInFlight === action.inFlight) {
         return state;
       }
       return {
         ...state,
-        transcriptionInFlight: action.inFlight
+        transcriptionInFlight: action.inFlight,
       };
     default:
       return state;
@@ -188,6 +205,84 @@ function reduceUiState(state, action) {
 
 function dispatchUiState(action) {
   uiState = reduceUiState(uiState, action);
+}
+
+function isDrawerOpen() {
+  return uiState.activeDrawer === "edit" || uiState.activeDrawer === "settings";
+}
+
+function getActiveGameRuntimeControls() {
+  const runtimeControls = window.__gameSpaceActiveGameRuntimeControls;
+  if (!runtimeControls || typeof runtimeControls !== "object") {
+    return null;
+  }
+
+  if (
+    typeof runtimeControls.getSliders !== "function" ||
+    typeof runtimeControls.setGlobalValue !== "function" ||
+    typeof runtimeControls.serializeControlState !== "function"
+  ) {
+    return null;
+  }
+
+  return runtimeControls;
+}
+
+function getActiveGameRuntimeHost() {
+  const runtimeHost = window.__gameSpaceActiveGameRuntimeHost;
+  if (!runtimeHost || typeof runtimeHost !== "object") {
+    return null;
+  }
+
+  if (typeof runtimeHost.versionId !== "string") {
+    return null;
+  }
+
+  if (
+    runtimeHost.loadControlState !== undefined &&
+    typeof runtimeHost.loadControlState !== "function"
+  ) {
+    return null;
+  }
+
+  if (
+    runtimeHost.saveControlState !== undefined &&
+    typeof runtimeHost.saveControlState !== "function"
+  ) {
+    return null;
+  }
+
+  return runtimeHost;
+}
+
+function readRuntimeSliderDefinitions() {
+  const runtimeControls = getActiveGameRuntimeControls();
+  if (!runtimeControls) {
+    return [];
+  }
+
+  const sliders = runtimeControls.getSliders();
+  if (!Array.isArray(sliders)) {
+    return [];
+  }
+
+  return sliders.filter((slider) => {
+    return (
+      slider &&
+      typeof slider === "object" &&
+      typeof slider.id === "string" &&
+      typeof slider.label === "string" &&
+      typeof slider.globalKey === "string" &&
+      typeof slider.min === "number" &&
+      Number.isFinite(slider.min) &&
+      typeof slider.max === "number" &&
+      Number.isFinite(slider.max) &&
+      typeof slider.step === "number" &&
+      Number.isFinite(slider.step) &&
+      typeof slider.value === "number" &&
+      Number.isFinite(slider.value)
+    );
+  });
 }
 
 let realtimePeerConnection = null;
@@ -200,14 +295,17 @@ let overlayWordDrainIntervalId = null;
 const overlayWordDrainIntervalMs = 100;
 const realtimeStopFlushPollIntervalMs = 50;
 const realtimeStopFlushTimeoutMs = 2000;
-const realtimeStopFlushMaxPolls = Math.max(1, Math.ceil(realtimeStopFlushTimeoutMs / realtimeStopFlushPollIntervalMs));
+const realtimeStopFlushMaxPolls = Math.max(
+  1,
+  Math.ceil(realtimeStopFlushTimeoutMs / realtimeStopFlushPollIntervalMs),
+);
 const realtimeStopFlushSignalTypes = new Set([
-  'input_audio_buffer.committed',
-  'input_audio_buffer.cleared',
-  'conversation.item.input_audio_transcription.completed',
-  'conversation.item.input_audio_transcription.failed',
-  'response.done',
-  'error'
+  "input_audio_buffer.committed",
+  "input_audio_buffer.cleared",
+  "conversation.item.input_audio_transcription.completed",
+  "conversation.item.input_audio_transcription.failed",
+  "response.done",
+  "error",
 ]);
 let annotationPointerId = null;
 let annotationStrokeInProgress = false;
@@ -216,9 +314,8 @@ let annotationBaseGameScreenshotPngDataUrl = null;
 let annotationToggleInFlight = false;
 let realtimeStopFlushWaitState = null;
 
-
 function drawingContext() {
-  const context = promptDrawingCanvas.getContext('2d');
+  const context = promptDrawingCanvas.getContext("2d");
   if (!context) {
     return null;
   }
@@ -229,13 +326,17 @@ function drawingContext() {
 function resizeDrawingCanvas() {
   const width = Math.max(1, Math.round(promptDrawingCanvas.clientWidth));
   const height = Math.max(1, Math.round(promptDrawingCanvas.clientHeight));
-  const nextDevicePixelRatio = typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 0
-    ? window.devicePixelRatio
-    : 1;
+  const nextDevicePixelRatio =
+    typeof window.devicePixelRatio === "number" && window.devicePixelRatio > 0
+      ? window.devicePixelRatio
+      : 1;
   const nextWidth = Math.round(width * nextDevicePixelRatio);
   const nextHeight = Math.round(height * nextDevicePixelRatio);
 
-  if (promptDrawingCanvas.width !== nextWidth || promptDrawingCanvas.height !== nextHeight) {
+  if (
+    promptDrawingCanvas.width !== nextWidth ||
+    promptDrawingCanvas.height !== nextHeight
+  ) {
     promptDrawingCanvas.width = nextWidth;
     promptDrawingCanvas.height = nextHeight;
   }
@@ -246,8 +347,8 @@ function resizeDrawingCanvas() {
   }
 
   context.setTransform(nextDevicePixelRatio, 0, 0, nextDevicePixelRatio, 0, 0);
-  context.lineCap = 'round';
-  context.lineJoin = 'round';
+  context.lineCap = "round";
+  context.lineJoin = "round";
   context.strokeStyle = annotationStrokeColor;
   context.lineWidth = annotationStrokeWidth;
 }
@@ -259,19 +360,33 @@ function clearDrawingCanvas() {
     return;
   }
 
-  context.clearRect(0, 0, promptDrawingCanvas.width, promptDrawingCanvas.height);
+  context.clearRect(
+    0,
+    0,
+    promptDrawingCanvas.width,
+    promptDrawingCanvas.height,
+  );
   annotationHasInk = false;
 }
 
 function applyAnnotationCanvasState() {
   const annotationEnabled = uiState.annotationEnabled;
-  promptDrawingCanvas.classList.toggle('prompt-drawing-canvas--active', annotationEnabled);
-  promptDrawingCanvas.setAttribute('aria-hidden', annotationEnabled ? 'false' : 'true');
+  promptDrawingCanvas.classList.toggle(
+    "prompt-drawing-canvas--active",
+    annotationEnabled,
+  );
+  promptDrawingCanvas.setAttribute(
+    "aria-hidden",
+    annotationEnabled ? "false" : "true",
+  );
   if (annotationEnabled) {
     return;
   }
 
-  if (typeof annotationPointerId === 'number' && promptDrawingCanvas.hasPointerCapture(annotationPointerId)) {
+  if (
+    typeof annotationPointerId === "number" &&
+    promptDrawingCanvas.hasPointerCapture(annotationPointerId)
+  ) {
     promptDrawingCanvas.releasePointerCapture(annotationPointerId);
   }
 
@@ -280,13 +395,24 @@ function applyAnnotationCanvasState() {
 }
 
 function updateAnnotationButtonVisualState() {
-  annotationButton.classList.toggle('prompt-action-button--active', uiState.annotationEnabled);
-  annotationButton.classList.toggle('prompt-action-button--busy', annotationToggleInFlight);
+  annotationButton.classList.toggle(
+    "prompt-action-button--active",
+    uiState.annotationEnabled,
+  );
+  annotationButton.classList.toggle(
+    "prompt-action-button--busy",
+    annotationToggleInFlight,
+  );
   annotationButton.disabled = annotationToggleInFlight;
-  annotationButton.setAttribute('aria-pressed', uiState.annotationEnabled ? 'true' : 'false');
   annotationButton.setAttribute(
-    'aria-label',
-    uiState.annotationEnabled ? 'Disable annotation drawing' : 'Enable annotation drawing'
+    "aria-pressed",
+    uiState.annotationEnabled ? "true" : "false",
+  );
+  annotationButton.setAttribute(
+    "aria-label",
+    uiState.annotationEnabled
+      ? "Disable annotation drawing"
+      : "Enable annotation drawing",
   );
 }
 
@@ -298,22 +424,22 @@ function applyAnnotationState() {
 function resetAnnotationSession() {
   annotationBaseGameScreenshotPngDataUrl = null;
   clearDrawingCanvas();
-  dispatchUiState({ type: 'set-annotation-enabled', enabled: false });
+  dispatchUiState({ type: "set-annotation-enabled", enabled: false });
   applyAnnotationState();
 }
 
 function pointerCoordinates(event) {
   const rect = promptDrawingCanvas.getBoundingClientRect();
-  const clientX = typeof event.clientX === 'number' ? event.clientX : 0;
-  const clientY = typeof event.clientY === 'number' ? event.clientY : 0;
+  const clientX = typeof event.clientX === "number" ? event.clientX : 0;
+  const clientY = typeof event.clientY === "number" ? event.clientY : 0;
   return {
     x: clientX - rect.left,
-    y: clientY - rect.top
+    y: clientY - rect.top,
   };
 }
 
 function isPrimaryAnnotationPointer(event) {
-  if (event.pointerType === 'mouse') {
+  if (event.pointerType === "mouse") {
     return event.button === 0;
   }
 
@@ -321,12 +447,16 @@ function isPrimaryAnnotationPointer(event) {
 }
 
 function beginAnnotationStroke(event) {
-  if (!uiState.annotationEnabled || annotationStrokeInProgress || !isPrimaryAnnotationPointer(event)) {
+  if (
+    !uiState.annotationEnabled ||
+    annotationStrokeInProgress ||
+    !isPrimaryAnnotationPointer(event)
+  ) {
     return;
   }
 
   const context = drawingContext();
-  if (!context || typeof event.pointerId !== 'number') {
+  if (!context || typeof event.pointerId !== "number") {
     return;
   }
 
@@ -374,15 +504,15 @@ function readAnnotationPngDataUrl() {
     return null;
   }
 
-  return promptDrawingCanvas.toDataURL('image/png');
+  return promptDrawingCanvas.toDataURL("image/png");
 }
 
 function blankCanvasPngDataUrl(width, height) {
-  if (typeof document.createElement !== 'function') {
+  if (typeof document.createElement !== "function") {
     return null;
   }
 
-  const blankCanvas = document.createElement('canvas');
+  const blankCanvas = document.createElement("canvas");
   if (!(blankCanvas instanceof HTMLCanvasElement)) {
     return null;
   }
@@ -391,22 +521,25 @@ function blankCanvasPngDataUrl(width, height) {
   blankCanvas.height = Math.max(1, height);
 
   try {
-    return blankCanvas.toDataURL('image/png');
+    return blankCanvas.toDataURL("image/png");
   } catch {
     return null;
   }
 }
 
 function flushGameCanvasWebGlFrame() {
-  if (!(gameCanvas instanceof HTMLCanvasElement) || typeof gameCanvas.getContext !== 'function') {
+  if (
+    !(gameCanvas instanceof HTMLCanvasElement) ||
+    typeof gameCanvas.getContext !== "function"
+  ) {
     return;
   }
 
   const webGlContext =
-    gameCanvas.getContext('webgl2') ??
-    gameCanvas.getContext('webgl') ??
-    gameCanvas.getContext('experimental-webgl');
-  if (!webGlContext || typeof webGlContext.finish !== 'function') {
+    gameCanvas.getContext("webgl2") ??
+    gameCanvas.getContext("webgl") ??
+    gameCanvas.getContext("experimental-webgl");
+  if (!webGlContext || typeof webGlContext.finish !== "function") {
     return;
   }
 
@@ -422,24 +555,36 @@ function waitForNextAnimationFrame() {
 }
 
 async function captureGameScreenshotPngDataUrl(maxAttempts = 3) {
-  if (!(gameCanvas instanceof HTMLCanvasElement) || typeof gameCanvas.toDataURL !== 'function') {
+  if (
+    !(gameCanvas instanceof HTMLCanvasElement) ||
+    typeof gameCanvas.toDataURL !== "function"
+  ) {
     return null;
   }
 
-  const attempts = Number.isFinite(maxAttempts) ? Math.max(1, Math.floor(maxAttempts)) : 1;
-  const blankSnapshot = blankCanvasPngDataUrl(gameCanvas.width, gameCanvas.height);
+  const attempts = Number.isFinite(maxAttempts)
+    ? Math.max(1, Math.floor(maxAttempts))
+    : 1;
+  const blankSnapshot = blankCanvasPngDataUrl(
+    gameCanvas.width,
+    gameCanvas.height,
+  );
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     await waitForNextAnimationFrame();
     flushGameCanvasWebGlFrame();
 
     try {
-      const snapshot = gameCanvas.toDataURL('image/png');
-      if (typeof snapshot !== 'string' || snapshot.length === 0) {
+      const snapshot = gameCanvas.toDataURL("image/png");
+      if (typeof snapshot !== "string" || snapshot.length === 0) {
         continue;
       }
 
-      if (blankSnapshot && snapshot === blankSnapshot && attempt < attempts - 1) {
+      if (
+        blankSnapshot &&
+        snapshot === blankSnapshot &&
+        attempt < attempts - 1
+      ) {
         continue;
       }
 
@@ -454,21 +599,28 @@ async function captureGameScreenshotPngDataUrl(maxAttempts = 3) {
 
 function loadDataUrlImage(dataUrl) {
   return new Promise((resolve, reject) => {
-    if (typeof dataUrl !== 'string' || dataUrl.trim().length === 0) {
-      reject(new Error('Image data URL missing'));
+    if (typeof dataUrl !== "string" || dataUrl.trim().length === 0) {
+      reject(new Error("Image data URL missing"));
       return;
     }
 
     const image = new Image();
-    image.addEventListener('load', () => resolve(image), { once: true });
-    image.addEventListener('error', () => reject(new Error('Image data URL failed to load')), { once: true });
+    image.addEventListener("load", () => resolve(image), { once: true });
+    image.addEventListener(
+      "error",
+      () => reject(new Error("Image data URL failed to load")),
+      { once: true },
+    );
     image.src = dataUrl;
   });
 }
 
-async function composePromptScreenshotPngDataUrl(baseGameScreenshotPngDataUrl = null) {
+async function composePromptScreenshotPngDataUrl(
+  baseGameScreenshotPngDataUrl = null,
+) {
   const gameScreenshotPngDataUrl =
-    typeof baseGameScreenshotPngDataUrl === 'string' && baseGameScreenshotPngDataUrl.trim().length > 0
+    typeof baseGameScreenshotPngDataUrl === "string" &&
+    baseGameScreenshotPngDataUrl.trim().length > 0
       ? baseGameScreenshotPngDataUrl
       : await captureGameScreenshotPngDataUrl();
   if (!gameScreenshotPngDataUrl) {
@@ -480,44 +632,70 @@ async function composePromptScreenshotPngDataUrl(baseGameScreenshotPngDataUrl = 
     return gameScreenshotPngDataUrl;
   }
 
-  if (typeof document.createElement !== 'function') {
+  if (typeof document.createElement !== "function") {
     return gameScreenshotPngDataUrl;
   }
 
-  const compositeCanvas = document.createElement('canvas');
+  const compositeCanvas = document.createElement("canvas");
   if (!(compositeCanvas instanceof HTMLCanvasElement)) {
     return gameScreenshotPngDataUrl;
   }
 
-  const compositeContext = compositeCanvas.getContext('2d');
-  if (!compositeContext || typeof compositeContext.drawImage !== 'function') {
+  const compositeContext = compositeCanvas.getContext("2d");
+  if (!compositeContext || typeof compositeContext.drawImage !== "function") {
     return gameScreenshotPngDataUrl;
   }
 
   try {
     const [gameImage, annotationImage] = await Promise.all([
       loadDataUrlImage(gameScreenshotPngDataUrl),
-      loadDataUrlImage(annotationPngDataUrl)
+      loadDataUrlImage(annotationPngDataUrl),
     ]);
     compositeCanvas.width = Math.max(1, gameImage.width);
     compositeCanvas.height = Math.max(1, gameImage.height);
-    compositeContext.clearRect(0, 0, compositeCanvas.width, compositeCanvas.height);
-    compositeContext.drawImage(gameImage, 0, 0, compositeCanvas.width, compositeCanvas.height);
-    compositeContext.drawImage(annotationImage, 0, 0, compositeCanvas.width, compositeCanvas.height);
-    return compositeCanvas.toDataURL('image/png');
+    compositeContext.clearRect(
+      0,
+      0,
+      compositeCanvas.width,
+      compositeCanvas.height,
+    );
+    compositeContext.drawImage(
+      gameImage,
+      0,
+      0,
+      compositeCanvas.width,
+      compositeCanvas.height,
+    );
+    compositeContext.drawImage(
+      annotationImage,
+      0,
+      0,
+      compositeCanvas.width,
+      compositeCanvas.height,
+    );
+    return compositeCanvas.toDataURL("image/png");
   } catch {
     return gameScreenshotPngDataUrl;
   }
 }
 
 function applyFavoriteState() {
-  favoriteButton.classList.toggle('game-view-icon-tab--active', uiState.gameFavorited);
-  favoriteButton.setAttribute('aria-pressed', uiState.gameFavorited ? 'true' : 'false');
-  favoriteButton.setAttribute('aria-label', uiState.gameFavorited ? 'Unfavorite game' : 'Favorite game');
+  favoriteButton.classList.toggle(
+    "game-view-icon-tab--active",
+    uiState.gameFavorited,
+  );
+  favoriteButton.setAttribute(
+    "aria-pressed",
+    uiState.gameFavorited ? "true" : "false",
+  );
+  favoriteButton.setAttribute(
+    "aria-label",
+    uiState.gameFavorited ? "Unfavorite game" : "Favorite game",
+  );
 }
 
 function logRealtimeTranscription(message, details = undefined) {
-  if (typeof console === 'undefined' || typeof console.log !== 'function') {
+  if (typeof console === "undefined" || typeof console.log !== "function") {
     return;
   }
 
@@ -530,20 +708,29 @@ function logRealtimeTranscription(message, details = undefined) {
 }
 
 function updateRecordButtonVisualState() {
-  recordButton.classList.toggle('game-view-icon-tab--recording', uiState.recordingInProgress);
-  recordButton.classList.toggle('game-view-icon-tab--busy', uiState.transcriptionInFlight);
+  recordButton.classList.toggle(
+    "game-view-icon-tab--recording",
+    uiState.recordingInProgress,
+  );
+  recordButton.classList.toggle(
+    "game-view-icon-tab--busy",
+    uiState.transcriptionInFlight,
+  );
   recordButton.disabled = uiState.transcriptionInFlight;
 
   if (uiState.recordingInProgress) {
-    recordButton.setAttribute('aria-label', 'Stop voice recording');
+    recordButton.setAttribute("aria-label", "Stop voice recording");
     return;
   }
 
-  recordButton.setAttribute('aria-label', 'Start voice recording');
+  recordButton.setAttribute("aria-label", "Start voice recording");
 }
 
 function updateTileCaptureButtonVisualState() {
-  tileCaptureButton.classList.toggle('game-view-icon-tab--busy', tileCaptureInFlight);
+  tileCaptureButton.classList.toggle(
+    "game-view-icon-tab--busy",
+    tileCaptureInFlight,
+  );
   tileCaptureButton.disabled = tileCaptureInFlight;
 }
 
@@ -554,11 +741,14 @@ function stopAudioStream(stream) {
 }
 
 function closeRealtimeConnection() {
-  if (realtimeDataChannel && typeof realtimeDataChannel.close === 'function') {
+  if (realtimeDataChannel && typeof realtimeDataChannel.close === "function") {
     realtimeDataChannel.close();
   }
 
-  if (realtimePeerConnection && typeof realtimePeerConnection.close === 'function') {
+  if (
+    realtimePeerConnection &&
+    typeof realtimePeerConnection.close === "function"
+  ) {
     realtimePeerConnection.close();
   }
 
@@ -572,16 +762,19 @@ function closeRealtimeConnection() {
 }
 
 function updatePromptOverlay() {
-  const overlayText = displayedOverlayWords.join(' ').trim();
-  const shouldShowOverlay = !uiState.editPanelOpen && overlayText.length > 0;
+  const overlayText = displayedOverlayWords.join(" ").trim();
+  const shouldShowOverlay = !isDrawerOpen() && overlayText.length > 0;
 
   if (!(promptOverlay instanceof HTMLElement)) {
     return;
   }
 
-  promptOverlay.textContent = shouldShowOverlay ? overlayText : '';
-  promptOverlay.classList.toggle('prompt-overlay--visible', shouldShowOverlay);
-  promptOverlay.setAttribute('aria-hidden', shouldShowOverlay ? 'false' : 'true');
+  promptOverlay.textContent = shouldShowOverlay ? overlayText : "";
+  promptOverlay.classList.toggle("prompt-overlay--visible", shouldShowOverlay);
+  promptOverlay.setAttribute(
+    "aria-hidden",
+    shouldShowOverlay ? "false" : "true",
+  );
 
   if (shouldShowOverlay) {
     window.requestAnimationFrame(() => {
@@ -591,7 +784,10 @@ function updatePromptOverlay() {
 }
 
 function enqueueOverlayWords(transcriptSegment) {
-  const words = transcriptSegment.split(/\s+/).map((word) => word.trim()).filter((word) => word.length > 0);
+  const words = transcriptSegment
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length > 0);
   if (words.length === 0) {
     return;
   }
@@ -606,7 +802,7 @@ function drainOverlayWord() {
   }
 
   const nextWord = pendingOverlayWords.shift();
-  if (typeof nextWord !== 'string' || nextWord.length === 0) {
+  if (typeof nextWord !== "string" || nextWord.length === 0) {
     return;
   }
 
@@ -621,7 +817,7 @@ function settleRealtimeStopFlushWait(result) {
   }
 
   flushWaitState.settled = true;
-  if (typeof flushWaitState.intervalId === 'number') {
+  if (typeof flushWaitState.intervalId === "number") {
     window.clearInterval(flushWaitState.intervalId);
   }
 
@@ -641,19 +837,23 @@ function maybeResolveRealtimeStopFlushWait() {
 
   const overlayDrainComplete = pendingOverlayWords.length === 0;
   if (overlayDrainComplete && flushWaitState.flushSignalReceived) {
-    settleRealtimeStopFlushWait('completed');
+    settleRealtimeStopFlushWait("completed");
     return;
   }
 
   flushWaitState.pollsRemaining -= 1;
   if (flushWaitState.pollsRemaining <= 0) {
-    settleRealtimeStopFlushWait('timeout');
+    settleRealtimeStopFlushWait("timeout");
   }
 }
 
 function markRealtimeStopFlushSignal(payloadType) {
   const flushWaitState = realtimeStopFlushWaitState;
-  if (!flushWaitState || flushWaitState.settled || !realtimeStopFlushSignalTypes.has(payloadType)) {
+  if (
+    !flushWaitState ||
+    flushWaitState.settled ||
+    !realtimeStopFlushSignalTypes.has(payloadType)
+  ) {
     return;
   }
 
@@ -668,7 +868,7 @@ function waitForRealtimeStopFlush(initialFlushSignalReceived = false) {
       flushSignalReceived: initialFlushSignalReceived,
       pollsRemaining: realtimeStopFlushMaxPolls,
       intervalId: null,
-      resolve
+      resolve,
     };
 
     realtimeStopFlushWaitState.intervalId = window.setInterval(() => {
@@ -680,7 +880,7 @@ function waitForRealtimeStopFlush(initialFlushSignalReceived = false) {
 }
 
 function ensureOverlayWordDrainLoop() {
-  if (typeof overlayWordDrainIntervalId === 'number') {
+  if (typeof overlayWordDrainIntervalId === "number") {
     return;
   }
 
@@ -690,7 +890,7 @@ function ensureOverlayWordDrainLoop() {
 }
 
 function clearOverlayWordDrainLoop() {
-  if (typeof overlayWordDrainIntervalId !== 'number') {
+  if (typeof overlayWordDrainIntervalId !== "number") {
     return;
   }
 
@@ -713,8 +913,8 @@ function appendCompletedTranscriptSegment(transcriptSegment) {
   completedTranscriptionSegments.push(normalizedSegment);
   enqueueOverlayWords(normalizedSegment);
 
-  if (uiState.editPanelOpen) {
-    promptInput.value = completedTranscriptionSegments.join(' ').trim();
+  if (uiState.activeDrawer === "edit") {
+    promptInput.value = completedTranscriptionSegments.join(" ").trim();
     writePromptDraftToStorage(promptInput.value);
     resizePromptInput();
     focusPromptInput();
@@ -724,11 +924,11 @@ function appendCompletedTranscriptSegment(transcriptSegment) {
 }
 
 function handleRealtimeDataChannelMessage(event) {
-  if (!event || typeof event.data !== 'string') {
+  if (!event || typeof event.data !== "string") {
     return;
   }
 
-  logRealtimeTranscription('data received', event.data);
+  logRealtimeTranscription("data received", event.data);
 
   let payload;
   try {
@@ -737,11 +937,18 @@ function handleRealtimeDataChannelMessage(event) {
     return;
   }
 
-  if (!payload || typeof payload !== 'object' || typeof payload.type !== 'string') {
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    typeof payload.type !== "string"
+  ) {
     return;
   }
 
-  if (payload.type === 'conversation.item.input_audio_transcription.completed' && typeof payload.transcript === 'string') {
+  if (
+    payload.type === "conversation.item.input_audio_transcription.completed" &&
+    typeof payload.transcript === "string"
+  ) {
     appendCompletedTranscriptSegment(payload.transcript);
   }
 
@@ -751,66 +958,79 @@ function handleRealtimeDataChannelMessage(event) {
 function csrfRequestHeaders() {
   const headers = {};
 
-  if (typeof csrfToken === 'string' && csrfToken.length > 0) {
-    headers['X-CSRF-Token'] = csrfToken;
+  if (typeof csrfToken === "string" && csrfToken.length > 0) {
+    headers["X-CSRF-Token"] = csrfToken;
   }
 
   return headers;
 }
 
 async function requestRealtimeClientSecret() {
-  const response = await fetch('/api/transcribe', {
-    method: 'POST',
-    headers: csrfRequestHeaders()
+  const response = await fetch("/api/transcribe", {
+    method: "POST",
+    headers: csrfRequestHeaders(),
   });
 
   if (!response.ok) {
     let errorDetails = `status ${response.status}`;
     try {
       const payload = await response.json();
-      if (payload && typeof payload === 'object' && typeof payload.error === 'string' && payload.error.trim().length > 0) {
+      if (
+        payload &&
+        typeof payload === "object" &&
+        typeof payload.error === "string" &&
+        payload.error.trim().length > 0
+      ) {
         errorDetails = `${errorDetails}: ${payload.error}`;
       }
     } catch {
       // Keep status-only detail when the response payload cannot be parsed.
     }
 
-    logRealtimeTranscription('session request failed', errorDetails);
-    throw new Error(`Realtime transcription session request failed: ${errorDetails}`);
+    logRealtimeTranscription("session request failed", errorDetails);
+    throw new Error(
+      `Realtime transcription session request failed: ${errorDetails}`,
+    );
   }
 
   const payload = await response.json();
-  if (!payload || typeof payload !== 'object' || typeof payload.clientSecret !== 'string') {
-    throw new Error('Realtime transcription session payload was invalid');
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    typeof payload.clientSecret !== "string"
+  ) {
+    throw new Error("Realtime transcription session payload was invalid");
   }
 
   if (payload.clientSecret.trim().length === 0) {
-    throw new Error('Realtime transcription session payload missing client secret');
+    throw new Error(
+      "Realtime transcription session payload missing client secret",
+    );
   }
 
-  if (typeof payload.model !== 'string' || payload.model.trim().length === 0) {
-    throw new Error('Realtime transcription session payload missing model');
+  if (typeof payload.model !== "string" || payload.model.trim().length === 0) {
+    throw new Error("Realtime transcription session payload missing model");
   }
 
   return {
     clientSecret: payload.clientSecret,
-    model: payload.model.trim()
+    model: payload.model.trim(),
   };
 }
 
 async function requestRealtimeAnswerSdp(realtimeSession, offerSdp) {
-  const requestBody = typeof offerSdp === 'string' ? offerSdp : '';
-  const response = await fetch('https://api.openai.com/v1/realtime/calls', {
-    method: 'POST',
+  const requestBody = typeof offerSdp === "string" ? offerSdp : "";
+  const response = await fetch("https://api.openai.com/v1/realtime/calls", {
+    method: "POST",
     headers: {
       Authorization: `Bearer ${realtimeSession.clientSecret}`,
-      'Content-Type': 'application/sdp'
+      "Content-Type": "application/sdp",
     },
-    body: requestBody
+    body: requestBody,
   });
 
   if (!response.ok) {
-    throw new Error('Realtime transcription SDP exchange failed');
+    throw new Error("Realtime transcription SDP exchange failed");
   }
 
   return response.text();
@@ -826,21 +1046,33 @@ async function toggleFavorite() {
   deleteButton.disabled = true;
 
   try {
-    const response = await fetch(`/api/games/${encodeURIComponent(versionId)}/favorite`, {
-      method: 'POST',
-      headers: csrfRequestHeaders()
-    });
+    const response = await fetch(
+      `/api/games/${encodeURIComponent(versionId)}/favorite`,
+      {
+        method: "POST",
+        headers: csrfRequestHeaders(),
+      },
+    );
     if (!response.ok) {
       return;
     }
 
     const payload = await response.json();
-    if (!payload || typeof payload !== 'object' || typeof payload.favorite !== 'boolean') {
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      typeof payload.favorite !== "boolean"
+    ) {
       return;
     }
 
-    dispatchUiState({ type: 'set-game-favorited', favorited: payload.favorite });
-    document.body.dataset.gameFavorited = uiState.gameFavorited ? 'true' : 'false';
+    dispatchUiState({
+      type: "set-game-favorited",
+      favorited: payload.favorite,
+    });
+    document.body.dataset.gameFavorited = uiState.gameFavorited
+      ? "true"
+      : "false";
     applyFavoriteState();
   } finally {
     favoriteRequestInFlight = false;
@@ -849,13 +1081,14 @@ async function toggleFavorite() {
   }
 }
 
-
 async function deleteGameVersion() {
   if (!versionId || favoriteRequestInFlight || deleteRequestInFlight) {
     return;
   }
 
-  const confirmed = window.confirm('Delete this game? This action cannot be undone.');
+  const confirmed = window.confirm(
+    "Delete this game? This action cannot be undone.",
+  );
   if (!confirmed) {
     return;
   }
@@ -865,16 +1098,19 @@ async function deleteGameVersion() {
   deleteButton.disabled = true;
 
   try {
-    const response = await fetch(`/api/games/${encodeURIComponent(versionId)}`, {
-      method: 'DELETE',
-      headers: csrfRequestHeaders()
-    });
+    const response = await fetch(
+      `/api/games/${encodeURIComponent(versionId)}`,
+      {
+        method: "DELETE",
+        headers: csrfRequestHeaders(),
+      },
+    );
 
     if (!response.ok) {
       return;
     }
 
-    window.location.assign('/');
+    window.location.assign("/");
   } finally {
     deleteRequestInFlight = false;
     favoriteButton.disabled = false;
@@ -888,7 +1124,7 @@ async function captureTileSnapshot() {
   }
 
   const tilePngDataUrl = await captureGameScreenshotPngDataUrl();
-  if (typeof tilePngDataUrl !== 'string' || tilePngDataUrl.length === 0) {
+  if (typeof tilePngDataUrl !== "string" || tilePngDataUrl.length === 0) {
     return;
   }
 
@@ -896,14 +1132,17 @@ async function captureTileSnapshot() {
   updateTileCaptureButtonVisualState();
 
   try {
-    const response = await fetch(`/api/games/${encodeURIComponent(versionId)}/tile-snapshot`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...csrfRequestHeaders()
+    const response = await fetch(
+      `/api/games/${encodeURIComponent(versionId)}/tile-snapshot`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...csrfRequestHeaders(),
+        },
+        body: JSON.stringify({ tilePngDataUrl }),
       },
-      body: JSON.stringify({ tilePngDataUrl })
-    });
+    );
     if (!response.ok) {
       return;
     }
@@ -936,8 +1175,9 @@ async function enableAnnotationSession() {
   clearDrawingCanvas();
 
   try {
-    annotationBaseGameScreenshotPngDataUrl = await captureGameScreenshotPngDataUrl();
-    dispatchUiState({ type: 'set-annotation-enabled', enabled: true });
+    annotationBaseGameScreenshotPngDataUrl =
+      await captureGameScreenshotPngDataUrl();
+    dispatchUiState({ type: "set-annotation-enabled", enabled: true });
   } finally {
     annotationToggleInFlight = false;
     applyAnnotationState();
@@ -949,11 +1189,11 @@ async function startRealtimeRecording() {
     return;
   }
 
-  if (typeof RTCPeerConnection !== 'function') {
+  if (typeof RTCPeerConnection !== "function") {
     return;
   }
 
-  dispatchUiState({ type: 'set-transcription-in-flight', inFlight: true });
+  dispatchUiState({ type: "set-transcription-in-flight", inFlight: true });
   updateRecordButtonVisualState();
   ensureOverlayWordDrainLoop();
   completedTranscriptionSegments = [];
@@ -969,8 +1209,8 @@ async function startRealtimeRecording() {
 
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     peerConnection = new RTCPeerConnection();
-    dataChannel = peerConnection.createDataChannel('oai-events');
-    dataChannel.addEventListener('message', handleRealtimeDataChannelMessage);
+    dataChannel = peerConnection.createDataChannel("oai-events");
+    dataChannel.addEventListener("message", handleRealtimeDataChannelMessage);
 
     for (const track of stream.getTracks()) {
       peerConnection.addTrack(track, stream);
@@ -979,23 +1219,26 @@ async function startRealtimeRecording() {
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
 
-    const answerSdp = await requestRealtimeAnswerSdp(realtimeSession, offer.sdp);
+    const answerSdp = await requestRealtimeAnswerSdp(
+      realtimeSession,
+      offer.sdp,
+    );
     await peerConnection.setRemoteDescription({
-      type: 'answer',
-      sdp: answerSdp
+      type: "answer",
+      sdp: answerSdp,
     });
 
     realtimePeerConnection = peerConnection;
     realtimeDataChannel = dataChannel;
     realtimeAudioStream = stream;
-    dispatchUiState({ type: 'set-recording-in-progress', inProgress: true });
-    logRealtimeTranscription('started');
+    dispatchUiState({ type: "set-recording-in-progress", inProgress: true });
+    logRealtimeTranscription("started");
   } catch {
-    if (dataChannel && typeof dataChannel.close === 'function') {
+    if (dataChannel && typeof dataChannel.close === "function") {
       dataChannel.close();
     }
 
-    if (peerConnection && typeof peerConnection.close === 'function') {
+    if (peerConnection && typeof peerConnection.close === "function") {
       peerConnection.close();
     }
 
@@ -1005,7 +1248,7 @@ async function startRealtimeRecording() {
 
     return;
   } finally {
-    dispatchUiState({ type: 'set-transcription-in-flight', inFlight: false });
+    dispatchUiState({ type: "set-transcription-in-flight", inFlight: false });
     updateRecordButtonVisualState();
   }
 }
@@ -1015,29 +1258,40 @@ async function stopRealtimeRecording() {
     return;
   }
 
-  dispatchUiState({ type: 'set-transcription-in-flight', inFlight: true });
+  dispatchUiState({ type: "set-transcription-in-flight", inFlight: true });
   updateRecordButtonVisualState();
 
   try {
-    const hasOpenRealtimeDataChannel = Boolean(realtimeDataChannel && realtimeDataChannel.readyState === 'open');
+    const hasOpenRealtimeDataChannel = Boolean(
+      realtimeDataChannel && realtimeDataChannel.readyState === "open",
+    );
     if (hasOpenRealtimeDataChannel) {
       realtimeDataChannel.send(
         JSON.stringify({
-          type: 'input_audio_buffer.commit'
-        })
+          type: "input_audio_buffer.commit",
+        }),
       );
     }
 
-    const flushOutcome = await waitForRealtimeStopFlush(!hasOpenRealtimeDataChannel);
-    if (flushOutcome === 'timeout') {
-      logRealtimeTranscription('flush timeout fallback');
+    const flushOutcome = await waitForRealtimeStopFlush(
+      !hasOpenRealtimeDataChannel,
+    );
+    if (flushOutcome === "timeout") {
+      logRealtimeTranscription("flush timeout fallback");
     }
 
-    const transcribedPrompt = completedTranscriptionSegments.join(' ').trim();
+    const transcribedPrompt = completedTranscriptionSegments.join(" ").trim();
     const annotationPngDataUrl = readAnnotationPngDataUrl();
-    const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl(annotationBaseGameScreenshotPngDataUrl);
+
+    const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl(
+      annotationBaseGameScreenshotPngDataUrl,
+    );
     if (versionId && transcribedPrompt.length > 0) {
-      const promptSubmitted = await submitPrompt(transcribedPrompt, annotationPngDataUrl, gameScreenshotPngDataUrl);
+      const promptSubmitted = await submitPrompt(
+        transcribedPrompt,
+        annotationPngDataUrl,
+        gameScreenshotPngDataUrl,
+      );
       if (promptSubmitted) {
         completedTranscriptionSegments = [];
         clearTranscriptionDisplayBuffer();
@@ -1045,11 +1299,11 @@ async function stopRealtimeRecording() {
       }
     }
   } finally {
-    logRealtimeTranscription('stopped');
-    logRealtimeTranscription('final transcribed text', promptInput.value);
-    dispatchUiState({ type: 'set-recording-in-progress', inProgress: false });
+    logRealtimeTranscription("stopped");
+    logRealtimeTranscription("final transcribed text", promptInput.value);
+    dispatchUiState({ type: "set-recording-in-progress", inProgress: false });
     closeRealtimeConnection();
-    dispatchUiState({ type: 'set-transcription-in-flight', inFlight: false });
+    dispatchUiState({ type: "set-transcription-in-flight", inFlight: false });
     updateRecordButtonVisualState();
   }
 }
@@ -1067,67 +1321,272 @@ function toggleRecording() {
   void startRealtimeRecording();
 }
 
-function updateEditDrawerHeight() {
+function clearElementChildren(element) {
+  while (element.firstChild) {
+    element.removeChild(element.firstChild);
+  }
+}
+
+function renderSettingsEmptyState(message) {
+  clearElementChildren(settingsForm);
+
+  const emptyState = document.createElement("p");
+  if (!(emptyState instanceof HTMLElement)) {
+    return;
+  }
+
+  emptyState.className = "settings-panel-empty";
+  emptyState.textContent = message;
+  settingsForm.appendChild(emptyState);
+}
+
+function findRuntimeSliderById(sliderId) {
+  for (const slider of readRuntimeSliderDefinitions()) {
+    if (slider.id === sliderId) {
+      return slider;
+    }
+  }
+
+  return null;
+}
+
+async function flushSettingsSave() {
+  if (!pendingSettingsSave || settingsSaveInFlight) {
+    return;
+  }
+
+  const runtimeHost = getActiveGameRuntimeHost();
+  const runtimeControls = getActiveGameRuntimeControls();
+  if (
+    !runtimeHost ||
+    typeof runtimeHost.saveControlState !== "function" ||
+    !runtimeControls
+  ) {
+    pendingSettingsSave = false;
+    return;
+  }
+
+  pendingSettingsSave = false;
+  settingsSaveInFlight = true;
+
+  try {
+    await runtimeHost.saveControlState(runtimeControls.serializeControlState());
+  } finally {
+    settingsSaveInFlight = false;
+    if (pendingSettingsSave) {
+      void flushSettingsSave();
+    }
+  }
+}
+
+function scheduleSettingsSave() {
+  pendingSettingsSave = true;
+
+  if (typeof settingsSaveTimerId === "number") {
+    window.clearTimeout(settingsSaveTimerId);
+  }
+
+  settingsSaveTimerId = window.setTimeout(() => {
+    settingsSaveTimerId = null;
+    void flushSettingsSave();
+  }, settingsSaveDebounceMs);
+}
+
+function renderSettingsControls() {
+  const runtimeControls = getActiveGameRuntimeControls();
+  if (!runtimeControls) {
+    renderSettingsEmptyState("Loading settings...");
+    return;
+  }
+
+  const sliders = readRuntimeSliderDefinitions();
+  if (sliders.length === 0) {
+    renderSettingsEmptyState("No runtime settings available.");
+    return;
+  }
+
+  clearElementChildren(settingsForm);
+
+  for (const slider of sliders) {
+    const control = document.createElement("div");
+    const header = document.createElement("div");
+    const label = document.createElement("label");
+    const value = document.createElement("span");
+    const input = document.createElement("input");
+    if (
+      !(control instanceof HTMLElement) ||
+      !(header instanceof HTMLElement) ||
+      !(label instanceof HTMLElement) ||
+      !(value instanceof HTMLElement) ||
+      !(input instanceof HTMLInputElement)
+    ) {
+      continue;
+    }
+
+    const sliderInputId = `settings-slider-${slider.id}`;
+    control.className = "settings-control";
+    header.className = "settings-control-header";
+    label.className = "settings-control-label";
+    label.setAttribute("for", sliderInputId);
+    label.textContent = slider.label;
+    value.className = "settings-control-value";
+    value.textContent = String(slider.value);
+    header.appendChild(label);
+    header.appendChild(value);
+
+    input.id = sliderInputId;
+    input.className = "settings-control-slider";
+    input.type = "range";
+    input.min = String(slider.min);
+    input.max = String(slider.max);
+    input.step = String(slider.step);
+    input.value = String(slider.value);
+    input.setAttribute("aria-label", slider.label);
+
+    const handleSliderInput = () => {
+      const nextValue = Number.parseFloat(input.value);
+      if (!Number.isFinite(nextValue)) {
+        return;
+      }
+
+      const didApply = runtimeControls.setGlobalValue(
+        slider.globalKey,
+        nextValue,
+      );
+      if (!didApply) {
+        return;
+      }
+
+      const updatedSlider = findRuntimeSliderById(slider.id);
+      const resolvedValue = updatedSlider ? updatedSlider.value : nextValue;
+      input.value = String(resolvedValue);
+      value.textContent = String(resolvedValue);
+      scheduleSettingsSave();
+    };
+
+    input.addEventListener("input", handleSliderInput);
+    input.addEventListener("change", handleSliderInput);
+
+    control.appendChild(header);
+    control.appendChild(input);
+    settingsForm.appendChild(control);
+  }
+}
+
+function updatePromptDrawerHeight() {
   if (!(promptPanel instanceof HTMLElement)) {
     return;
   }
 
   const panelRectHeight =
-    typeof promptPanel.getBoundingClientRect === 'function' ? promptPanel.getBoundingClientRect().height : 0;
-  const panelOffsetHeight = typeof promptPanel.offsetHeight === 'number' ? promptPanel.offsetHeight : 0;
+    typeof promptPanel.getBoundingClientRect === "function"
+      ? promptPanel.getBoundingClientRect().height
+      : 0;
+  const panelOffsetHeight =
+    typeof promptPanel.offsetHeight === "number" ? promptPanel.offsetHeight : 0;
   const panelHeight = Math.ceil(Math.max(panelRectHeight, panelOffsetHeight));
 
   if (panelHeight <= 0) {
     return;
   }
 
-  document.body.style.setProperty('--edit-drawer-height', `${panelHeight}px`);
+  document.body.style.setProperty("--edit-drawer-height", `${panelHeight}px`);
+}
+
+function updateSettingsDrawerHeight() {
+  document.body.style.setProperty("--edit-drawer-height", "50vh");
 }
 
 function applyBottomPanelState() {
-  promptPanel.classList.toggle('prompt-panel--open', uiState.editPanelOpen);
-  promptPanel.setAttribute('aria-hidden', uiState.editPanelOpen ? 'false' : 'true');
+  const editPanelOpen = uiState.activeDrawer === "edit";
+  const runtimeSettingsOpen = uiState.activeDrawer === "settings";
+  const codexPanelExpanded = editPanelOpen && uiState.codexPanelExpanded;
 
-  editTab.classList.toggle('game-view-tab--active', uiState.editPanelOpen);
-  editTab.setAttribute('aria-expanded', uiState.editPanelOpen ? 'true' : 'false');
+  promptPanel.classList.toggle("prompt-panel--open", editPanelOpen);
+  promptPanel.setAttribute("aria-hidden", editPanelOpen ? "false" : "true");
+  settingsPanel.classList.toggle("settings-panel--open", runtimeSettingsOpen);
+  settingsPanel.setAttribute(
+    "aria-hidden",
+    runtimeSettingsOpen ? "false" : "true",
+  );
 
-  codexToggle.setAttribute('aria-expanded', uiState.codexPanelExpanded ? 'true' : 'false');
+  editTab.classList.toggle("game-view-tab--active", editPanelOpen);
+  editTab.setAttribute("aria-expanded", editPanelOpen ? "true" : "false");
+  settingsTab.classList.toggle("game-view-tab--active", runtimeSettingsOpen);
+  settingsTab.setAttribute(
+    "aria-expanded",
+    runtimeSettingsOpen ? "true" : "false",
+  );
 
-  codexTranscript.classList.toggle('game-codex-transcript--open', uiState.codexPanelExpanded);
-  codexTranscript.setAttribute('aria-hidden', uiState.codexPanelExpanded ? 'false' : 'true');
+  codexToggle.setAttribute(
+    "aria-expanded",
+    codexPanelExpanded ? "true" : "false",
+  );
 
-  document.body.classList.toggle('game-page--edit-open', uiState.editPanelOpen);
-  document.body.classList.toggle('game-page--codex-expanded', uiState.codexPanelExpanded);
+  codexTranscript.classList.toggle(
+    "game-codex-transcript--open",
+    codexPanelExpanded,
+  );
+  codexTranscript.setAttribute(
+    "aria-hidden",
+    codexPanelExpanded ? "false" : "true",
+  );
 
-  if (uiState.editPanelOpen) {
-    const transcribedPrompt = completedTranscriptionSegments.join(' ').trim();
+  document.body.classList.toggle(
+    "game-page--drawer-open",
+    editPanelOpen || runtimeSettingsOpen,
+  );
+  document.body.classList.toggle(
+    "game-page--codex-expanded",
+    codexPanelExpanded,
+  );
+
+  if (editPanelOpen) {
+    const transcribedPrompt = completedTranscriptionSegments.join(" ").trim();
     if (transcribedPrompt.length > 0) {
       promptInput.value = transcribedPrompt;
       writePromptDraftToStorage(promptInput.value);
     }
 
     resizePromptInput();
-    updateEditDrawerHeight();
+    updatePromptDrawerHeight();
+  } else if (runtimeSettingsOpen) {
+    renderSettingsControls();
+    updateSettingsDrawerHeight();
+  } else {
+    document.body.style.setProperty("--edit-drawer-height", "0px");
   }
 
   updatePromptOverlay();
 }
 
 function toggleEditPanel() {
-  if (uiState.editPanelOpen) {
-    dispatchUiState({ type: 'set-edit-panel-open', open: false });
-    dispatchUiState({ type: 'set-codex-panel-expanded', expanded: false });
+  if (uiState.activeDrawer === "edit") {
+    dispatchUiState({ type: "set-active-drawer", drawer: null });
+    dispatchUiState({ type: "set-codex-panel-expanded", expanded: false });
     applyBottomPanelState();
     return;
   }
 
-  dispatchUiState({ type: 'set-edit-panel-open', open: true });
+  dispatchUiState({ type: "set-active-drawer", drawer: "edit" });
   applyBottomPanelState();
   focusPromptInput();
 }
 
+function toggleSettingsPanel() {
+  if (uiState.activeDrawer === "settings") {
+    dispatchUiState({ type: "set-active-drawer", drawer: null });
+    applyBottomPanelState();
+    return;
+  }
+
+  dispatchUiState({ type: "set-active-drawer", drawer: "settings" });
+  dispatchUiState({ type: "set-codex-panel-expanded", expanded: false });
+  applyBottomPanelState();
+}
+
 function requestTranscriptScrollToBottom() {
-  if (typeof transcriptPresenter.scrollToBottom !== 'function') {
+  if (typeof transcriptPresenter.scrollToBottom !== "function") {
     return;
   }
 
@@ -1137,11 +1596,14 @@ function requestTranscriptScrollToBottom() {
 }
 
 function toggleCodexPanelExpanded() {
-  if (!uiState.editPanelOpen) {
-    dispatchUiState({ type: 'set-edit-panel-open', open: true });
+  if (uiState.activeDrawer !== "edit") {
+    dispatchUiState({ type: "set-active-drawer", drawer: "edit" });
   }
 
-  dispatchUiState({ type: 'set-codex-panel-expanded', expanded: !uiState.codexPanelExpanded });
+  dispatchUiState({
+    type: "set-codex-panel-expanded",
+    expanded: !uiState.codexPanelExpanded,
+  });
   applyBottomPanelState();
 
   if (uiState.codexPanelExpanded) {
@@ -1165,11 +1627,16 @@ function showTranscriptState(statusKey, title, description) {
 
   transcriptPresenter.showEmptyState(title, description);
   transcriptStatusKey = statusKey;
-  transcriptSignature = '';
+  transcriptSignature = "";
 }
 
 function parseEyeState(value) {
-  if (value === 'stopped' || value === 'idle' || value === 'generating' || value === 'error') {
+  if (
+    value === "stopped" ||
+    value === "idle" ||
+    value === "generating" ||
+    value === "error"
+  ) {
     return value;
   }
 
@@ -1177,21 +1644,24 @@ function parseEyeState(value) {
 }
 
 function applyEyeState(eyeState) {
-  const isGenerating = eyeState === 'generating';
+  const isGenerating = eyeState === "generating";
   if (isGenerating) {
     editTab.classList.add(generatingClassName);
   } else {
     editTab.classList.remove(generatingClassName);
   }
 
-  editTab.setAttribute('aria-busy', isGenerating ? 'true' : 'false');
+  editTab.setAttribute("aria-busy", isGenerating ? "true" : "false");
 }
 
 function buildTranscriptSignature(sessionId, messages) {
   const lastMessage = messages[messages.length - 1];
-  const lastRole = typeof lastMessage?.role === 'string' ? lastMessage.role : '';
-  const lastText = typeof lastMessage?.text === 'string' ? lastMessage.text : '';
-  const lastTimestamp = typeof lastMessage?.timestamp === 'string' ? lastMessage.timestamp : '';
+  const lastRole =
+    typeof lastMessage?.role === "string" ? lastMessage.role : "";
+  const lastText =
+    typeof lastMessage?.text === "string" ? lastMessage.text : "";
+  const lastTimestamp =
+    typeof lastMessage?.timestamp === "string" ? lastMessage.timestamp : "";
   return `${sessionId}:${messages.length}:${lastRole}:${lastTimestamp}:${lastText}`;
 }
 
@@ -1204,20 +1674,34 @@ async function loadGameTranscript() {
 
   try {
     if (!versionId) {
-      showTranscriptState('missing-version', 'Session unavailable', 'Game version id is missing from this page.');
+      showTranscriptState(
+        "missing-version",
+        "Session unavailable",
+        "Game version id is missing from this page.",
+      );
       return;
     }
 
     let response;
     try {
-      response = await fetch(`/api/codex-sessions/${encodeURIComponent(versionId)}`);
+      response = await fetch(
+        `/api/codex-sessions/${encodeURIComponent(versionId)}`,
+      );
     } catch {
-      showTranscriptState('fetch-failed', 'Session unavailable', 'Could not reach the server.');
+      showTranscriptState(
+        "fetch-failed",
+        "Session unavailable",
+        "Could not reach the server.",
+      );
       return;
     }
 
     if (!response.ok) {
-      showTranscriptState(`bad-status-${response.status}`, 'Session unavailable', `Server returned ${response.status}.`);
+      showTranscriptState(
+        `bad-status-${response.status}`,
+        "Session unavailable",
+        `Server returned ${response.status}.`,
+      );
       return;
     }
 
@@ -1225,12 +1709,24 @@ async function loadGameTranscript() {
     try {
       payload = await response.json();
     } catch {
-      showTranscriptState('invalid-json', 'Session unavailable', 'Invalid response payload.');
+      showTranscriptState(
+        "invalid-json",
+        "Session unavailable",
+        "Invalid response payload.",
+      );
       return;
     }
 
-    if (!payload || typeof payload !== 'object' || typeof payload.status !== 'string') {
-      showTranscriptState('invalid-shape', 'Session unavailable', 'Unexpected response shape.');
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      typeof payload.status !== "string"
+    ) {
+      showTranscriptState(
+        "invalid-shape",
+        "Session unavailable",
+        "Unexpected response shape.",
+      );
       return;
     }
 
@@ -1239,37 +1735,51 @@ async function loadGameTranscript() {
       applyEyeState(eyeState);
     }
 
-    if (payload.status === 'no-session') {
+    if (payload.status === "no-session") {
       showTranscriptState(
-        'no-session',
-        'No session linked',
-        `This game version does not have a saved ${transcriptProviderLabel} session id yet.`
+        "no-session",
+        "No session linked",
+        `This game version does not have a saved ${transcriptProviderLabel} session id yet.`,
       );
       return;
     }
 
-    if (payload.status === 'session-file-missing') {
+    if (payload.status === "session-file-missing") {
       showTranscriptState(
-        'session-file-missing',
-        'Session file not found',
-        'The linked session id exists in metadata but no matching JSONL file was found.'
+        "session-file-missing",
+        "Session file not found",
+        "The linked session id exists in metadata but no matching JSONL file was found.",
       );
       return;
     }
 
-    if (payload.status !== 'ok' || typeof payload.sessionId !== 'string' || !Array.isArray(payload.messages)) {
-      showTranscriptState('invalid-transcript', 'Session unavailable', 'Unexpected transcript payload.');
+    if (
+      payload.status !== "ok" ||
+      typeof payload.sessionId !== "string" ||
+      !Array.isArray(payload.messages)
+    ) {
+      showTranscriptState(
+        "invalid-transcript",
+        "Session unavailable",
+        "Unexpected transcript payload.",
+      );
       return;
     }
 
-    const nextSignature = buildTranscriptSignature(payload.sessionId, payload.messages);
-    const shouldRenderTranscript = transcriptStatusKey !== 'ok' || transcriptSignature !== nextSignature;
+    const nextSignature = buildTranscriptSignature(
+      payload.sessionId,
+      payload.messages,
+    );
+    const shouldRenderTranscript =
+      transcriptStatusKey !== "ok" || transcriptSignature !== nextSignature;
     if (!shouldRenderTranscript) {
       return;
     }
 
-    transcriptPresenter.renderTranscript(payload.sessionId, payload.messages, { autoScrollToBottom: true });
-    transcriptStatusKey = 'ok';
+    transcriptPresenter.renderTranscript(payload.sessionId, payload.messages, {
+      autoScrollToBottom: true,
+    });
+    transcriptStatusKey = "ok";
     transcriptSignature = nextSignature;
   } finally {
     transcriptRequestInFlight = false;
@@ -1284,39 +1794,56 @@ function startTranscriptPolling() {
   }, transcriptPollIntervalMs);
 
   window.addEventListener(
-    'beforeunload',
+    "beforeunload",
     () => {
       window.clearInterval(intervalId);
     },
-    { once: true }
+    { once: true },
   );
 }
 
-async function submitPrompt(prompt, annotationPngDataUrl = null, gameScreenshotPngDataUrl = null) {
+async function submitPrompt(
+  prompt,
+  annotationPngDataUrl = null,
+  gameScreenshotPngDataUrl = null,
+) {
   const headers = {
-    'Content-Type': 'application/json'
+    "Content-Type": "application/json",
   };
 
-  if (typeof csrfToken === 'string' && csrfToken.length > 0) {
-    headers['X-CSRF-Token'] = csrfToken;
+  if (typeof csrfToken === "string" && csrfToken.length > 0) {
+    headers["X-CSRF-Token"] = csrfToken;
   }
 
-  const response = await fetch(`/api/games/${encodeURIComponent(versionId)}/prompts`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      prompt,
-      annotationPngDataUrl: typeof annotationPngDataUrl === 'string' ? annotationPngDataUrl : null,
-      gameScreenshotPngDataUrl: typeof gameScreenshotPngDataUrl === 'string' ? gameScreenshotPngDataUrl : null
-    })
-  });
+  const response = await fetch(
+    `/api/games/${encodeURIComponent(versionId)}/prompts`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        prompt,
+        annotationPngDataUrl:
+          typeof annotationPngDataUrl === "string"
+            ? annotationPngDataUrl
+            : null,
+        gameScreenshotPngDataUrl:
+          typeof gameScreenshotPngDataUrl === "string"
+            ? gameScreenshotPngDataUrl
+            : null,
+      }),
+    },
+  );
 
   if (!response.ok) {
     return false;
   }
 
   const payload = await response.json();
-  if (!payload || typeof payload !== 'object' || typeof payload.forkId !== 'string') {
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    typeof payload.forkId !== "string"
+  ) {
     return false;
   }
 
@@ -1326,22 +1853,28 @@ async function submitPrompt(prompt, annotationPngDataUrl = null, gameScreenshotP
 }
 
 function resizePromptInput() {
-  if (!(promptInput instanceof HTMLElement) || !('style' in promptInput)) {
+  if (!(promptInput instanceof HTMLElement) || !("style" in promptInput)) {
     return;
   }
 
-  promptInput.style.height = 'auto';
+  promptInput.style.height = "auto";
 
   const computedPromptStyle = window.getComputedStyle(promptInput);
   const maxHeight = Number.parseFloat(computedPromptStyle.maxHeight);
-  const nextHeight = typeof promptInput.scrollHeight === 'number' ? promptInput.scrollHeight : 0;
-  const clampedHeight = Number.isFinite(maxHeight) && maxHeight > 0 ? Math.min(nextHeight, maxHeight) : nextHeight;
+  const nextHeight =
+    typeof promptInput.scrollHeight === "number" ? promptInput.scrollHeight : 0;
+  const clampedHeight =
+    Number.isFinite(maxHeight) && maxHeight > 0
+      ? Math.min(nextHeight, maxHeight)
+      : nextHeight;
 
   if (clampedHeight > 0) {
     promptInput.style.height = `${clampedHeight}px`;
   }
 
-  updateEditDrawerHeight();
+  if (uiState.activeDrawer === "edit") {
+    updatePromptDrawerHeight();
+  }
 }
 
 let hasInitializedGameViewControls = false;
@@ -1354,28 +1887,32 @@ function initializeGameViewControls() {
   hasInitializedGameViewControls = true;
 
   restorePromptDraftFromStorage();
+  renderSettingsControls();
   applyBottomPanelState();
   resizePromptInput();
-  updateEditDrawerHeight();
   updateTileCaptureButtonVisualState();
 
-  editTab.addEventListener('click', () => {
+  editTab.addEventListener("click", () => {
     toggleEditPanel();
   });
 
-  codexToggle.addEventListener('click', () => {
+  settingsTab.addEventListener("click", () => {
+    toggleSettingsPanel();
+  });
+
+  codexToggle.addEventListener("click", () => {
     toggleCodexPanelExpanded();
   });
 
-  tileCaptureButton.addEventListener('click', () => {
+  tileCaptureButton.addEventListener("click", () => {
     void captureTileSnapshot();
   });
 
-  annotationButton.addEventListener('click', () => {
+  annotationButton.addEventListener("click", () => {
     void toggleAnnotationMode();
   });
 
-  promptForm.addEventListener('submit', (event) => {
+  promptForm.addEventListener("submit", (event) => {
     event.preventDefault();
 
     const prompt = promptInput.value;
@@ -1385,13 +1922,19 @@ function initializeGameViewControls() {
 
     void (async () => {
       const annotationPngDataUrl = readAnnotationPngDataUrl();
-      const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl(annotationBaseGameScreenshotPngDataUrl);
-      await submitPrompt(prompt, annotationPngDataUrl, gameScreenshotPngDataUrl);
+      const gameScreenshotPngDataUrl = await composePromptScreenshotPngDataUrl(
+        annotationBaseGameScreenshotPngDataUrl,
+      );
+      await submitPrompt(
+        prompt,
+        annotationPngDataUrl,
+        gameScreenshotPngDataUrl,
+      );
     })().catch(() => {
       // Keep prompt submit non-blocking if networking or payload parsing fails.
     });
 
-    promptInput.value = '';
+    promptInput.value = "";
     resizePromptInput();
     completedTranscriptionSegments = [];
     clearTranscriptionDisplayBuffer();
@@ -1399,91 +1942,101 @@ function initializeGameViewControls() {
     focusPromptInput();
   });
 
-  promptForm.addEventListener('reset', () => {
-    promptInput.value = '';
+  promptForm.addEventListener("reset", () => {
+    promptInput.value = "";
     clearPromptDraftFromStorage();
     resizePromptInput();
   });
 
-  promptInput.addEventListener('input', () => {
+  promptInput.addEventListener("input", () => {
     writePromptDraftToStorage(promptInput.value);
     resizePromptInput();
   });
 
-  promptInput.addEventListener('keydown', (event) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+  promptInput.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
       promptForm.requestSubmit();
     }
   });
 
-  window.addEventListener('resize', () => {
+  window.addEventListener("resize", () => {
     resizePromptInput();
     resizeDrawingCanvas();
+    if (uiState.activeDrawer === "settings") {
+      updateSettingsDrawerHeight();
+    }
+  });
+
+  window.addEventListener(gameRuntimeControlsChangedEvent, () => {
+    renderSettingsControls();
   });
 
   window.addEventListener(
-    'beforeunload',
+    "beforeunload",
     () => {
       closeRealtimeConnection();
       clearOverlayWordDrainLoop();
+      if (typeof settingsSaveTimerId === "number") {
+        window.clearTimeout(settingsSaveTimerId);
+      }
     },
-    { once: true }
+    { once: true },
   );
 
   resizeDrawingCanvas();
   applyAnnotationState();
 
-  promptDrawingCanvas.addEventListener('pointerdown', (event) => {
+  promptDrawingCanvas.addEventListener("pointerdown", (event) => {
     beginAnnotationStroke(event);
   });
 
-  promptDrawingCanvas.addEventListener('pointermove', (event) => {
+  promptDrawingCanvas.addEventListener("pointermove", (event) => {
     extendAnnotationStroke(event);
   });
 
-  promptDrawingCanvas.addEventListener('pointerup', (event) => {
+  promptDrawingCanvas.addEventListener("pointerup", (event) => {
     endAnnotationStroke(event);
   });
 
-  promptDrawingCanvas.addEventListener('pointercancel', (event) => {
+  promptDrawingCanvas.addEventListener("pointercancel", (event) => {
     endAnnotationStroke(event);
   });
 
-  applyEyeState('stopped');
+  applyEyeState("stopped");
   updateRecordButtonVisualState();
   applyFavoriteState();
 
-  recordButton.addEventListener('click', () => {
+  recordButton.addEventListener("click", () => {
     toggleRecording();
   });
 
-  favoriteButton.addEventListener('click', () => {
+  favoriteButton.addEventListener("click", () => {
     void toggleFavorite();
   });
 
-  deleteButton.addEventListener('click', () => {
+  deleteButton.addEventListener("click", () => {
     void deleteGameVersion();
   });
-
-  startTranscriptPolling();
 }
 
 function runAfterReactHydration(callback) {
-  if (document.body.dataset.gameReactHydrated === 'true') {
+  if (document.body.dataset.gameReactHydrated === "true") {
     callback();
     return;
   }
 
   window.addEventListener(
-    'game-react-hydrated',
+    "game-react-hydrated",
     () => {
       callback();
     },
-    { once: true }
+    { once: true },
   );
 }
 
+initializeGameViewControls();
+
 runAfterReactHydration(() => {
-  initializeGameViewControls();
+  startTranscriptPolling();
 });

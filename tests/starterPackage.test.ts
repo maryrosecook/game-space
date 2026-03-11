@@ -76,13 +76,14 @@ describe('starter package manifest', () => {
 });
 
 describe('starter README', () => {
-  it('documents the blank default scene and engine API quick reference', async () => {
+  it('documents the particle-emitter default scene and engine API quick reference', async () => {
     const readme = await readStarterReadme();
 
-    expect(readme).toContain('The default scene intentionally contains no game objects and no particles.');
-    expect(readme).toContain('It renders only the background color so new games can start from a blank state.');
+    expect(readme).toContain('The default scene now includes a hidden particle emitter and one runtime settings slider.');
+    expect(readme).toContain('It renders a falling yellow/orange/red particle field');
     expect(readme).toContain('## Engine API quick reference');
-    expect(readme).toContain('empty `things`, empty `blueprints`');
+    expect(readme).toContain('one particle-emitter thing/blueprint');
+    expect(readme).toContain('`globals`, and `editor.sliders`');
     expect(readme).toContain('`spawn({ blueprint, position, overrides? })`');
     expect(readme).toContain('`destroy(thingOrId)`');
   });

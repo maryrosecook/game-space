@@ -22,6 +22,11 @@ import { reloadTokenPath } from './devLiveReload';
 import { getCodexTurnInfo } from './codexTurnInfo';
 import { isObjectRecord, pathExists } from './fsUtils';
 import {
+  controlStateFilePath,
+  readControlStateFile,
+  writeControlStateFile,
+} from './gameControlState';
+import {
   gameDirectoryPath,
   hasGameDirectory,
   isSafeVersionId,
@@ -56,6 +61,7 @@ import {
   readSharedLoginAttemptLimiter,
 } from './serverRuntimeState';
 import { readTrustedClientIpFromWebRequest } from './trustedClientIp';
+import { parseGameControlState } from '../gameRuntimeControls';
 
 const TRANSCRIPTION_MODEL_UNAVAILABLE_PATTERN = /model_not_found|does not have access to model/i;
 const IDEAS_STARTER_VERSION_ID = 'starter';
@@ -971,6 +977,61 @@ export async function handleApiGameFavoritePost(request: Request, versionId: str
     status: 'ok',
     versionId,
     favorite,
+  });
+}
+
+export async function handleApiGameControlStateGet(versionId: string): Promise<Response> {
+  if (!isSafeVersionId(versionId)) {
+    return jsonResponse(400, { error: 'Invalid version id' });
+  }
+
+  const runtimePaths = readRuntimePaths();
+  if (!(await hasGameDirectory(runtimePaths.gamesRootPath, versionId))) {
+    return jsonResponse(404, { error: 'Game version not found' });
+  }
+
+  const controlStatePath = controlStateFilePath(runtimePaths.gamesRootPath, versionId);
+  const controlState = await readControlStateFile(controlStatePath);
+  return jsonResponse(200, {
+    status: 'ok',
+    versionId,
+    controlState: controlState ?? {},
+  });
+}
+
+export async function handleApiGameControlStatePost(
+  request: Request,
+  versionId: string
+): Promise<Response> {
+  const authFailureResponse = await requireAdminMutationAccess(request);
+  if (authFailureResponse) {
+    return authFailureResponse;
+  }
+
+  if (!isSafeVersionId(versionId)) {
+    return jsonResponse(400, { error: 'Invalid version id' });
+  }
+
+  const runtimePaths = readRuntimePaths();
+  if (!(await hasGameDirectory(runtimePaths.gamesRootPath, versionId))) {
+    return jsonResponse(404, { error: 'Game version not found' });
+  }
+
+  const requestBody = await readJsonBody(request);
+  const controlState = parseGameControlState(requestBody.controlState);
+  if (controlState === null) {
+    return jsonResponse(400, {
+      error: 'Control state must be an object with optional scalar globals',
+    });
+  }
+
+  const controlStatePath = controlStateFilePath(runtimePaths.gamesRootPath, versionId);
+  await writeControlStateFile(controlStatePath, controlState);
+
+  return jsonResponse(200, {
+    status: 'ok',
+    versionId,
+    controlState,
   });
 }
 
