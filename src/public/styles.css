@@ -654,10 +654,13 @@ body {
   transform: translateY(calc(-1 * var(--edit-drawer-height)));
 }
 
+.game-page--drawer-open .game-view-tab {
+  transform: translateY(7px);
+}
+
 .game-page--drawer-open .game-view-tab--active {
   --tab-fill: rgba(6, 12, 31, 0.97);
   border-color: rgba(132, 168, 245, 0.55);
-  transform: translateY(6px);
 }
 
 .game-page--drawer-open .game-home-link,
