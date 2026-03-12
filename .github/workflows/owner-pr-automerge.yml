@@ -81,5 +81,12 @@ jobs:
                 return;
               }
 
+              if (/unstable status/i.test(message)) {
+                core.info(
+                  `Skipping auto-merge enablement for PR #${pr.number}: GitHub reports unstable status while checks are still settling.`
+                );
+                return;
+              }
+
               core.setFailed(`Failed to enable auto-merge for PR #${pr.number}: ${message}`);
             }
