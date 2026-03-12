@@ -58,35 +58,40 @@ jobs:
               return;
             }
 
-            try {
-              await github.graphql(
-                `
-                  mutation EnableAutoMerge($pullRequestId: ID!) {
-                    enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
-                      pullRequest {
-                        number
-                      }
-                    }
+            const mutation = `
+              mutation EnableAutoMerge($pullRequestId: ID!) {
+                enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
+                  pullRequest {
+                    number
                   }
-                `,
-                { pullRequestId: pr.node_id }
-              );
+                }
+              }
+            `;
+            const maxAttempts = 6;
+            const delayMs = 10000;
 
-              core.info(`Enabled auto-merge for PR #${pr.number}.`);
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error);
+            for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+              try {
+                await github.graphql(mutation, { pullRequestId: pr.node_id });
+                core.info(`Enabled auto-merge for PR #${pr.number} on attempt ${attempt}/${maxAttempts}.`);
+                return;
+              } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
 
-              if (/already (has )?auto-merge enabled/i.test(message)) {
-                core.info(`Auto-merge already enabled for PR #${pr.number}.`);
+                if (/already (has )?auto-merge enabled/i.test(message)) {
+                  core.info(`Auto-merge already enabled for PR #${pr.number}.`);
+                  return;
+                }
+
+                if (/unstable status/i.test(message) && attempt < maxAttempts) {
+                  core.info(
+                    `Attempt ${attempt}/${maxAttempts} for PR #${pr.number} hit unstable status. Retrying in ${delayMs / 1000}s.`
+                  );
+                  await new Promise((resolve) => setTimeout(resolve, delayMs));
+                  continue;
+                }
+
+                core.setFailed(`Failed to enable auto-merge for PR #${pr.number}: ${message}`);
                 return;
               }
-
-              if (/unstable status/i.test(message)) {
-                core.info(
-                  `Skipping auto-merge enablement for PR #${pr.number}: GitHub reports unstable status while checks are still settling.`
-                );
-                return;
-              }
-
-              core.setFailed(`Failed to enable auto-merge for PR #${pr.number}: ${message}`);
             }
