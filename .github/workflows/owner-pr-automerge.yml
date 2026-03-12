@@ -4,9 +4,11 @@ on:
   pull_request:
     branches: [main]
     types: [opened, reopened, synchronize, ready_for_review]
+  schedule:
+    - cron: '*/5 * * * *'
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
 
 jobs:
@@ -17,51 +19,53 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const pr = context.payload.pull_request;
-
-            if (!pr) {
-              core.info('No pull request payload found. Skipping.');
-              return;
-            }
-
-            if (pr.base.ref !== 'main') {
-              core.info(`Skipping PR #${pr.number}: base branch is ${pr.base.ref}, expected main.`);
-              return;
-            }
-
-            if (pr.draft) {
-              core.info(`Skipping PR #${pr.number}: draft PRs are not eligible.`);
-              return;
-            }
-
-            if (pr.user?.login !== context.repo.owner) {
-              core.info(
-                `Skipping PR #${pr.number}: author ${pr.user?.login ?? 'unknown'} is not repository owner ${context.repo.owner}.`
-              );
-              return;
-            }
-
             const repositoryFullName = `${context.repo.owner}/${context.repo.repo}`;
-            const isSameRepository =
-              pr.head.repo?.full_name === repositoryFullName &&
-              pr.head.repo?.fork !== true;
-
-            if (!isSameRepository) {
-              core.info(
-                `Skipping PR #${pr.number}: head repository must be ${repositoryFullName} and must not be a fork.`
-              );
-              return;
-            }
-
-            if (typeof pr.node_id !== 'string' || pr.node_id.length === 0) {
-              core.setFailed(`Cannot enable auto-merge for PR #${pr.number}: missing pull request node id.`);
-              return;
-            }
-
             const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
             const isUnstableStatusError = (message) => /pull request is in unstable status/i.test(message);
 
-            try {
+            const isEligiblePr = (pr) => {
+              if (!pr) {
+                core.info('Skipping because pull request payload is missing.');
+                return false;
+              }
+
+              if (pr.base?.ref !== 'main') {
+                core.info(`Skipping PR #${pr.number}: base branch is ${pr.base?.ref}, expected main.`);
+                return false;
+              }
+
+              if (pr.draft) {
+                core.info(`Skipping PR #${pr.number}: draft PRs are not eligible.`);
+                return false;
+              }
+
+              if (pr.user?.login !== context.repo.owner) {
+                core.info(
+                  `Skipping PR #${pr.number}: author ${pr.user?.login ?? 'unknown'} is not repository owner ${context.repo.owner}.`
+                );
+                return false;
+              }
+
+              const isSameRepository =
+                pr.head?.repo?.full_name === repositoryFullName &&
+                pr.head?.repo?.fork !== true;
+
+              if (!isSameRepository) {
+                core.info(
+                  `Skipping PR #${pr.number}: head repository must be ${repositoryFullName} and must not be a fork.`
+                );
+                return false;
+              }
+
+              if (typeof pr.node_id !== 'string' || pr.node_id.length === 0) {
+                core.warning(`Skipping PR #${pr.number}: missing pull request node id.`);
+                return false;
+              }
+
+              return true;
+            };
+
+            const tryEnableAutoMerge = async (pr) => {
               const maxAttempts = 6;
               const retryDelayMs = 10000;
 
@@ -99,14 +103,41 @@ jobs:
                     continue;
                   }
 
+                  if (isUnstableStatusError(message) && isLastAttempt) {
+                    core.warning(
+                      `PR #${pr.number} remained in unstable status after ${maxAttempts} attempts. Will retry on the next scheduled run.`
+                    );
+                    return;
+                  }
+
                   throw error;
                 }
               }
+            };
 
-              core.setFailed(
-                `Failed to enable auto-merge for PR #${pr.number}: PR remained in unstable status after ${maxAttempts} attempts.`
-              );
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error);
-              core.setFailed(`Failed to enable auto-merge for PR #${pr.number}: ${message}`);
+            if (context.eventName === 'pull_request') {
+              const pr = context.payload.pull_request;
+              if (isEligiblePr(pr)) {
+                await tryEnableAutoMerge(pr);
+              }
+              return;
             }
+
+            if (context.eventName === 'schedule') {
+              const { data: pullRequests } = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                base: 'main',
+                per_page: 100,
+              });
+
+              for (const pr of pullRequests) {
+                if (isEligiblePr(pr)) {
+                  await tryEnableAutoMerge(pr);
+                }
+              }
+              return;
+            }
+
+            core.info(`Event ${context.eventName} is not handled by this workflow.`);
