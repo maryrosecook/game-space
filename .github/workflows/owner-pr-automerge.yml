@@ -58,28 +58,55 @@ jobs:
               return;
             }
 
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+            const isUnstableStatusError = (message) => /pull request is in unstable status/i.test(message);
+
             try {
-              await github.graphql(
-                `
-                  mutation EnableAutoMerge($pullRequestId: ID!) {
-                    enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
-                      pullRequest {
-                        number
+              const maxAttempts = 6;
+              const retryDelayMs = 10000;
+
+              for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+                try {
+                  await github.graphql(
+                    `
+                      mutation EnableAutoMerge($pullRequestId: ID!) {
+                        enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) {
+                          pullRequest {
+                            number
+                          }
+                        }
                       }
-                    }
+                    `,
+                    { pullRequestId: pr.node_id }
+                  );
+
+                  core.info(`Enabled auto-merge for PR #${pr.number}.`);
+                  return;
+                } catch (error) {
+                  const message = error instanceof Error ? error.message : String(error);
+
+                  if (/already (has )?auto-merge enabled/i.test(message)) {
+                    core.info(`Auto-merge already enabled for PR #${pr.number}.`);
+                    return;
                   }
-                `,
-                { pullRequestId: pr.node_id }
-              );
 
-              core.info(`Enabled auto-merge for PR #${pr.number}.`);
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error);
+                  const isLastAttempt = attempt === maxAttempts;
+                  if (isUnstableStatusError(message) && !isLastAttempt) {
+                    core.info(
+                      `PR #${pr.number} is in unstable status (attempt ${attempt}/${maxAttempts}). Retrying in ${retryDelayMs / 1000}s.`
+                    );
+                    await sleep(retryDelayMs);
+                    continue;
+                  }
 
-              if (/already (has )?auto-merge enabled/i.test(message)) {
-                core.info(`Auto-merge already enabled for PR #${pr.number}.`);
-                return;
+                  throw error;
+                }
               }
 
+              core.setFailed(
+                `Failed to enable auto-merge for PR #${pr.number}: PR remained in unstable status after ${maxAttempts} attempts.`
+              );
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
               core.setFailed(`Failed to enable auto-merge for PR #${pr.number}: ${message}`);
             }
