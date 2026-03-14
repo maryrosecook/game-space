@@ -11,7 +11,7 @@ Top three features:
 # Repo structure
 
 - `src/` - Backend runtime, browser assets, and service modules.
-  - `server.ts` - Production HTTP entrypoint that boots Next and forwards all requests through `nextBridge.handleRequest`, with centralized `502 Bad gateway` fallback on Next failures.
+  - `server.ts` - HTTP entrypoint that boots Next, forwards all requests through `nextBridge.handleRequest`, and can walk to the next open port when the dev workflow enables fallback and the default port is busy.
   - `gameRuntimeControls.ts` - Shared runtime-settings/control-state types plus slider validation, merge, and resolution helpers used by both the Next client bootstrap and starter runtime.
   - `types.ts` - Shared metadata/version TypeScript types.
   - `public/` - Static browser assets.
@@ -32,12 +32,13 @@ Top three features:
     - `gameBuildPipeline.ts` - Per-game dependency install/build and source-path-to-version mapping.
     - `gameControlState.ts` - Per-version `control-state.json` read/write helpers with atomic queued persistence.
     - `devLiveReload.ts` - Per-version reload-token pathing/writes used by the dev watch loop.
+    - `serverPort.ts` - Server port parsing plus opt-in sequential fallback when the requested default port is occupied.
     - `promptSubmission.ts` - Shared prompt-submit flow (forking, visual attachment validation, session persistence, and tile-snapshot capture) used by Next API handlers.
     - `serverRuntimeState.ts` - Shared mutable runtime singletons (provider store, login limiter, idea-generation state, and codex runner) used across Next-owned page and API handlers.
     - `nextBackendHandlers.ts` - Next Node-runtime auth/API handler implementations preserving existing status/security/data contracts.
     - `nextBridge.ts` - Next server lifecycle wrapper (`prepare`/request handler/close`) used by `src/server.ts` dispatching.
 - `scripts/` - Local automation entrypoints.
-  - `dev.ts` - Per-version startup builds, reload-token seeding, backend spawn with dev live-reload flag, and debounced watch rebuild loop.
+  - `dev.ts` - Per-version startup builds, reload-token seeding, backend spawn with dev live-reload plus default-port fallback enabled, and debounced watch rebuild loop.
   - `build-games.ts` - One-shot build for all game directories.
   - `github/enable-owner-pr-automerge.js` - GitHub Actions helper that filters eligible owner PRs, checks current auto-merge state through `gh`, resolves an allowed non-interactive merge strategy, and retries transient unstable-status enable failures.
 - `src/app/` - Next.js App Router surface for Next-owned runtime routes.
@@ -84,7 +85,7 @@ Top three features:
 
 # Most important code paths
 
-- Request dispatch flow: `src/server.ts` is the single production entrypoint and forwards every request to Next (`nextBridge.handleRequest`) with centralized `502` fallback handling.
+- Request dispatch flow: `src/server.ts` is the single HTTP entrypoint, forwards every request to Next (`nextBridge.handleRequest`) with centralized `502` fallback handling, and when `scripts/dev.ts` enables `GAME_SPACE_ALLOW_PORT_FALLBACK=1`, walks upward from port `3000` until it finds an open port.
 - Auth/homepage/API flow: Next handles `/`, `/_next/*`, `/auth*`, `/api/*`, `/game/*`, `/codex`, `/ideas`, `/public/*`, `/games/*`, and `/favicon.ico`; Node-runtime handlers preserve existing CSRF, rate-limit, cookie, and admin-404 contracts.
 - Game page flow: `src/app/game/[versionId]/page.tsx` validates version/bundle availability, renders `GameApp`, reads any persisted `control-state.json`, and mounts `GamePageClientBootstrap` to start `/games/:versionId/dist/game.js` plus admin/dev client behaviors through Next-managed dynamic imports; bootstrap manages one active runtime teardown at a time, exposes a host-invokable global teardown handle, and passes runtime-settings host capabilities (`versionId`, control-state load/save) into `startGame(canvas, host?)`.
 - Runtime settings flow: admin game pages now split bottom-drawer UX into hammer/build tools and cog/settings drawers; `game-view-client.js` reads runtime slider metadata from `window.__gameSpaceActiveGameRuntimeControls`, renders range inputs into `#settings-form`, keeps the settings drawer sized to its current content up to one-third of the viewport, and debounces `serializeControlState()` saves to `POST /api/games/:versionId/control-state`, while both admin and public loads merge persisted globals from `games/<versionId>/control-state.json`.
@@ -95,7 +96,7 @@ Top three features:
 - Codex transcript/runtime flow: `/codex` and `/api/codex-sessions/:versionId` require admin; `src/app/codex/page.tsx` renders `CodexPageClient`, and client state logic loads transcript payloads, preserves status messaging, and auto-scrolls to newest entries.
 - Ideas flow: `/ideas` requires admin; `src/app/ideas/page.tsx` renders `IdeasPageClient` with base-game selector data (starter + favorited versions, including tile snapshots), and client logic uses typed API wrappers for generate/build/archive while preserving CSRF/header semantics, selected base-game ideation context, single-sentence ideation guidance text, and redirect-on-build behavior.
 - Static/runtime serving flow: Next route handlers serve `/public/*` and `/games/*`; `/games/*` enforcement still uses `isAllowedGamesRuntimeAssetPath()` so only runtime-safe assets are public and sensitive/dev files (including `dist/reload-token.txt`) return `404`.
-- Dev reload flow: when `GAME_SPACE_DEV_LIVE_RELOAD=1`, `scripts/dev.ts` rewrites per-version `dist/reload-token.txt`; browser polling uses `/api/dev/reload-token/:versionId` instead of direct `/games` file access.
+- Dev reload flow: when `GAME_SPACE_DEV_LIVE_RELOAD=1`, `scripts/dev.ts` rewrites per-version `dist/reload-token.txt`, enables default-port fallback for the spawned server, and browser polling uses `/api/dev/reload-token/:versionId` instead of direct `/games` file access.
 - Starter headless flow: `games/starter/src/headless/cli.ts` parses a steps-only protocol (`--smoke`, `--script`, `--json`, or stdin JSON), infers the game ID from cwd, and `parseStarterHeadlessProtocol()` enforces fixed headless constraints before launch; `runStarterHeadless()` launches Chromium with SwiftShader-friendly flags, bundles/loads `browserHarness.ts`, then `executeStarterHeadlessProtocol()` applies deterministic steps through `HeadlessFrameScheduler` and `HeadlessInputManager`, and `persistCaptures()` writes ordered PNGs under `games/starter/snapshots/<timestamp>/`.
 
 # Data stores
@@ -162,7 +163,7 @@ Top three features:
 - Homepage tile layout model: `.game-grid` uses `repeat(3, minmax(0, 1fr))` so sparse tile sets still render in at least three columns; `.game-tile` media is full-bleed (`.tile-image` absolute inset) and game names are exposed through tile link accessibility labels.
 - Static serving model: Next serves shared `src/public/*` and runtime game assets under `/games/*` with allowlist enforcement; static semantics intentionally use Option B (GET-only, no `express.static` HEAD/range/conditional parity).
 - Client build model: Next App Router owns browser client bundling (`src/**` + shared `src/app/shared/**` imports) and emits frontend artifacts under `.next/**`; no generated hydration bundles are tracked under `src/public/react`.
-- Dev live-reload model: token file stays on disk under each game `dist/`, but browser access is routed through `/api/dev/reload-token/:versionId` in dev mode.
+- Dev live-reload model: token file stays on disk under each game `dist/`, browser access is routed through `/api/dev/reload-token/:versionId` in dev mode, and the dev workflow can move from `3000` to the next open port automatically when `3000` is occupied.
 - Deployment model: GitHub Actions deploys `main` to DigitalOcean over SSH using repository secrets and PM2 process management.
 - PR video model: Playwright videos are opt-in per PR update; workflow first enforces exactly one PR-body `video-tests` marker block and then resolves selectors from that block before editing a single status comment in place.
 - Owner PR auto-merge model: a pull-request workflow runs `scripts/github/enable-owner-pr-automerge.js`, which filters to eligible owner-authored same-repo PRs to `main`, treats already-enabled auto-merge as success, resolves an allowed non-interactive merge strategy from repo settings (preferring squash), and retries `gh pr merge --auto` when GitHub temporarily reports the PR in unstable status.
