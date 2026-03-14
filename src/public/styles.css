@@ -279,7 +279,7 @@ body {
 }
 
 .settings-panel {
-  height: 50vh;
+  max-height: calc(100dvh / 3);
   padding: 14px 14px 16px;
   display: flex;
   flex-direction: column;
@@ -298,7 +298,7 @@ body {
 }
 
 .settings-form {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
   display: grid;
