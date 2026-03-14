@@ -8,6 +8,7 @@ const execFileAsync = promisify(execFile);
 
 const DEFAULT_MAX_ATTEMPTS = 6;
 const DEFAULT_RETRY_DELAY_MS = 10_000;
+const MERGE_METHOD_FLAGS_BY_PRIORITY = ['--squash', '--merge', '--rebase'];
 
 async function main() {
   const payload = await readEventPayload();
@@ -41,7 +42,9 @@ async function main() {
     return;
   }
 
+  const mergeMethodFlag = await resolveMergeMethodFlag(repositoryFullName);
   await enableAutoMergeWithRetries({
+    mergeMethodFlag,
     repositoryFullName,
     prNumber,
     maxAttempts,
@@ -144,6 +147,7 @@ async function isAutoMergeAlreadyEnabled(repositoryFullName, prNumber) {
 }
 
 async function enableAutoMergeWithRetries({
+  mergeMethodFlag,
   repositoryFullName,
   prNumber,
   maxAttempts,
@@ -155,6 +159,7 @@ async function enableAutoMergeWithRetries({
         'pr',
         'merge',
         '--auto',
+        mergeMethodFlag,
         '--repo',
         repositoryFullName,
         String(prNumber)
@@ -180,6 +185,42 @@ async function enableAutoMergeWithRetries({
       throw new Error(`Failed to enable auto-merge for PR #${prNumber}: ${message}`);
     }
   }
+}
+
+async function resolveMergeMethodFlag(repositoryFullName) {
+  const repositorySettings = await readRepositoryMergeSettings(repositoryFullName);
+
+  const mergeMethodFlags = [
+    repositorySettings.allow_squash_merge === true ? '--squash' : null,
+    repositorySettings.allow_merge_commit === true ? '--merge' : null,
+    repositorySettings.allow_rebase_merge === true ? '--rebase' : null
+  ].filter((mergeMethodFlag) => mergeMethodFlag !== null);
+
+  for (const mergeMethodFlag of MERGE_METHOD_FLAGS_BY_PRIORITY) {
+    if (mergeMethodFlags.includes(mergeMethodFlag)) {
+      return mergeMethodFlag;
+    }
+  }
+
+  throw new Error(`Repository ${repositoryFullName} does not allow merge, squash, or rebase merges.`);
+}
+
+async function readRepositoryMergeSettings(repositoryFullName) {
+  const response = await runGhCommand(['api', `repos/${repositoryFullName}`]);
+
+  let repositorySettings;
+  try {
+    repositorySettings = JSON.parse(response.stdout);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse repository merge settings: ${message}`);
+  }
+
+  if (!isRecord(repositorySettings)) {
+    throw new Error('Failed to parse repository merge settings: expected a JSON object.');
+  }
+
+  return repositorySettings;
 }
 
 function isBenignAutoMergeMessage(message) {

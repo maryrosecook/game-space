@@ -21,7 +21,7 @@
 
 - Owner PR auto-merge implementation:
   - Replaced the inline GraphQL mutation in [`owner-pr-automerge.yml`](/Users/maryrosecook/conductor/workspaces/game-space/memphis/.github/workflows/owner-pr-automerge.yml) with a checked-in helper script and `gh`-tokenized workflow step.
-  - Added [`enable-owner-pr-automerge.js`](/Users/maryrosecook/conductor/workspaces/game-space/memphis/scripts/github/enable-owner-pr-automerge.js) to keep the existing owner/main/same-repo eligibility checks, preflight current auto-merge state, and retry transient unstable-status failures from `gh pr merge --auto`.
+  - Added [`enable-owner-pr-automerge.js`](/Users/maryrosecook/conductor/workspaces/game-space/memphis/scripts/github/enable-owner-pr-automerge.js) to keep the existing owner/main/same-repo eligibility checks, preflight current auto-merge state, resolve an allowed non-interactive merge strategy from repo settings, and retry transient unstable-status failures from `gh pr merge --auto`.
   - Added integration-style coverage in [`ownerPrAutomergeScript.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/memphis/tests/ownerPrAutomergeScript.test.ts) plus updated workflow assertions in [`repoAutomation.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/memphis/tests/repoAutomation.test.ts).
 - Validation:
   - `npm run typecheck`

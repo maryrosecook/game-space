@@ -81,6 +81,17 @@ if (args[0] === 'pr' && args[1] === 'view') {
   process.exit(0);
 }
 
+if (args[0] === 'api' && args[1] === 'repos/maryrosecook/memphis') {
+  process.stdout.write(
+    JSON.stringify({
+      allow_merge_commit: true,
+      allow_squash_merge: true,
+      allow_rebase_merge: true
+    })
+  );
+  process.exit(0);
+}
+
 if (args[0] === 'pr' && args[1] === 'merge') {
   const previousCount = fs.existsSync(callCountPath)
     ? Number.parseInt(fs.readFileSync(callCountPath, 'utf8'), 10)
@@ -278,9 +289,10 @@ describe('owner PR auto-merge helper script', () => {
     expect(result.stdout).toContain('Enabled auto-merge for PR #112.');
     expect(await readGhCalls(fixture.ghArgumentsPath)).toEqual([
       ['pr', 'view', '--json', 'autoMergeRequest', '--repo', 'maryrosecook/memphis', '112'],
-      ['pr', 'merge', '--auto', '--repo', 'maryrosecook/memphis', '112'],
-      ['pr', 'merge', '--auto', '--repo', 'maryrosecook/memphis', '112'],
-      ['pr', 'merge', '--auto', '--repo', 'maryrosecook/memphis', '112']
+      ['api', 'repos/maryrosecook/memphis'],
+      ['pr', 'merge', '--auto', '--squash', '--repo', 'maryrosecook/memphis', '112'],
+      ['pr', 'merge', '--auto', '--squash', '--repo', 'maryrosecook/memphis', '112'],
+      ['pr', 'merge', '--auto', '--squash', '--repo', 'maryrosecook/memphis', '112']
     ]);
     expect(await readGhMergeCallCount(fixture.ghCallCountPath)).toBe(3);
   });
@@ -314,8 +326,9 @@ describe('owner PR auto-merge helper script', () => {
     expect(result.stderr).toContain('Failed to enable auto-merge for PR #112:');
     expect(await readGhCalls(fixture.ghArgumentsPath)).toEqual([
       ['pr', 'view', '--json', 'autoMergeRequest', '--repo', 'maryrosecook/memphis', '112'],
-      ['pr', 'merge', '--auto', '--repo', 'maryrosecook/memphis', '112'],
-      ['pr', 'merge', '--auto', '--repo', 'maryrosecook/memphis', '112']
+      ['api', 'repos/maryrosecook/memphis'],
+      ['pr', 'merge', '--auto', '--squash', '--repo', 'maryrosecook/memphis', '112'],
+      ['pr', 'merge', '--auto', '--squash', '--repo', 'maryrosecook/memphis', '112']
     ]);
   });
 });

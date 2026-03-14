@@ -39,7 +39,7 @@ Top three features:
 - `scripts/` - Local automation entrypoints.
   - `dev.ts` - Per-version startup builds, reload-token seeding, backend spawn with dev live-reload flag, and debounced watch rebuild loop.
   - `build-games.ts` - One-shot build for all game directories.
-  - `github/enable-owner-pr-automerge.js` - GitHub Actions helper that filters eligible owner PRs, checks current auto-merge state through `gh`, and retries transient unstable-status enable failures.
+  - `github/enable-owner-pr-automerge.js` - GitHub Actions helper that filters eligible owner PRs, checks current auto-merge state through `gh`, resolves an allowed non-interactive merge strategy, and retries transient unstable-status enable failures.
 - `src/app/` - Next.js App Router surface for Next-owned runtime routes.
   - `page.tsx` - Next-owned homepage route that reuses shared homepage-data mapping and admin cookie auth checks.
   - `shared/` - Shared Next-owned client/server page modules.
@@ -165,7 +165,7 @@ Top three features:
 - Dev live-reload model: token file stays on disk under each game `dist/`, but browser access is routed through `/api/dev/reload-token/:versionId` in dev mode.
 - Deployment model: GitHub Actions deploys `main` to DigitalOcean over SSH using repository secrets and PM2 process management.
 - PR video model: Playwright videos are opt-in per PR update; workflow first enforces exactly one PR-body `video-tests` marker block and then resolves selectors from that block before editing a single status comment in place.
-- Owner PR auto-merge model: a pull-request workflow runs `scripts/github/enable-owner-pr-automerge.js`, which filters to eligible owner-authored same-repo PRs to `main`, treats already-enabled auto-merge as success, and retries `gh pr merge --auto` when GitHub temporarily reports the PR in unstable status.
+- Owner PR auto-merge model: a pull-request workflow runs `scripts/github/enable-owner-pr-automerge.js`, which filters to eligible owner-authored same-repo PRs to `main`, treats already-enabled auto-merge as success, resolves an allowed non-interactive merge strategy from repo settings (preferring squash), and retries `gh pr merge --auto` when GitHub temporarily reports the PR in unstable status.
 - Codex validation model: repo-level agent instructions require `npm run typecheck` and `npm run lint` to run sequentially (typecheck first, then lint) to reduce memory pressure.
 
 # Testing

@@ -132,8 +132,9 @@ describe('repo automation configuration', () => {
     expect(script).toContain('if (pr.user?.login !== repositoryOwner)');
     expect(script).toContain('pr.head?.repo?.full_name === repositoryFullName');
     expect(script).toContain('pr.head?.repo?.fork !== true');
-    expect(script).toContain("'pr'");
-    expect(script).toContain("'merge'");
+    expect(script).toContain("['api', `repos/${repositoryFullName}`]");
+    expect(script).toContain('allow_squash_merge === true ? \'--squash\' : null');
+    expect(script).toContain("'--squash'");
     expect(script).toContain("'--auto'");
   });
 
@@ -146,6 +147,7 @@ describe('repo automation configuration', () => {
     expect(script).toContain('already (has )?auto-merge enabled');
     expect(script).toContain('already in (a )?merge queue');
     expect(script).toContain('pull request is in unstable status');
+    expect(script).toContain('does not allow merge, squash, or rebase merges');
     expect(script).toContain('Failed to enable auto-merge for PR #');
   });
 
