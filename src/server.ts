@@ -1,13 +1,35 @@
+import type { Server } from 'node:http';
+
 import dotenv from 'dotenv';
-import express from 'express';
+import express, { type Express } from 'express';
 
 import { createNextBridge } from './services/nextBridge';
+import { readRequestedServerPort, startServerOnRequestedPort } from './services/serverPort';
 import { setTrustedClientIpOnExpressRequest } from './services/trustedClientIp';
 
 dotenv.config();
 
+function listen(app: Express, port: number): Promise<Server> {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(port);
+
+    function handleError(error: Error): void {
+      server.off('listening', handleListening);
+      reject(error);
+    }
+
+    function handleListening(): void {
+      server.off('error', handleError);
+      resolve(server);
+    }
+
+    server.once('error', handleError);
+    server.once('listening', handleListening);
+  });
+}
+
 async function main(): Promise<void> {
-  const port = Number.parseInt(process.env.PORT ?? '3000', 10);
+  const requestedPort = readRequestedServerPort();
   const nextBridge = await createNextBridge({
     repoRootPath: process.cwd(),
     dev: process.env.GAME_SPACE_NEXT_DEV === '1'
@@ -29,9 +51,16 @@ async function main(): Promise<void> {
     });
   });
 
-  app.listen(port, () => {
-    console.log(`Game Space listening on http://localhost:${port}`);
-  });
+  const { port, usedFallback } = await startServerOnRequestedPort(
+    (candidatePort) => listen(app, candidatePort),
+    requestedPort
+  );
+
+  if (usedFallback) {
+    console.warn(`Port ${requestedPort.port} is busy, using ${port} instead`);
+  }
+
+  console.log(`Game Space listening on http://localhost:${port}`);
 }
 
 void main().catch((error: unknown) => {

@@ -17,3 +17,14 @@
 
 - Reviewed the touched files against `~/.codex/docs/style-guide.md` and `~/.codex/prompts/final-code-review.md`.
 - No additional style-guide or final-review issues remained after the last fixes. The small inline admin warmup script in [`src/app/game/[versionId]/page.tsx`](/Users/maryrosecook/conductor/workspaces/game-space/phoenix/src/app/game/[versionId]/page.tsx) is intentional duplication to guarantee prompt-draft persistence and annotation-canvas styling before the hydrated legacy client finishes loading.
+
+- Dev port fallback implementation:
+  - Added [`src/services/serverPort.ts`](/Users/maryrosecook/conductor/workspaces/game-space/barcelona-v2/src/services/serverPort.ts) to parse `PORT` and optionally walk upward from the default port when fallback is enabled.
+  - Updated [`src/server.ts`](/Users/maryrosecook/conductor/workspaces/game-space/barcelona-v2/src/server.ts) to bind through that helper and log when it moves off an occupied default port.
+  - Updated [`scripts/dev.ts`](/Users/maryrosecook/conductor/workspaces/game-space/barcelona-v2/scripts/dev.ts) to enable fallback for the spawned dev server only, leaving explicit `PORT` behavior unchanged.
+  - Added unit/source coverage in [`tests/serverPort.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/barcelona-v2/tests/serverPort.test.ts) and [`tests/devScript.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/barcelona-v2/tests/devScript.test.ts), plus browser-level fallback coverage in [`tests/e2e/dev-port-fallback.spec.ts`](/Users/maryrosecook/conductor/workspaces/game-space/barcelona-v2/tests/e2e/dev-port-fallback.spec.ts).
+- Validation:
+  - `npm run typecheck`
+  - `npm run lint`
+  - `npm run test -- tests/serverPort.test.ts tests/devScript.test.ts`
+  - `npm run test:e2e -- tests/e2e/dev-port-fallback.spec.ts`
