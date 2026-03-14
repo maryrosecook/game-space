@@ -70,7 +70,7 @@ Top three features:
     - `src/headless/runner.ts` - Playwright orchestration, harness bundling, and PNG file persistence.
     - `src/headless/cli.ts` - Starter-local CLI (`--smoke`, `--script`, `--json`, or stdin JSON via `--stdin` / piped input) for headless runs.
     - `package.json` - Starter-local scripts (`headless`, `headless:install`, `headless:smoke`, `headless:run`) and dev dependencies.
-    - `snapshots/` - Timestamped output directories for headless captures (gitignored).
+    - `snapshots/` - Timestamped output directories for headless captures.
 - `tests/` - Vitest unit/integration coverage for Next handlers and core services, plus Playwright E2E specs under `tests/e2e/`.
 - `playwright.config.ts` - Default E2E runner config (video off unless explicitly enabled).
 - `docs/`
@@ -107,7 +107,7 @@ Top three features:
     - `dist/game.js` - Built runtime bundle served to clients.
     - `dist/reload-token.txt` - Dev-only rebuild token (read through `/api/dev/reload-token/:versionId` when dev live reload is enabled).
     - `node_modules/` - Per-version installed dependencies.
-- `games/starter/snapshots/` - Starter headless capture output (timestamped directories, gitignored).
+- `games/starter/snapshots/` - Starter headless capture output (timestamped directories).
   - `<timestamp>/`
     - `<index>-<label>.png` - Snapshot captured at a deterministic frame.
 - `ideas.json` - Root ideation history store.
