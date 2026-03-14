@@ -115,6 +115,7 @@ describe('repo automation configuration', () => {
 
   it('owner pr auto-merge workflow only targets eligible owner-authored main PRs', async () => {
     const workflow = await readRepoFile('.github/workflows/owner-pr-automerge.yml');
+    const script = await readRepoFile('scripts/github/enable-owner-pr-automerge.js');
 
     expect(workflow).toContain('name: Owner PR Auto-Merge');
     expect(workflow).toContain('pull_request:');
@@ -123,23 +124,29 @@ describe('repo automation configuration', () => {
     expect(workflow).toContain('permissions:');
     expect(workflow).toContain('contents: write');
     expect(workflow).toContain('pull-requests: write');
-    expect(workflow).toContain('const pr = context.payload.pull_request;');
-    expect(workflow).toContain("if (pr.base.ref !== 'main')");
-    expect(workflow).toContain('if (pr.draft)');
-    expect(workflow).toContain('if (pr.user?.login !== context.repo.owner)');
-    expect(workflow).toContain('pr.head.repo?.full_name === repositoryFullName');
-    expect(workflow).toContain('pr.head.repo?.fork !== true');
-    expect(workflow).toContain('enablePullRequestAutoMerge');
+    expect(workflow).toContain('actions/checkout@v4');
+    expect(workflow).toContain('GH_TOKEN: ${{ github.token }}');
+    expect(workflow).toContain('node scripts/github/enable-owner-pr-automerge.js');
+    expect(script).toContain("if (pr.base?.ref !== 'main')");
+    expect(script).toContain('if (pr.draft === true)');
+    expect(script).toContain('if (pr.user?.login !== repositoryOwner)');
+    expect(script).toContain('pr.head?.repo?.full_name === repositoryFullName');
+    expect(script).toContain('pr.head?.repo?.fork !== true');
+    expect(script).toContain("'pr'");
+    expect(script).toContain("'merge'");
+    expect(script).toContain("'--auto'");
   });
 
-  it('owner pr auto-merge workflow safely ignores non-eligible PRs and handles known benign API errors', async () => {
-    const workflow = await readRepoFile('.github/workflows/owner-pr-automerge.yml');
+  it('owner pr auto-merge helper safely ignores non-eligible PRs and handles benign/retryable gh states', async () => {
+    const script = await readRepoFile('scripts/github/enable-owner-pr-automerge.js');
 
-    expect(workflow).toContain('No pull request payload found. Skipping.');
-    expect(workflow).toContain('draft PRs are not eligible');
-    expect(workflow).toContain('head repository must be');
-    expect(workflow).toContain('already (has )?auto-merge enabled');
-    expect(workflow).toContain('core.setFailed(`Failed to enable auto-merge');
+    expect(script).toContain('No pull request payload found. Skipping.');
+    expect(script).toContain('draft PRs are not eligible');
+    expect(script).toContain('head repository must be');
+    expect(script).toContain('already (has )?auto-merge enabled');
+    expect(script).toContain('already in (a )?merge queue');
+    expect(script).toContain('pull request is in unstable status');
+    expect(script).toContain('Failed to enable auto-merge for PR #');
   });
 
   it('pull request template nudges authors to request feature videos for user-visible changes', async () => {
