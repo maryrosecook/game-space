@@ -1230,6 +1230,31 @@ describe("game view prompt submit client", () => {
 		]);
 	});
 
+	it("recomputes the settings drawer height when runtime controls rerender while open", async () => {
+		const runtimeControls = createRuntimeControls(4);
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { status: "ok" };
+				},
+			}),
+			{ runtimeControls },
+		);
+
+		harness.settingsPanel.offsetHeight = 184;
+		harness.settingsTab.dispatchEvent("click", createEvent());
+		expect(harness.body.style.getPropertyValue("--edit-drawer-height")).toBe(
+			"184px",
+		);
+
+		harness.settingsPanel.offsetHeight = 118;
+		harness.dispatchWindowEvent("game-runtime-controls-changed");
+		expect(harness.body.style.getPropertyValue("--edit-drawer-height")).toBe(
+			"118px",
+		);
+	});
+
 	it("reflects the initial favorite state from page dataset", async () => {
 		const harness = await runGameViewScript(
 			async () => ({
