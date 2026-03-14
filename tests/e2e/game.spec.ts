@@ -115,6 +115,24 @@ test("public game page hides manual tile snapshot capture controls", async ({
 	await expect(page.locator("#game-tab-capture-tile")).toHaveCount(0);
 });
 
+test("game page installs global iOS loupe prevention guards", async ({
+	page,
+}) => {
+	await page.goto("/game/starter");
+
+	const interactionGuardScript = await page
+		.locator("script")
+		.evaluateAll((scripts) =>
+			scripts
+				.map((script) => script.textContent ?? "")
+				.find((content) => content.includes("lastTouchEndAt")) ?? "",
+		);
+
+	expect(interactionGuardScript).toContain("'touchstart'");
+	expect(interactionGuardScript).toContain("'touchmove'");
+	expect(interactionGuardScript).toContain("'gesturestart'");
+});
+
 test("game page does not log a favicon 404 console error on load", async ({
 	page,
 }) => {
