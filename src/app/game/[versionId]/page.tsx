@@ -185,6 +185,30 @@ function renderInteractionGuardsScript(): string {
       (target instanceof HTMLElement && target.isContentEditable);
 
     document.addEventListener(
+      'touchstart',
+      (event) => {
+        if (isTextEntryTarget(event.target)) {
+          return;
+        }
+
+        event.preventDefault();
+      },
+      { passive: false }
+    );
+
+    document.addEventListener(
+      'touchmove',
+      (event) => {
+        if (isTextEntryTarget(event.target)) {
+          return;
+        }
+
+        event.preventDefault();
+      },
+      { passive: false }
+    );
+
+    document.addEventListener(
       'touchend',
       (event) => {
         const now = Date.now();
@@ -192,6 +216,14 @@ function renderInteractionGuardsScript(): string {
           event.preventDefault();
         }
         lastTouchEndAt = now;
+      },
+      { passive: false }
+    );
+
+    document.addEventListener(
+      'gesturestart',
+      (event) => {
+        event.preventDefault();
       },
       { passive: false }
     );
