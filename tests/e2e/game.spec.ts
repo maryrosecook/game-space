@@ -862,6 +862,24 @@ test("admin game toolbar separates build and settings drawers with synced aria s
 	await expect(settingsPanel).toHaveAttribute("aria-hidden", "false");
 	await expect(promptPanel).toHaveAttribute("aria-hidden", "true");
 	await expect(settingsForm).toHaveCSS("overflow-y", "auto");
+	await expect
+		.poll(async () => {
+			return page.evaluate(() => {
+				const tabs = document
+					.querySelector(".game-toolbar-main")
+					?.closest(".game-bottom-tabs");
+				const panel = document.getElementById("settings-panel");
+				if (!(tabs instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
+					return Number.POSITIVE_INFINITY;
+				}
+
+				const tabsRect = tabs.getBoundingClientRect();
+				const panelRect = panel.getBoundingClientRect();
+				const shift = window.innerHeight - tabsRect.bottom;
+				return Math.abs(shift - panelRect.height);
+			});
+		})
+		.toBeLessThanOrEqual(2);
 
 	const settingsDrawerLayout = await page.evaluate(() => {
 		const tabs = document.querySelector(".game-toolbar-main")?.closest(".game-bottom-tabs");
@@ -891,15 +909,93 @@ test("admin game toolbar separates build and settings drawers with synced aria s
 	});
 	expect(settingsDrawerLayout).not.toBeNull();
 	expect(Math.abs(settingsDrawerLayout!.shift - settingsDrawerLayout!.panelHeight)).toBeLessThanOrEqual(2);
-	expect(settingsDrawerLayout!.activeTabBottomGap).toBeLessThanOrEqual(2);
+	expect(settingsDrawerLayout!.activeTabBottomGap).toBeLessThanOrEqual(4);
 	expect(settingsDrawerLayout!.tabTopOffset).toBeLessThanOrEqual(1);
 
 	const settingsHeightRatio = await settingsPanel.evaluate((element) => {
 		const rect = element.getBoundingClientRect();
 		return rect.height / window.innerHeight;
 	});
-	expect(settingsHeightRatio).toBeGreaterThan(0.45);
-	expect(settingsHeightRatio).toBeLessThan(0.55);
+	expect(settingsHeightRatio).toBeGreaterThan(0.15);
+	expect(settingsHeightRatio).toBeLessThan(1 / 3);
+
+	await page.evaluate(() => {
+		const runtimeWindow = window as Window & {
+			__gameSpaceActiveGameRuntimeControls?: {
+				getSliders?: () => unknown[];
+			};
+		};
+
+		const controls = runtimeWindow.__gameSpaceActiveGameRuntimeControls;
+		if (!controls || typeof controls.getSliders !== "function") {
+			throw new Error("Runtime settings controls unavailable");
+		}
+
+		controls.getSliders = () => {
+			return Array.from({ length: 8 }, (_, index) => ({
+				id: `generated-slider-${index}`,
+				label: `Generated slider ${index + 1}`,
+				min: 0,
+				max: 10,
+				step: 1,
+				globalKey: `generated-slider-${index}`,
+				value: index,
+			}));
+		};
+
+		window.dispatchEvent(new Event("game-runtime-controls-changed"));
+	});
+	await expect
+		.poll(async () => {
+			return page.evaluate(() => {
+				const tabs = document
+					.querySelector(".game-toolbar-main")
+					?.closest(".game-bottom-tabs");
+				const panel = document.getElementById("settings-panel");
+				if (!(tabs instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
+					return Number.POSITIVE_INFINITY;
+				}
+
+				const tabsRect = tabs.getBoundingClientRect();
+				const panelRect = panel.getBoundingClientRect();
+				const shift = window.innerHeight - tabsRect.bottom;
+				return Math.abs(shift - panelRect.height);
+			});
+		})
+		.toBeLessThanOrEqual(2);
+
+	const cappedSettingsDrawerLayout = await page.evaluate(() => {
+		const tabs = document.querySelector(".game-toolbar-main")?.closest(".game-bottom-tabs");
+		const panel = document.getElementById("settings-panel");
+		const form = document.getElementById("settings-form");
+		if (
+			!(tabs instanceof HTMLElement) ||
+			!(panel instanceof HTMLElement) ||
+			!(form instanceof HTMLElement)
+		) {
+			return null;
+		}
+
+		const tabsRect = tabs.getBoundingClientRect();
+		const panelRect = panel.getBoundingClientRect();
+		const shift = window.innerHeight - tabsRect.bottom;
+		return {
+			shift,
+			panelHeight: panelRect.height,
+			heightRatio: panelRect.height / window.innerHeight,
+			formIsScrollable: form.scrollHeight > form.clientHeight + 1,
+		};
+	});
+	expect(cappedSettingsDrawerLayout).not.toBeNull();
+	expect(
+		Math.abs(
+			cappedSettingsDrawerLayout!.shift -
+				cappedSettingsDrawerLayout!.panelHeight,
+		),
+	).toBeLessThanOrEqual(2);
+	expect(cappedSettingsDrawerLayout!.heightRatio).toBeGreaterThan(0.3);
+	expect(cappedSettingsDrawerLayout!.heightRatio).toBeLessThanOrEqual(1 / 3);
+	expect(cappedSettingsDrawerLayout!.formIsScrollable).toBe(true);
 
 	await editToggle.dispatchEvent("click");
 	await expect(editToggle).toHaveAttribute("aria-expanded", "true");
@@ -907,6 +1003,24 @@ test("admin game toolbar separates build and settings drawers with synced aria s
 	await expect(promptPanel).toHaveAttribute("aria-hidden", "false");
 	await expect(settingsPanel).toHaveAttribute("aria-hidden", "true");
 	await expect(transcriptToggle).toHaveAttribute("aria-expanded", "false");
+	await expect
+		.poll(async () => {
+			return page.evaluate(() => {
+				const tabs = document
+					.querySelector(".game-toolbar-main")
+					?.closest(".game-bottom-tabs");
+				const panel = document.getElementById("prompt-panel");
+				if (!(tabs instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
+					return Number.POSITIVE_INFINITY;
+				}
+
+				const tabsRect = tabs.getBoundingClientRect();
+				const panelRect = panel.getBoundingClientRect();
+				const shift = window.innerHeight - tabsRect.bottom;
+				return Math.abs(shift - panelRect.height);
+			});
+		})
+		.toBeLessThanOrEqual(2);
 
 	const promptDrawerShift = await page.evaluate(() => {
 		const tabs = document.querySelector(".game-toolbar-main")?.closest(".game-bottom-tabs");

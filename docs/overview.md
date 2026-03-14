@@ -71,7 +71,7 @@ Top three features:
     - `src/headless/runner.ts` - Playwright orchestration, harness bundling, and PNG file persistence.
     - `src/headless/cli.ts` - Starter-local CLI (`--smoke`, `--script`, `--json`, or stdin JSON via `--stdin` / piped input) for headless runs.
     - `package.json` - Starter-local scripts (`headless`, `headless:install`, `headless:smoke`, `headless:run`) and dev dependencies.
-    - `snapshots/` - Timestamped output directories for headless captures (gitignored).
+    - `snapshots/` - Timestamped output directories for headless captures.
 - `tests/` - Vitest unit/integration coverage for Next handlers and core services, plus Playwright E2E specs under `tests/e2e/`.
 - `playwright.config.ts` - Default E2E runner config (video off unless explicitly enabled).
 - `docs/`
@@ -87,7 +87,7 @@ Top three features:
 - Request dispatch flow: `src/server.ts` is the single HTTP entrypoint, forwards every request to Next (`nextBridge.handleRequest`) with centralized `502` fallback handling, and when `scripts/dev.ts` enables `GAME_SPACE_ALLOW_PORT_FALLBACK=1`, walks upward from port `3000` until it finds an open port.
 - Auth/homepage/API flow: Next handles `/`, `/_next/*`, `/auth*`, `/api/*`, `/game/*`, `/codex`, `/ideas`, `/public/*`, `/games/*`, and `/favicon.ico`; Node-runtime handlers preserve existing CSRF, rate-limit, cookie, and admin-404 contracts.
 - Game page flow: `src/app/game/[versionId]/page.tsx` validates version/bundle availability, renders `GameApp`, reads any persisted `control-state.json`, and mounts `GamePageClientBootstrap` to start `/games/:versionId/dist/game.js` plus admin/dev client behaviors through Next-managed dynamic imports; bootstrap manages one active runtime teardown at a time, exposes a host-invokable global teardown handle, and passes runtime-settings host capabilities (`versionId`, control-state load/save) into `startGame(canvas, host?)`.
-- Runtime settings flow: admin game pages now split bottom-drawer UX into hammer/build tools and cog/settings drawers; `game-view-client.js` reads runtime slider metadata from `window.__gameSpaceActiveGameRuntimeControls`, renders range inputs into `#settings-form`, and debounces `serializeControlState()` saves to `POST /api/games/:versionId/control-state`, while both admin and public loads merge persisted globals from `games/<versionId>/control-state.json`.
+- Runtime settings flow: admin game pages now split bottom-drawer UX into hammer/build tools and cog/settings drawers; `game-view-client.js` reads runtime slider metadata from `window.__gameSpaceActiveGameRuntimeControls`, renders range inputs into `#settings-form`, keeps the settings drawer sized to its current content up to one-third of the viewport, and debounces `serializeControlState()` saves to `POST /api/games/:versionId/control-state`, while both admin and public loads merge persisted globals from `games/<versionId>/control-state.json`.
 - Favorite toggle flow: `POST /api/games/:versionId/favorite` requires admin + CSRF, flips the `favorite` boolean in `metadata.json`, and returns the new state for `src/app/game/[versionId]/legacy/game-view-client.js` to reflect in the star button.
 - Manual tile snapshot flow: admin game pages expose a recorder button (`#game-tab-capture-tile`) in the Edit drawer action row (left of delete) that captures current `#game-canvas` pixels as a PNG data URL; client capture waits for animation frames and retries when the output matches a blank-canvas PNG before posting to `POST /api/games/:versionId/tile-snapshot`, which validates the payload, writes `games/<version-id>/snapshots/tile.png`, and stores a cache-busted `tileSnapshotPath` in metadata so homepage tiles refresh immediately.
 - Prompt fork flow: `POST /api/games/:versionId/prompts` requires admin + CSRF, forks via `createForkedGameVersion()` (prompt-derived three-word base plus random 10-character lowercase alphanumeric suffix), persists the submitted user prompt in the new fork's `metadata.json`, sets lifecycle state to `created`, composes full prompt, launches the provider-selected runner (`codex` or `claude`) behind `CodexRunner`, persists `codexSessionId` as soon as observed, and transitions lifecycle to `stopped` or `error` when the run settles.
@@ -108,7 +108,7 @@ Top three features:
     - `dist/game.js` - Built runtime bundle served to clients.
     - `dist/reload-token.txt` - Dev-only rebuild token (read through `/api/dev/reload-token/:versionId` when dev live reload is enabled).
     - `node_modules/` - Per-version installed dependencies.
-- `games/starter/snapshots/` - Starter headless capture output (timestamped directories, gitignored).
+- `games/starter/snapshots/` - Starter headless capture output (timestamped directories).
   - `<timestamp>/`
     - `<index>-<label>.png` - Snapshot captured at a deterministic frame.
 - `ideas.json` - Root ideation history store.
