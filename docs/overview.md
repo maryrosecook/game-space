@@ -39,6 +39,7 @@ Top three features:
 - `scripts/` - Local automation entrypoints.
   - `dev.ts` - Per-version startup builds, reload-token seeding, backend spawn with dev live-reload flag, and debounced watch rebuild loop.
   - `build-games.ts` - One-shot build for all game directories.
+  - `github/enable-owner-pr-automerge.js` - GitHub Actions helper that filters eligible owner PRs, checks current auto-merge state through `gh`, resolves an allowed non-interactive merge strategy, and retries transient unstable-status enable failures.
 - `src/app/` - Next.js App Router surface for Next-owned runtime routes.
   - `page.tsx` - Next-owned homepage route that reuses shared homepage-data mapping and admin cookie auth checks.
   - `shared/` - Shared Next-owned client/server page modules.
@@ -58,7 +59,7 @@ Top three features:
 - `.github/workflows/` - CI/CD workflow automation.
   - `deploy-main.yml` - Deploys `main` to the DigitalOcean server over SSH and restarts/starts `game-space` with PM2.
   - `pr-feature-videos.yml` - PR-scoped, opt-in Playwright video workflow that records selected E2E specs and upserts one PR comment with artifact links.
-  - `owner-pr-automerge.yml` - Enables GitHub auto-merge for eligible non-draft PRs to `main` created by the repository owner from the same repository.
+  - `owner-pr-automerge.yml` - Checks out the repo and runs the local owner-PR auto-merge helper for eligible PRs to `main`.
 - `.github/pull_request_template.md` - PR template with `video-tests` selector block for requesting feature-video runs.
 - `games/` - Versioned game sandboxes (one runtime/build boundary per version).
   - `starter/` - Minimal touch-and-mouse WebGL starter with browser/headless adapters and local headless tooling.
@@ -164,7 +165,7 @@ Top three features:
 - Dev live-reload model: token file stays on disk under each game `dist/`, but browser access is routed through `/api/dev/reload-token/:versionId` in dev mode.
 - Deployment model: GitHub Actions deploys `main` to DigitalOcean over SSH using repository secrets and PM2 process management.
 - PR video model: Playwright videos are opt-in per PR update; workflow first enforces exactly one PR-body `video-tests` marker block and then resolves selectors from that block before editing a single status comment in place.
-- Owner PR auto-merge model: a pull-request workflow attempts `enablePullRequestAutoMerge` only for non-draft PRs to `main` opened by the repository owner from the same repository and ignores all non-matching PRs.
+- Owner PR auto-merge model: a pull-request workflow runs `scripts/github/enable-owner-pr-automerge.js`, which filters to eligible owner-authored same-repo PRs to `main`, treats already-enabled auto-merge as success, resolves an allowed non-interactive merge strategy from repo settings (preferring squash), and retries `gh pr merge --auto` when GitHub temporarily reports the PR in unstable status.
 - Codex validation model: repo-level agent instructions require `npm run typecheck` and `npm run lint` to run sequentially (typecheck first, then lint) to reduce memory pressure.
 
 # Testing
@@ -189,14 +190,11 @@ Top three features:
   - Prompt fork/session lifecycle persistence flow and transcript parsing behavior across Codex + Claude JSONL formats.
   - Metadata persistence safety for multiline/quoted/Unicode prompt text and concurrent metadata writes.
   - Realtime transcription session creation route behavior (`200`, `502`, `503`) and game-page client WebRTC transcription wiring through `/v1/realtime/calls`.
-    <<<<<<< HEAD
-  - # Game page client behavior for CSRF header inclusion, admin/public UI states, favorite-star toggling, paintbrush-driven annotation activation, transcript auto-scroll wiring on panel open and polling updates, top-anchored realtime voice-overlay auto-follow behavior, and Edit-tab generating spinner class toggling for both Codex and Claude generation states.
   - Game page client behavior for CSRF header inclusion, admin/public UI states, favorite-star toggling, transcript auto-scroll wiring on panel open and polling updates, top-anchored realtime voice-overlay auto-follow behavior, and Edit-tab generating spinner class toggling for both Codex and Claude generation states.
   - Runtime-settings coverage for slider metadata validation/merge logic, `/api/games/:versionId/control-state` validation + atomic persistence, hammer/settings drawer behavior, icon-only microphone button, and starter `particleAmount` persistence across reloads.
-    > > > > > > > ed44f59 (Add runtime settings controls)
   - `/codex` client behavior, including transcript render auto-scroll request on initial load.
   - `/ideas` client behavior for base-game selector UI, generate request payload (`baseGameVersionId`), and archive interactions.
-  - Repo automation workflow integrity checks, including YAML parse validation for `.github/workflows/pr-feature-videos.yml` and `.github/workflows/owner-pr-automerge.yml`.
+  - Repo automation workflow integrity checks, including YAML parse validation for `.github/workflows/pr-feature-videos.yml` and `.github/workflows/owner-pr-automerge.yml`, plus stubbed `gh` integration coverage for the owner-PR auto-merge helper retry/skip paths.
   - Source-level runtime assertions cover starter runtime behavior in `tests/gameRuntimeSource.test.ts`; the starter engine still has no dedicated engine-unit-test module.
   - Starter headless coverage includes protocol validation/guard rails (`tests/starterHeadlessProtocol.test.ts`), deterministic step execution + runtime ceiling (`tests/starterHeadlessExecutor.test.ts`), and adapter behavior for deterministic scheduler and synthetic input (`tests/starterHeadlessAdapters.test.ts`).
 - End-to-end automation flow:
