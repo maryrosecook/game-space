@@ -1473,6 +1473,18 @@ function renderSettingsControls() {
   }
 }
 
+function syncSettingsControls() {
+  renderSettingsControls();
+
+  if (uiState.activeDrawer === "settings") {
+    window.requestAnimationFrame(() => {
+      if (uiState.activeDrawer === "settings") {
+        updateSettingsDrawerHeight();
+      }
+    });
+  }
+}
+
 function updateDrawerHeightForPanel(panelElement) {
   if (!(panelElement instanceof HTMLElement)) {
     return;
@@ -1555,8 +1567,7 @@ function applyBottomPanelState() {
     resizePromptInput();
     updatePromptDrawerHeight();
   } else if (runtimeSettingsOpen) {
-    renderSettingsControls();
-    updateSettingsDrawerHeight();
+    syncSettingsControls();
   } else {
     document.body.style.setProperty("--edit-drawer-height", "0px");
   }
@@ -1891,7 +1902,7 @@ function initializeGameViewControls() {
   hasInitializedGameViewControls = true;
 
   restorePromptDraftFromStorage();
-  renderSettingsControls();
+  syncSettingsControls();
   applyBottomPanelState();
   resizePromptInput();
   updateTileCaptureButtonVisualState();
@@ -1973,7 +1984,7 @@ function initializeGameViewControls() {
   });
 
   window.addEventListener(gameRuntimeControlsChangedEvent, () => {
-    renderSettingsControls();
+    syncSettingsControls();
   });
 
   window.addEventListener(

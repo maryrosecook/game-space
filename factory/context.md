@@ -33,3 +33,25 @@
 
 - Updated [`docs/overview.md`](/Users/maryrosecook/conductor/workspaces/game-space/memphis/docs/overview.md) to describe the new helper-script workflow path, the retrying `gh pr merge --auto` model, and the added automation test coverage.
 - Removed stale merge-conflict markers from [`docs/overview.md`](/Users/maryrosecook/conductor/workspaces/game-space/memphis/docs/overview.md) while making the required overview update.
+
+## Settings Drawer Sizing
+
+- Implementation:
+  - Updated [`src/public/styles.css`](/Users/maryrosecook/conductor/workspaces/game-space/brasilia/src/public/styles.css) so the runtime settings drawer grows to its content instead of forcing `50vh`, while capping its height at one-third of the viewport.
+  - Updated [`src/app/game/[versionId]/legacy/game-view-client.js`](/Users/maryrosecook/conductor/workspaces/game-space/brasilia/src/app/game/[versionId]/legacy/game-view-client.js) so open settings drawer rerenders resync `--edit-drawer-height` on the next animation frame, keeping the bottom tabs aligned after runtime-control changes.
+  - Added focused regression coverage in [`tests/gameViewClient.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/brasilia/tests/gameViewClient.test.ts) and [`tests/e2e/game.spec.ts`](/Users/maryrosecook/conductor/workspaces/game-space/brasilia/tests/e2e/game.spec.ts) for content-sized settings height, one-third viewport capping, and live rerender height syncing.
+- Validation:
+  - `npm run test -- tests/gameViewClient.test.ts`
+  - `npm run test:e2e -- tests/e2e/game.spec.ts --grep "admin game toolbar separates build and settings drawers with synced aria state"`
+  - `npm run typecheck`
+  - `npm run lint`
+
+## Documentation
+
+- Updated [`docs/overview.md`](/Users/maryrosecook/conductor/workspaces/game-space/brasilia/docs/overview.md) so the runtime settings flow notes the drawer now sizes to its content up to one-third of the viewport.
+
+## Style Guide Review
+
+- Reviewed the changed settings drawer files against `~/.codex/docs/style-guide.md` and `~/.codex/prompts/final-code-review.md`.
+- No remaining style-guide or final-review issues found in the touched files.
+- Reverted generated `src/next-env.d.ts` churn from the Playwright build so the diff stays scoped to the requested behavior change.
