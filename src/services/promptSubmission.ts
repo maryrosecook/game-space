@@ -376,15 +376,13 @@ export async function submitPromptForVersion(options: {
         logError(`Failed to store codex session status for ${forkedMetadata.id}`, error);
       }
 
-      if (runResult.completionDetected !== false) {
-        void captureTileSnapshot(forkDirectoryPath)
-          .then(async () => {
-            await persistTileSnapshotPath(`/games/${encodeURIComponent(forkedMetadata.id)}/snapshots/tile.png`);
-          })
-          .catch((error: unknown) => {
-            logError(`Failed to capture tile snapshot for ${forkedMetadata.id}`, error);
-          });
-      }
+      void captureTileSnapshot(forkDirectoryPath)
+        .then(async () => {
+          await persistTileSnapshotPath(`/games/${encodeURIComponent(forkedMetadata.id)}/snapshots/tile.png`);
+        })
+        .catch((error: unknown) => {
+          logError(`Failed to capture tile snapshot for ${forkedMetadata.id}`, error);
+        });
     })
     .catch((error) => {
       void persistSessionStatus('error').catch((statusError: unknown) => {

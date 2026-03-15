@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { createForkedGameVersion } from '../src/services/forkGameVersion';
-import { readMetadataFile } from '../src/services/gameVersions';
+import { listGameVersions, readMetadataFile } from '../src/services/gameVersions';
 import { createGameFixture, createTempDirectory } from './testHelpers';
 
 describe('createForkedGameVersion', () => {
@@ -183,6 +183,42 @@ describe('createForkedGameVersion', () => {
     expect(created.id).toMatch(/^new-arcade-game-[a-z0-9]{10}$/);
     expect(created.threeWords).toBe('new-arcade-game');
     expect(created.prompt).toBeUndefined();
+  });
+
+  it('does not copy source tile snapshots into the fork', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-fork-snapshot-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    const sourceDirectoryPath = await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'source-game',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z',
+        favorite: true,
+        tileSnapshotPath: '/games/source-game/snapshots/tile.png?v=source-cache'
+      }
+    });
+
+    await fs.mkdir(path.join(sourceDirectoryPath, 'snapshots'), { recursive: true });
+    await fs.writeFile(path.join(sourceDirectoryPath, 'snapshots', 'tile.png'), 'source snapshot\n', 'utf8');
+
+    const created = await createForkedGameVersion({
+      gamesRootPath,
+      sourceVersionId: 'source-game',
+      idFactory: () => 'fork-game',
+      now: () => new Date('2026-03-02T00:00:00.000Z')
+    });
+
+    const versions = await listGameVersions(gamesRootPath);
+    const forkVersion = versions.find((version) => version.id === created.id);
+    expect(forkVersion?.id).toBe('fork-game');
+    expect(forkVersion?.tileSnapshotPath).toBeUndefined();
+
+    const forkMetadata = await readMetadataFile(path.join(gamesRootPath, 'fork-game', 'metadata.json'));
+    expect(forkMetadata?.tileSnapshotPath).toBeUndefined();
+    await expect(fs.access(path.join(gamesRootPath, 'fork-game', 'snapshots', 'tile.png'))).rejects.toThrow();
   });
 
   it('starts a new lineage when forking from starter', async () => {

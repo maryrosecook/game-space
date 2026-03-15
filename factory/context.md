@@ -150,3 +150,41 @@
 - Style Guide Review:
   - Reviewed the touched files against `~/.codex/docs/style-guide.md` and `~/.codex/prompts/final-code-review.md`.
   - No remaining issues found in the final diff for this tweak.
+
+## Clone Tile Snapshot Fix
+
+- Updated [`src/services/forkGameVersion.ts`](/Users/maryrosecook/conductor/workspaces/game-space/trenton/src/services/forkGameVersion.ts) so new forks still copy the source game tree but skip the top-level `snapshots/` directory, preventing cloned homepage tiles from inheriting stale `snapshots/tile.png` output from the source game.
+- Added regression coverage in [`tests/forkGameVersion.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/trenton/tests/forkGameVersion.test.ts) and [`tests/e2e/homepage.spec.ts`](/Users/maryrosecook/conductor/workspaces/game-space/trenton/tests/e2e/homepage.spec.ts) to prove the copied snapshot file is absent and the homepage renders the fork with a placeholder instead of the source image.
+- Validation:
+  - `npm run test -- tests/forkGameVersion.test.ts`
+  - `npm run test:e2e -- tests/e2e/homepage.spec.ts --grep "newly forked clone"`
+  - `npm run typecheck`
+  - `npm run lint`
+
+## Style Guide Review
+
+- Reviewed the clone snapshot fix against `~/.codex/docs/style-guide.md` and `~/.codex/prompts/final-code-review.md`.
+- No further issues remained after narrowing the copy filter to top-level fork artifacts and reusing existing test helpers for the browser regression.
+
+## Documentation
+
+- Updated [`docs/overview.md`](/Users/maryrosecook/conductor/workspaces/game-space/trenton/docs/overview.md) to document that fork creation now excludes copied snapshot artifacts so new clones cannot inherit stale homepage tiles.
+
+## Automatic Tile Snapshot Fix
+
+- Updated [`src/services/promptSubmission.ts`](/Users/maryrosecook/conductor/workspaces/game-space/trenton/src/services/promptSubmission.ts) so successful prompt runs always trigger the post-generation tile capture, even when the live `completionDetected` flag stays `false`.
+- Added focused coverage in [`tests/promptSubmission.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/trenton/tests/promptSubmission.test.ts) for the `completionDetected: false` success path, and browser coverage in [`tests/e2e/homepage.spec.ts`](/Users/maryrosecook/conductor/workspaces/game-space/trenton/tests/e2e/homepage.spec.ts) that confirms the generated homepage tile image appears after that path completes.
+- Validation:
+  - `npm run test -- tests/promptSubmission.test.ts`
+  - `npm run test:e2e -- tests/e2e/homepage.spec.ts --grep "without completionDetected"`
+  - `npm run typecheck`
+  - `npm run lint`
+
+## Style Guide Review
+
+- Reviewed the prompt-submission follow-up fix against `~/.codex/docs/style-guide.md` and `~/.codex/prompts/final-code-review.md`.
+- No further issues remained after removing the unreliable completion gate and scoping the regression coverage to the background metadata/tile update path.
+
+## Documentation
+
+- Updated [`docs/overview.md`](/Users/maryrosecook/conductor/workspaces/game-space/trenton/docs/overview.md) so the automatic tile snapshot model now states that capture runs after any successful codegen exit.
