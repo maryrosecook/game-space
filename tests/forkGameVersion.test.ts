@@ -36,6 +36,7 @@ describe('createForkedGameVersion', () => {
       id: 'fork-game',
       threeWords: 'new-arcade-game',
       parentId: 'source-game',
+      lineageId: 'source-game',
       createdTime: '2026-03-02T00:00:00.000Z',
       favorite: false,
       codexSessionId: null,
@@ -114,6 +115,7 @@ describe('createForkedGameVersion', () => {
 
     const forkMetadata = await readMetadataFile(path.join(gamesRootPath, 'linen-drift-sage', 'metadata.json'));
     expect(forkMetadata?.parentId).toBe('source-game');
+    expect(forkMetadata?.lineageId).toBe('source-game');
   });
 
   it('derives a descriptive three-word id from the source prompt and appends a random suffix', async () => {
@@ -217,6 +219,30 @@ describe('createForkedGameVersion', () => {
     const forkMetadata = await readMetadataFile(path.join(gamesRootPath, 'fork-game', 'metadata.json'));
     expect(forkMetadata?.tileSnapshotPath).toBeUndefined();
     await expect(fs.access(path.join(gamesRootPath, 'fork-game', 'snapshots', 'tile.png'))).rejects.toThrow();
+  });
+
+  it('starts a new lineage when forking from starter', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-fork-starter-lineage-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'starter',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z'
+      }
+    });
+
+    const created = await createForkedGameVersion({
+      gamesRootPath,
+      sourceVersionId: 'starter',
+      idFactory: () => 'starter-lineage',
+      now: () => new Date('2026-03-02T00:00:00.000Z')
+    });
+
+    expect(created.lineageId).toBe('starter-lineage');
   });
 
   it('throws when idFactory generates an invalid fork id', async () => {

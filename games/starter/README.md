@@ -38,6 +38,7 @@ Keep `dist/` gitignored.
 
 - `createStarterGameFile()` in `src/main.ts` is the default scene contract: one particle-emitter thing/blueprint, camera `{ x: 0, y: 0 }`, background color, `globals`, and `editor.sliders`.
 - Runtime settings live in top-level `globals` and are surfaced through `editor.sliders`.
+- Every `editor.sliders` entry includes `gameDevRequested` so explicitly requested tunables stay identifiable across future prompts.
 - Add visible actors by adding things (and matching blueprints) to `createStarterGameFile()`.
 - Blueprint handlers are `create(thing, game)`, `input(thing, game, input)`, `update(thing, game, input)`, and `collision(thing, otherThing, game)`.
 - Runtime helpers on `game`: `spawn({ blueprint, position, overrides? })`, `spawnParticle({ position, velocity, color, size? })`, and `destroy(thingOrId)`.

@@ -12,11 +12,11 @@ describe('game runtime controls helpers', () => {
   it('merges persisted globals over base globals', () => {
     expect(
       mergeGameGlobals(
-        { particleAmount: 4, showHud: true },
-        { globals: { particleAmount: 7 } }
+        { particles: 4, showHud: true },
+        { globals: { particles: 7 } }
       )
     ).toEqual({
-      particleAmount: 7,
+      particles: 7,
       showHud: true
     });
   });
@@ -25,12 +25,26 @@ describe('game runtime controls helpers', () => {
     expect(
       parseGameEditorSliders([
         {
-          id: 'particleAmount',
-          label: 'Amount of particles',
+          id: 'particles',
+          label: 'Particles',
           min: 1,
           max: 10,
           step: 0,
-          globalKey: 'particleAmount'
+          globalKey: 'particles',
+          gameDevRequested: false
+        }
+      ])
+    ).toBeNull();
+
+    expect(
+      parseGameEditorSliders([
+        {
+          id: 'particles',
+          label: 'Particles',
+          min: 1,
+          max: 10,
+          step: 1,
+          globalKey: 'particles'
         }
       ])
     ).toBeNull();
@@ -39,12 +53,13 @@ describe('game runtime controls helpers', () => {
   it('resolves runtime sliders only for numeric global keys', () => {
     const sliders = parseGameEditorSliders([
       {
-        id: 'particleAmount',
-        label: 'Amount of particles',
+        id: 'particles',
+        label: 'Particles',
         min: 1,
         max: 10,
         step: 1,
-        globalKey: 'particleAmount'
+        globalKey: 'particles',
+        gameDevRequested: false
       },
       {
         id: 'missing',
@@ -52,7 +67,8 @@ describe('game runtime controls helpers', () => {
         min: 1,
         max: 10,
         step: 1,
-        globalKey: 'missingValue'
+        globalKey: 'missingValue',
+        gameDevRequested: true
       }
     ]);
     if (sliders === null) {
@@ -62,19 +78,20 @@ describe('game runtime controls helpers', () => {
     expect(
       resolveRuntimeSliders(
         {
-          particleAmount: 8,
+          particles: 8,
           showHud: true
         },
         sliders
       )
     ).toEqual([
       {
-        id: 'particleAmount',
-        label: 'Amount of particles',
+        id: 'particles',
+        label: 'Particles',
         min: 1,
         max: 10,
         step: 1,
-        globalKey: 'particleAmount',
+        globalKey: 'particles',
+        gameDevRequested: false,
         value: 8
       }
     ]);
@@ -83,12 +100,13 @@ describe('game runtime controls helpers', () => {
   it('clamps persisted slider globals into range and step', () => {
     const sliders = parseGameEditorSliders([
       {
-        id: 'particleAmount',
-        label: 'Amount of particles',
+        id: 'particles',
+        label: 'Particles',
         min: 1,
         max: 10,
         step: 1,
-        globalKey: 'particleAmount'
+        globalKey: 'particles',
+        gameDevRequested: false
       }
     ]);
     if (sliders === null) {
@@ -103,12 +121,12 @@ describe('game runtime controls helpers', () => {
     expect(
       applySliderValuesToGlobals(
         {
-          particleAmount: 12.4
+          particles: 12.4
         },
         sliders
       )
     ).toEqual({
-      particleAmount: 10
+      particles: 10
     });
   });
 });

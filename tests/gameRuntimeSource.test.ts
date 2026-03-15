@@ -11,15 +11,16 @@ describe('starter runtime defaults', () => {
     expect(loadedGame.game.blueprints).toHaveLength(1);
     expect(loadedGame.game.camera).toEqual({ x: 0, y: 0 });
     expect(loadedGame.game.backgroundColor).toBe('#020617');
-    expect(loadedGame.game.globals).toEqual({ particleAmount: 4 });
+    expect(loadedGame.game.globals).toEqual({ particles: 4 });
     expect(loadedGame.game.editor?.sliders).toEqual([
       {
-        id: 'particleAmount',
-        label: 'Amount of particles',
+        id: 'particles',
+        label: 'Particles',
         min: 1,
         max: 10,
         step: 1,
-        globalKey: 'particleAmount'
+        globalKey: 'particles',
+        gameDevRequested: false
       }
     ]);
   });
@@ -36,10 +37,10 @@ describe('starter runtime defaults', () => {
   it('merges persisted control-state globals when the runtime host provides them', async () => {
     const dataSource = createStarterDataSource({
       versionId: 'starter',
-      loadControlState: () => Promise.resolve({ globals: { particleAmount: 9 } })
+      loadControlState: () => Promise.resolve({ globals: { particles: 9 } })
     });
     const loadedGame = await dataSource.loadGame('starter');
 
-    expect(loadedGame.game.globals).toEqual({ particleAmount: 9 });
+    expect(loadedGame.game.globals).toEqual({ particles: 9 });
   });
 });

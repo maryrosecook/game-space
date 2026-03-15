@@ -242,10 +242,7 @@ test('homepage does not reuse a source game tile snapshot for a newly forked clo
       `/games/${sourceVersionId}/snapshots/tile.png?v=source-cache`,
     );
 
-    const forkTile = page.locator(`.game-tile[data-version-id="${forkId}"]`);
-    await expect(forkTile).toBeVisible();
-    await expect(forkTile.locator('img.tile-image')).toHaveCount(0);
-    await expect(forkTile.locator('.tile-image--placeholder')).toHaveCount(1);
+    await expect(page.locator(`.game-tile[data-version-id="${forkId}"]`)).toHaveCount(0);
   } finally {
     await fs.rm(sourceGamePath, { recursive: true, force: true });
     if (forkId) {

@@ -4,9 +4,16 @@ import path from "node:path";
 
 import { loginAsAdmin } from "./helpers/auth";
 
+const ONE_BY_ONE_PNG_BASE64 =
+	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aQ0QAAAAASUVORK5CYII=";
+
 async function waitForAdminGameViewReady(page: Page): Promise<void> {
 	await expect(page.locator("#game-tab-edit")).toHaveAttribute(
 		"aria-busy",
+		"false",
+	);
+	await expect(page.locator("#game-tab-settings")).toHaveAttribute(
+		"aria-disabled",
 		"false",
 	);
 }
@@ -212,16 +219,17 @@ test("starter game ships runtime settings metadata and loads canvas", async ({
 		blueprintNames: ["starter-particle-emitter"],
 		camera: { x: 0, y: 0 },
 		backgroundColor: "#020617",
-		globals: { particleAmount: 4 },
+		globals: { particles: 4 },
 		editor: {
 			sliders: [
 				{
-					id: "particleAmount",
-					label: "Amount of particles",
+					id: "particles",
+					label: "Particles",
 					min: 1,
 					max: 10,
 					step: 1,
-					globalKey: "particleAmount",
+					globalKey: "particles",
+					gameDevRequested: false,
 				},
 			],
 		},
@@ -708,6 +716,125 @@ async function createCopiedStarterGameFixture(
 	};
 }
 
+async function createStarterLineageFixture(prefix: string): Promise<{
+	lineageRootId: string;
+	lineageChildId: string;
+	lineageRootDirectoryPath: string;
+	lineageChildDirectoryPath: string;
+}> {
+	const randomSuffix = Math.random().toString(36).slice(2, 10);
+	const lineageRootId = `${prefix}-root-${Date.now().toString(36)}-${randomSuffix}`;
+	const lineageChildId = `${prefix}-child-${Date.now().toString(36)}-${randomSuffix}`;
+	const bundleSourcePath = path.resolve("games/starter/dist/game.js");
+	const sharedSnapshotBytes = Buffer.from(ONE_BY_ONE_PNG_BASE64, "base64");
+
+	async function createVersion(options: {
+		versionId: string;
+		parentId: string;
+		lineageId: string;
+		threeWords: string;
+		createdTime: string;
+	}): Promise<string> {
+		const gameDirectoryPath = path.resolve("games", options.versionId);
+		await fs.mkdir(path.join(gameDirectoryPath, "dist"), { recursive: true });
+		await fs.mkdir(path.join(gameDirectoryPath, "snapshots"), {
+			recursive: true,
+		});
+		await fs.copyFile(
+			bundleSourcePath,
+			path.join(gameDirectoryPath, "dist", "game.js"),
+		);
+		await fs.writeFile(
+			path.join(gameDirectoryPath, "snapshots", "tile.png"),
+			sharedSnapshotBytes,
+		);
+		await fs.writeFile(
+			path.join(gameDirectoryPath, "metadata.json"),
+			JSON.stringify(
+				{
+					id: options.versionId,
+					parentId: options.parentId,
+					lineageId: options.lineageId,
+					threeWords: options.threeWords,
+					createdTime: options.createdTime,
+				},
+				null,
+				2,
+			) + "\n",
+			"utf8",
+		);
+
+		return gameDirectoryPath;
+	}
+
+	const lineageRootDirectoryPath = await createVersion({
+		versionId: lineageRootId,
+		parentId: "starter",
+		lineageId: lineageRootId,
+		threeWords: "lineage-root-spark",
+		createdTime: "2026-03-10T00:00:00.000Z",
+	});
+	const lineageChildDirectoryPath = await createVersion({
+		versionId: lineageChildId,
+		parentId: lineageRootId,
+		lineageId: lineageRootId,
+		threeWords: "lineage-child-glow",
+		createdTime: "2026-03-11T00:00:00.000Z",
+	});
+
+	return {
+		lineageRootId,
+		lineageChildId,
+		lineageRootDirectoryPath,
+		lineageChildDirectoryPath,
+	};
+}
+
+async function createNoSettingsGameFixture(
+	prefix: string,
+): Promise<{ versionId: string; gameDirectoryPath: string }> {
+	const randomSuffix = Math.random().toString(36).slice(2, 10);
+	const versionId = `${prefix}-${Date.now().toString(36)}-${randomSuffix}`;
+	const gameDirectoryPath = path.resolve("games", versionId);
+	const gameBundlePath = path.join(gameDirectoryPath, "dist", "game.js");
+	const metadataPath = path.join(gameDirectoryPath, "metadata.json");
+	const bundleSource = `export function startGame(canvas) {
+  window.__gameSpaceNoSettingsFixtureStarted = true;
+  const context = canvas.getContext("2d");
+  if (context) {
+    context.fillStyle = "#123456";
+    context.fillRect(0, 0, Math.max(1, canvas.width), Math.max(1, canvas.height));
+  }
+
+  return {
+    teardown() {},
+  };
+}
+`;
+
+	await fs.mkdir(path.dirname(gameBundlePath), { recursive: true });
+	await fs.writeFile(gameBundlePath, bundleSource, "utf8");
+	await fs.writeFile(
+		metadataPath,
+		JSON.stringify(
+			{
+				id: versionId,
+				parentId: "starter",
+				createdTime: new Date().toISOString(),
+				favorite: false,
+			},
+			null,
+			2,
+		) + "\n",
+		"utf8",
+	);
+
+	return {
+		versionId,
+		gameDirectoryPath,
+	};
+}
+
 test("manual tile capture returns unique tile URLs and homepage uses the latest path", async ({
 	page,
 }) => {
@@ -760,6 +887,88 @@ test("manual tile capture returns unique tile URLs and homepage uses the latest 
 		).toHaveAttribute("src", secondTileSnapshotPath);
 	} finally {
 		await fs.rm(gameDirectoryPath, { recursive: true, force: true });
+	}
+});
+
+test("homepage groups a lineage into one tile and lineage modal can play and delete clones", async ({
+	page,
+}) => {
+	const {
+		lineageRootId,
+		lineageChildId,
+		lineageRootDirectoryPath,
+		lineageChildDirectoryPath,
+	} = await createStarterLineageFixture("e2e-lineage");
+
+	try {
+		await loginAsAdmin(page);
+		await page.goto("/");
+		const lineageTile = page.locator(
+			`.game-tile[data-lineage-id="${lineageRootId}"]`,
+		);
+		await expect(lineageTile).toHaveCount(1);
+		await expect(lineageTile).toHaveAttribute("data-version-id", lineageChildId);
+
+		await lineageTile.click();
+		await expect(page).toHaveURL(
+			new RegExp(`/game/${encodeURIComponent(lineageChildId)}$`),
+		);
+		await waitForAdminGameViewReady(page);
+
+		await page.locator("#game-tab-edit").click();
+		await page.locator("#game-tab-lineage").click();
+		await expect(page.locator("#lineage-modal")).toHaveAttribute(
+			"aria-hidden",
+			"false",
+		);
+		await expect(
+			page.locator('#lineage-list [data-lineage-row="true"]'),
+		).toHaveCount(2);
+		await expect(
+			page.locator(
+				`#lineage-list [data-lineage-row="true"][data-lineage-version-id="${lineageChildId}"]`,
+			),
+		).toHaveCSS("border-top-color", "rgb(243, 239, 226)");
+
+		await page
+			.locator(
+				`#lineage-list [data-lineage-version-id="${lineageRootId}"] [data-lineage-action="play"]`,
+			)
+			.click();
+		await expect(page).toHaveURL(
+			new RegExp(`/game/${encodeURIComponent(lineageRootId)}$`),
+		);
+		await waitForAdminGameViewReady(page);
+
+		await page.locator("#game-tab-edit").click();
+		await page.locator("#game-tab-lineage").click();
+		const acceptDeleteDialog = page.waitForEvent("dialog").then((dialog) => {
+			return dialog.accept();
+		});
+		await page
+			.locator(
+				`#lineage-list [data-lineage-version-id="${lineageRootId}"] [data-lineage-action="delete"]`,
+			)
+			.click({ force: true });
+		await acceptDeleteDialog;
+
+		await expect(page).toHaveURL(
+			new RegExp(`/game/${encodeURIComponent(lineageChildId)}$`),
+		);
+		await waitForAdminGameViewReady(page);
+		await expect
+			.poll(async () => {
+				try {
+					await fs.access(lineageRootDirectoryPath);
+					return true;
+				} catch {
+					return false;
+				}
+			})
+			.toBe(false);
+	} finally {
+		await fs.rm(lineageRootDirectoryPath, { recursive: true, force: true });
+		await fs.rm(lineageChildDirectoryPath, { recursive: true, force: true });
 	}
 });
 
@@ -856,6 +1065,7 @@ test("admin game toolbar separates build and settings drawers with synced aria s
 	await expect(settingsPanel).toHaveAttribute("aria-hidden", "true");
 	await expect(transcriptPanel).toHaveAttribute("aria-hidden", "true");
 	await expect(recordButton).toHaveText("");
+	await expect(settingsToggle).toHaveAttribute("aria-disabled", "false");
 
 	await settingsToggle.click();
 	await expect(settingsToggle).toHaveAttribute("aria-expanded", "true");
@@ -933,15 +1143,16 @@ test("admin game toolbar separates build and settings drawers with synced aria s
 
 		controls.getSliders = () => {
 			return Array.from({ length: 8 }, (_, index) => ({
-				id: `generated-slider-${index}`,
-				label: `Generated slider ${index + 1}`,
-				min: 0,
-				max: 10,
-				step: 1,
-				globalKey: `generated-slider-${index}`,
-				value: index,
-			}));
-		};
+					id: `generated-slider-${index}`,
+					label: `Generated slider ${index + 1}`,
+					min: 0,
+					max: 10,
+					step: 1,
+					globalKey: `generated-slider-${index}`,
+					gameDevRequested: false,
+					value: index,
+				}));
+			};
 
 		window.dispatchEvent(new Event("game-runtime-controls-changed"));
 	});
@@ -1056,7 +1267,41 @@ test("admin game toolbar separates build and settings drawers with synced aria s
 	await expect(settingsPanel).toHaveAttribute("aria-hidden", "true");
 });
 
-test("particle amount slider persists across reloads and increases rendered particle density", async ({
+test("settings tab stays disabled when a game exposes no runtime settings", async ({
+	page,
+}) => {
+	const { versionId, gameDirectoryPath } = await createNoSettingsGameFixture(
+		"e2e-no-settings",
+	);
+
+	try {
+		await loginAsAdmin(page);
+		await page.goto(`/game/${encodeURIComponent(versionId)}`);
+		await page.waitForFunction(
+			() => document.body.dataset.gameReactHydrated === "true",
+		);
+		await page.waitForFunction(() => {
+			const runtimeWindow = window as Window & {
+				__gameSpaceNoSettingsFixtureStarted?: boolean;
+			};
+
+			return runtimeWindow.__gameSpaceNoSettingsFixtureStarted === true;
+		});
+
+		const settingsToggle = page.locator("#game-tab-settings");
+		await expect(settingsToggle).toBeDisabled();
+		await expect(settingsToggle).toHaveAttribute("aria-disabled", "true");
+		await expect(settingsToggle).toHaveAttribute("aria-expanded", "false");
+		await expect(page.locator("#settings-panel")).toHaveAttribute(
+			"aria-hidden",
+			"true",
+		);
+	} finally {
+		await fs.rm(gameDirectoryPath, { recursive: true, force: true });
+	}
+});
+
+test("particles slider persists across reloads and increases rendered particle density", async ({
 	page,
 }) => {
 	const { versionId, gameDirectoryPath } = await createCopiedStarterGameFixture(
@@ -1090,11 +1335,11 @@ test("particle amount slider persists across reloads and increases rendered part
 			"aria-hidden",
 			"false",
 		);
-		await expect(page.locator("#settings-slider-particleAmount")).toHaveValue(
+		await expect(page.locator("#settings-slider-particles")).toHaveValue(
 			"4",
 		);
 
-		await setRangeInputValue(page, "#settings-slider-particleAmount", 1);
+		await setRangeInputValue(page, "#settings-slider-particles", 1);
 		await page.waitForTimeout(250);
 
 		await page.reload();
@@ -1117,7 +1362,7 @@ test("particle amount slider persists across reloads and increases rendered part
 			})
 			.toBe(1);
 		await page.locator("#game-tab-settings").click();
-		await expect(page.locator("#settings-slider-particleAmount")).toHaveValue(
+		await expect(page.locator("#settings-slider-particles")).toHaveValue(
 			"1",
 		);
 		await page.waitForTimeout(700);
@@ -1126,7 +1371,7 @@ test("particle amount slider persists across reloads and increases rendered part
 			versionId,
 		);
 
-		await setRangeInputValue(page, "#settings-slider-particleAmount", 10);
+		await setRangeInputValue(page, "#settings-slider-particles", 10);
 		await page.waitForTimeout(250);
 
 		await page.reload();
@@ -1149,7 +1394,7 @@ test("particle amount slider persists across reloads and increases rendered part
 			})
 			.toBe(1);
 		await page.locator("#game-tab-settings").click();
-		await expect(page.locator("#settings-slider-particleAmount")).toHaveValue(
+		await expect(page.locator("#settings-slider-particles")).toHaveValue(
 			"10",
 		);
 		await page.waitForTimeout(700);
