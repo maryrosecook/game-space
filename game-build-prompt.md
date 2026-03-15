@@ -24,6 +24,14 @@ The host page will load and run your game with this fixed contract:
   - `game.spawnParticle({ position, velocity, color, size? })` emits particles.
   - `game.destroy(thingOrId)` removes a thing.
 - Read `[pwd]/README.md` for more details on the available game engine API.
+- When you implement a prompt, add appropriate editable top-level `globals` for meaningful gameplay or visual elements.
+- Expose those tunables through `editor.sliders`; never define more than 7 settings total.
+- Only include settings for meaningful gameplay or visual elements, not incidental internals.
+- If the game dev explicitly asks for a tunable, include it when it still fits the current game shape.
+- Saved runtime settings live at `[game-dir]/control-state.json`.
+- Every slider config entry must include `id`, `label`, `min`, `max`, `step`, `globalKey`, and `gameDevRequested`.
+- Set `gameDevRequested: true` for settings explicitly requested by the game dev; otherwise use `false`.
+- Only remove `gameDevRequested: true` settings when they clearly aren't relevant any more.
 - If a prompt includes an `[annotation_overlay_png_data_url]` image, that image is a screenshot captured from the live game canvas at prompt time.
 - Any yellow drawings visible on that screenshot are creator annotations highlighting what they are describing in the spoken or typed prompt.
 - The headless runner always uses a fixed viewport of `360x640` at `dpr=1`.

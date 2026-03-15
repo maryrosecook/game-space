@@ -13,6 +13,7 @@ export type GameEditorSlider = {
   max: number;
   step: number;
   globalKey: string;
+  gameDevRequested: boolean;
 };
 
 export type GameEditor = {
@@ -108,7 +109,8 @@ export function parseGameEditorSlider(value: unknown): GameEditorSlider | null {
     !isFiniteNumber(value.min) ||
     !isFiniteNumber(value.max) ||
     !isFiniteNumber(value.step) ||
-    !isNonEmptyString(value.globalKey)
+    !isNonEmptyString(value.globalKey) ||
+    typeof value.gameDevRequested !== 'boolean'
   ) {
     return null;
   }
@@ -126,7 +128,8 @@ export function parseGameEditorSlider(value: unknown): GameEditorSlider | null {
     min,
     max,
     step,
-    globalKey: value.globalKey.trim()
+    globalKey: value.globalKey.trim(),
+    gameDevRequested: value.gameDevRequested
   };
 }
 

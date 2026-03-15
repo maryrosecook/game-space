@@ -23,7 +23,7 @@ function createEmitterThing(): RuntimeThing {
   };
 }
 
-function createGameContext(particleAmount: number, particles: Array<Record<string, unknown>>): GameContext {
+function createGameContext(particlesSetting: number, particles: Array<Record<string, unknown>>): GameContext {
   return {
     gameState: {
       things: [],
@@ -31,7 +31,7 @@ function createGameContext(particleAmount: number, particles: Array<Record<strin
       camera: { x: 0, y: 0 },
       screen: { width: 360, height: 640 },
       backgroundColor: '#020617',
-      globals: { particleAmount }
+      globals: { particles: particlesSetting }
     },
     collidingThingIds: new Map(),
     input: EMPTY_TOUCH_INPUT_FRAME,
@@ -83,7 +83,7 @@ describe('starter particle emitter', () => {
     });
   });
 
-  it('emits more particles when particleAmount increases', () => {
+  it('emits more particles when the particles setting increases', () => {
     const lowEmitter = createEmitterThing();
     const highEmitter = createEmitterThing();
     const lowParticles: Array<Record<string, unknown>> = [];
