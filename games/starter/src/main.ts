@@ -26,17 +26,18 @@ import {
 
 const STARTER_BACKGROUND_COLOR = '#020617';
 const STARTER_PARTICLE_COLORS = ['#FACC15', '#F97316', '#EF4444'] as const;
-const STARTER_PARTICLE_AMOUNT_KEY = 'particleAmount';
-const STARTER_PARTICLE_DEFAULT_AMOUNT = 4;
+const STARTER_PARTICLES_KEY = 'particles';
+const STARTER_PARTICLES_DEFAULT = 4;
 const STARTER_PARTICLE_EMISSION_RATE = 0.35;
 const STARTER_PARTICLE_BLUEPRINT_NAME = 'starter-particle-emitter';
-const STARTER_PARTICLE_AMOUNT_SLIDER: GameEditorSlider = {
-  id: 'particleAmount',
-  label: 'Amount of particles',
+const STARTER_PARTICLES_SLIDER: GameEditorSlider = {
+  id: 'particles',
+  label: 'Particles',
   min: 1,
   max: 10,
   step: 1,
-  globalKey: STARTER_PARTICLE_AMOUNT_KEY
+  globalKey: STARTER_PARTICLES_KEY,
+  gameDevRequested: false
 };
 
 let activeEngine: GameEngine | null = null;
@@ -125,13 +126,13 @@ export function createStarterDataSource(host?: GameRuntimeHost): GameEngineDataS
   };
 }
 
-export function readStarterParticleAmount(game: GameContext): number {
-  const particleAmount = game.gameState.globals[STARTER_PARTICLE_AMOUNT_KEY];
-  if (typeof particleAmount !== 'number' || !Number.isFinite(particleAmount)) {
-    return STARTER_PARTICLE_DEFAULT_AMOUNT;
+export function readStarterParticlesSetting(game: GameContext): number {
+  const particles = game.gameState.globals[STARTER_PARTICLES_KEY];
+  if (typeof particles !== 'number' || !Number.isFinite(particles)) {
+    return STARTER_PARTICLES_DEFAULT;
   }
 
-  return particleAmount;
+  return particles;
 }
 
 export function emitStarterParticles(
@@ -140,7 +141,7 @@ export function emitStarterParticles(
   randomValue: () => number = Math.random
 ): number {
   const nextEmission =
-    readStarterParticleAmount(game) * STARTER_PARTICLE_EMISSION_RATE +
+    readStarterParticlesSetting(game) * STARTER_PARTICLE_EMISSION_RATE +
     readEmitterCarry(emitterThing);
   const particleCount = Math.floor(nextEmission);
   emitterThing.data = {
@@ -201,10 +202,10 @@ export function createStarterGameFile(): GameFile {
     camera: { x: 0, y: 0 },
     backgroundColor: STARTER_BACKGROUND_COLOR,
     globals: {
-      [STARTER_PARTICLE_AMOUNT_KEY]: STARTER_PARTICLE_DEFAULT_AMOUNT
+      [STARTER_PARTICLES_KEY]: STARTER_PARTICLES_DEFAULT
     },
     editor: {
-      sliders: [STARTER_PARTICLE_AMOUNT_SLIDER]
+      sliders: [STARTER_PARTICLES_SLIDER]
     }
   };
 }
