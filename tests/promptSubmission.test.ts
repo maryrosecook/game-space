@@ -4,8 +4,10 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { parseStarterHeadlessProtocol } from '../games/starter/src/headless/protocol';
-import { captureTileSnapshotForGame } from '../src/services/promptSubmission';
-import { createTempDirectory } from './testHelpers';
+import { readMetadataFile } from '../src/services/gameVersions';
+import { type CodexRunner } from '../src/services/promptExecution';
+import { captureTileSnapshotForGame, submitPromptForVersion } from '../src/services/promptSubmission';
+import { createGameFixture, createTempDirectory } from './testHelpers';
 
 const ONE_BY_ONE_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aQ0QAAAAASUVORK5CYII=';
@@ -68,6 +70,28 @@ async function createHeadlessFixture(): Promise<HeadlessFixture> {
   };
 }
 
+async function waitForForkMetadata(
+  metadataPath: string,
+  predicate: (tileSnapshotPath: string | undefined) => boolean,
+): Promise<{ tileSnapshotPath: string | undefined; codexSessionStatus: string | undefined }> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const metadata = await readMetadataFile(metadataPath);
+    const tileSnapshotPath = metadata?.tileSnapshotPath ?? undefined;
+    if (predicate(tileSnapshotPath)) {
+      return {
+        tileSnapshotPath,
+        codexSessionStatus: metadata?.codexSessionStatus,
+      };
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  }
+
+  throw new Error(`Timed out waiting for metadata update: ${metadataPath}`);
+}
+
 describe('prompt submission tile snapshot protocol', () => {
   it('preserves tile snapshot capture output behavior', async () => {
     const fixture = await createHeadlessFixture();
@@ -115,5 +139,60 @@ describe('prompt submission tile snapshot protocol', () => {
 
     expect(framesBeforeCapture).toBe(120);
     expect(steps.slice(touchEndStepIndex + 1, -1).some((step) => 'run' in step)).toBe(true);
+  });
+
+  it('persists a homepage tile snapshot after a successful run even when completionDetected is false', async () => {
+    const tempDirectoryPath = await createTempDirectory('game-space-prompt-submit-success-');
+    const gamesRootPath = path.join(tempDirectoryPath, 'games');
+    const buildPromptPath = path.join(tempDirectoryPath, 'game-build-prompt.md');
+    await fs.mkdir(gamesRootPath, { recursive: true });
+    await fs.writeFile(buildPromptPath, 'Build prompt\n', 'utf8');
+
+    await createGameFixture({
+      gamesRootPath,
+      metadata: {
+        id: 'source-game',
+        parentId: null,
+        createdTime: '2026-02-01T00:00:00.000Z',
+      },
+    });
+
+    const capturedForkDirectoryPaths: string[] = [];
+    const logErrors: string[] = [];
+    const codexRunner: CodexRunner = {
+      run: async () => ({
+        sessionId: 'session-123',
+        success: true,
+        failureMessage: null,
+        completionDetected: false,
+      }),
+    };
+
+    const submitResult = await submitPromptForVersion({
+      gamesRootPath,
+      buildPromptPath,
+      codegenProvider: 'codex',
+      versionId: 'source-game',
+      promptInput: 'make it green',
+      codexRunner,
+      captureTileSnapshot: async (forkDirectoryPath) => {
+        capturedForkDirectoryPaths.push(forkDirectoryPath);
+        const tileSnapshotPath = path.join(forkDirectoryPath, 'snapshots', 'tile.png');
+        await fs.mkdir(path.dirname(tileSnapshotPath), { recursive: true });
+        await fs.writeFile(tileSnapshotPath, Buffer.from(ONE_BY_ONE_PNG_BASE64, 'base64'));
+      },
+      logError: (message) => {
+        logErrors.push(message);
+      },
+    });
+
+    const forkDirectoryPath = path.join(gamesRootPath, submitResult.forkId);
+    const metadataPath = path.join(forkDirectoryPath, 'metadata.json');
+    const metadata = await waitForForkMetadata(metadataPath, (tileSnapshotPath) => typeof tileSnapshotPath === 'string');
+
+    expect(capturedForkDirectoryPaths).toEqual([forkDirectoryPath]);
+    expect(metadata.codexSessionStatus).toBe('stopped');
+    expect(metadata.tileSnapshotPath).toBe(`/games/${encodeURIComponent(submitResult.forkId)}/snapshots/tile.png`);
+    expect(logErrors).toEqual([]);
   });
 });

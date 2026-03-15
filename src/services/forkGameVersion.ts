@@ -7,7 +7,7 @@ import { gameDirectoryPath, isSafeVersionId, readMetadataFile, writeMetadataFile
 import { createReadableRandomHexColor } from './tileColor';
 import type { GameMetadata } from '../types';
 
-const excludedDirectoryNames = new Set(['node_modules']);
+const excludedTopLevelDirectoryNames = new Set(['node_modules', 'snapshots']);
 const maxForkIdAttempts = 32;
 const maxIdWordLength = 14;
 const idSuffixLength = 10;
@@ -140,6 +140,16 @@ function ensureStringRecord(value: unknown, label: string): Record<string, unkno
   return value;
 }
 
+function shouldCopyForkPath(sourceDirectoryPath: string, copiedSourcePath: string): boolean {
+  const relativePath = path.relative(sourceDirectoryPath, copiedSourcePath);
+  if (relativePath.length === 0) {
+    return true;
+  }
+
+  const [topLevelName] = relativePath.split(path.sep);
+  return !excludedTopLevelDirectoryNames.has(topLevelName ?? '');
+}
+
 async function ensureForkPackageTypeScriptTooling(forkDirectoryPath: string): Promise<void> {
   const packageJsonPath = path.join(forkDirectoryPath, 'package.json');
   const rawPackageJson = await fs.readFile(packageJsonPath, 'utf8');
@@ -201,8 +211,7 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
   await fs.cp(sourceDirectoryPath, forkDirectoryPath, {
     recursive: true,
     filter: (copiedSourcePath) => {
-      const baseName = path.basename(copiedSourcePath);
-      return !excludedDirectoryNames.has(baseName);
+      return shouldCopyForkPath(sourceDirectoryPath, copiedSourcePath);
     }
   });
 
