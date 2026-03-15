@@ -1,5 +1,5 @@
 {
   "globals": {
-    "particleAmount": 1
+    "particles": 1
   }
 }

@@ -758,6 +758,13 @@ body {
   background: linear-gradient(170deg, rgba(37, 82, 172, 0.95), var(--tab-fill));
 }
 
+.game-view-tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  color: rgba(216, 230, 255, 0.6);
+  border-color: rgba(161, 191, 255, 0.24);
+}
+
 .game-view-icon-tab {
   appearance: none;
   -webkit-appearance: none;

@@ -612,6 +612,7 @@ type RuntimeSlider = {
 	max: number;
 	step: number;
 	globalKey: string;
+	gameDevRequested: boolean;
 	value: number;
 };
 
@@ -648,41 +649,56 @@ type RunGameViewOptions = {
 };
 
 function createRuntimeControls(
-	initialParticleAmount: number,
+	initialParticles: number,
 ): RuntimeControls & { readValue: () => number } {
-	let particleAmount = initialParticleAmount;
+	let particles = initialParticles;
 
 	return {
 		getSliders() {
 			return [
 				{
-					id: "particleAmount",
-					label: "Amount of particles",
+					id: "particles",
+					label: "Particles",
 					min: 1,
 					max: 10,
 					step: 1,
-					globalKey: "particleAmount",
-					value: particleAmount,
+					globalKey: "particles",
+					gameDevRequested: false,
+					value: particles,
 				},
 			];
 		},
 		setGlobalValue(globalKey: string, value: number): boolean {
-			if (globalKey !== "particleAmount") {
+			if (globalKey !== "particles") {
 				return false;
 			}
 
-			particleAmount = Math.max(1, Math.min(10, Math.round(value)));
+			particles = Math.max(1, Math.min(10, Math.round(value)));
 			return true;
 		},
 		serializeControlState() {
 			return {
 				globals: {
-					particleAmount,
+					particles,
 				},
 			};
 		},
 		readValue() {
-			return particleAmount;
+			return particles;
+		},
+	};
+}
+
+function createRuntimeControlsWithoutSliders(): RuntimeControls {
+	return {
+		getSliders() {
+			return [];
+		},
+		setGlobalValue() {
+			return false;
+		},
+		serializeControlState() {
+			return {};
 		},
 	};
 }
@@ -1341,6 +1357,30 @@ describe("game view prompt submit client", () => {
 		);
 	});
 
+	it("disables the settings tab when runtime controls expose no sliders", async () => {
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { status: "ok" };
+				},
+			}),
+			{
+				runtimeControls: createRuntimeControlsWithoutSliders(),
+			},
+		);
+
+		expect(harness.settingsTab.disabled).toBe(true);
+		expect(harness.settingsTab.getAttribute("aria-disabled")).toBe("true");
+
+		harness.settingsTab.dispatchEvent("click", createEvent());
+
+		expect(harness.settingsPanel.getAttribute("aria-hidden")).toBe("true");
+		expect(
+			harness.settingsTab.classList.contains("game-view-tab--active"),
+		).toBe(false);
+	});
+
 	it("opens the settings drawer, renders runtime sliders, and persists slider changes", async () => {
 		const runtimeControls = createRuntimeControls(4);
 		const saveCalls: unknown[] = [];
@@ -1363,6 +1403,8 @@ describe("game view prompt submit client", () => {
 			},
 		);
 
+		expect(harness.settingsTab.disabled).toBe(false);
+		expect(harness.settingsTab.getAttribute("aria-disabled")).toBe("false");
 		expect(harness.settingsPanel.getAttribute("aria-hidden")).toBe("true");
 
 		harness.settingsTab.dispatchEvent("click", createEvent());
@@ -1391,7 +1433,7 @@ describe("game view prompt submit client", () => {
 		expect(saveCalls).toEqual([
 			{
 				globals: {
-					particleAmount: 7,
+					particles: 7,
 				},
 			},
 		]);

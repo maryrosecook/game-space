@@ -137,7 +137,7 @@ describe('next backend control-state handlers', () => {
             csrfToken: 'csrf-control-state',
             controlState: {
               globals: {
-                particleAmount: 8
+                particles: 8
               }
             },
           }),
@@ -149,7 +149,7 @@ describe('next backend control-state handlers', () => {
           versionId: 'starter',
           controlState: {
             globals: {
-              particleAmount: 8
+              particles: 8
             }
           }
         });
@@ -157,7 +157,7 @@ describe('next backend control-state handlers', () => {
         const savedControlState = await readControlStateFile(controlStateFilePath(gamesRootPath, 'starter'));
         expect(savedControlState).toEqual({
           globals: {
-            particleAmount: 8
+            particles: 8
           }
         });
 
@@ -168,7 +168,7 @@ describe('next backend control-state handlers', () => {
           versionId: 'starter',
           controlState: {
             globals: {
-              particleAmount: 8
+              particles: 8
             }
           }
         });
@@ -190,7 +190,7 @@ describe('next backend control-state handlers', () => {
             csrfToken: 'csrf-invalid-control-state',
             controlState: {
               globals: {
-                particleAmount: { nested: true }
+                particles: { nested: true }
               }
             },
           }),
@@ -217,7 +217,7 @@ describe('next backend control-state handlers', () => {
             createControlStatePostRequest({
               sessionToken,
               csrfToken: 'csrf-concurrent-control-state',
-              controlState: { globals: { particleAmount: 2 } },
+              controlState: { globals: { particles: 2 } },
             }),
             'starter',
           ),
@@ -225,7 +225,7 @@ describe('next backend control-state handlers', () => {
             createControlStatePostRequest({
               sessionToken,
               csrfToken: 'csrf-concurrent-control-state',
-              controlState: { globals: { particleAmount: 9 } },
+              controlState: { globals: { particles: 9 } },
             }),
             'starter',
           )
@@ -234,8 +234,8 @@ describe('next backend control-state handlers', () => {
         const fileControlState = await readControlStateFile(controlStateFilePath(gamesRootPath, 'starter'));
         expect(fileControlState === null).toBe(false);
         expect([
-          { globals: { particleAmount: 2 } },
-          { globals: { particleAmount: 9 } }
+          { globals: { particles: 2 } },
+          { globals: { particles: 9 } }
         ]).toContainEqual(fileControlState);
       });
     } finally {

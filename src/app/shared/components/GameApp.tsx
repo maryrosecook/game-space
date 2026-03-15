@@ -35,6 +35,8 @@ export function GameApp({ data }: GameAppProps) {
               aria-controls="settings-panel"
               aria-expanded="false"
               aria-label="Runtime settings"
+              aria-disabled="true"
+              disabled
             >
               <IconMarkup markup={data.settingsIcon} />
             </button>

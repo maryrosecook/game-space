@@ -437,6 +437,7 @@ function readRuntimeSliderDefinitions() {
       typeof slider.id === "string" &&
       typeof slider.label === "string" &&
       typeof slider.globalKey === "string" &&
+      typeof slider.gameDevRequested === "boolean" &&
       typeof slider.min === "number" &&
       Number.isFinite(slider.min) &&
       typeof slider.max === "number" &&
@@ -1538,6 +1539,22 @@ function findRuntimeSliderById(sliderId) {
   return null;
 }
 
+function syncSettingsTabAvailability() {
+  const settingsAvailable = readRuntimeSliderDefinitions().length > 0;
+  settingsTab.disabled = !settingsAvailable;
+  settingsTab.setAttribute(
+    "aria-disabled",
+    settingsAvailable ? "false" : "true",
+  );
+
+  if (!settingsAvailable && uiState.activeDrawer === "settings") {
+    dispatchUiState({ type: "set-active-drawer", drawer: null });
+    applyBottomPanelState();
+  }
+
+  return settingsAvailable;
+}
+
 async function flushSettingsSave() {
   if (!pendingSettingsSave || settingsSaveInFlight) {
     return;
@@ -1662,7 +1679,12 @@ function renderSettingsControls() {
 }
 
 function syncSettingsControls() {
+  const settingsAvailable = syncSettingsTabAvailability();
   renderSettingsControls();
+
+  if (!settingsAvailable) {
+    return;
+  }
 
   if (uiState.activeDrawer === "settings") {
     window.requestAnimationFrame(() => {
@@ -1779,6 +1801,10 @@ function toggleEditPanel() {
 }
 
 function toggleSettingsPanel() {
+  if (settingsTab.disabled) {
+    return;
+  }
+
   if (uiState.activeDrawer === "settings") {
     dispatchUiState({ type: "set-active-drawer", drawer: null });
     applyBottomPanelState();

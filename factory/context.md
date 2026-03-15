@@ -67,6 +67,52 @@
 - No remaining style-guide or final-review issues found in the touched files.
 - Reverted generated `src/next-env.d.ts` churn from the Playwright build so the diff stays scoped to the requested behavior change.
 
+## Settings Tab Disable State
+
+- Implementation:
+  - Updated [`src/app/shared/components/GameApp.tsx`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/src/app/shared/components/GameApp.tsx) so the admin Settings tab renders disabled by default and only becomes interactive after client-side runtime controls confirm slider availability.
+  - Updated [`src/app/game/[versionId]/legacy/game-view-client.js`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/src/app/game/[versionId]/legacy/game-view-client.js) to keep the Settings tab disabled when no sliders exist, prevent opening the drawer in that state, and close it if settings disappear.
+  - Updated [`src/public/styles.css`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/src/public/styles.css), [`tests/gameViewClient.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/tests/gameViewClient.test.ts), and [`tests/e2e/game.spec.ts`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/tests/e2e/game.spec.ts) for disabled-state styling and regression coverage, including a no-settings browser fixture.
+- Validation:
+  - `CI=1 npm test -- tests/gameViewClient.test.ts`
+  - `npm run test:e2e -- tests/e2e/game.spec.ts --grep "admin game toolbar separates build and settings drawers with synced aria state|settings tab stays disabled when a game exposes no runtime settings"`
+
+## Documentation
+
+- Updated [`docs/overview.md`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/docs/overview.md) so the runtime-settings flow and model note that the admin Settings tab stays disabled for games without sliders.
+
+## Style Guide Review
+
+- Reviewed the settings-tab change against `~/.codex/docs/style-guide.md` and `~/.codex/prompts/final-code-review.md`.
+- No remaining style-guide or final-review issues found in the touched files after the disabled-state and test updates.
+
+## Settings Prompt Guidance
+
+- Implementation:
+  - Updated [`game-build-prompt.md`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/game-build-prompt.md) to tell game-building prompts to add meaningful `globals` + `editor.sliders`, cap total settings at 7, preserve explicitly requested tunables when they still fit the game, and mark slider metadata with `gameDevRequested`.
+  - Updated [`src/gameRuntimeControls.ts`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/src/gameRuntimeControls.ts) and [`src/app/game/[versionId]/legacy/game-view-client.js`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/src/app/game/[versionId]/legacy/game-view-client.js) so slider metadata now requires `gameDevRequested: boolean` end-to-end.
+  - Renamed the starter runtime setting from `particleAmount` / `Amount of particles` to `particles` / `Particles` in [`games/starter/src/main.ts`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/games/starter/src/main.ts), [`games/starter/control-state.json`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/games/starter/control-state.json), and the tracked starter bundle via rebuild.
+  - Updated starter-facing docs and regression coverage in [`games/starter/README.md`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/games/starter/README.md), [`tests/gameRuntimeControls.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/tests/gameRuntimeControls.test.ts), [`tests/gameRuntimeSource.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/tests/gameRuntimeSource.test.ts), [`tests/starterParticles.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/tests/starterParticles.test.ts), [`tests/nextBackendHandlers.controlState.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/tests/nextBackendHandlers.controlState.test.ts), [`tests/gameViewClient.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/tests/gameViewClient.test.ts), and [`tests/e2e/game.spec.ts`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/tests/e2e/game.spec.ts).
+- Validation:
+  - `npm --prefix games/starter run build`
+  - `CI=1 npm test -- tests/gameRuntimeControls.test.ts tests/gameRuntimeSource.test.ts tests/starterParticles.test.ts tests/nextBackendHandlers.controlState.test.ts tests/gameViewClient.test.ts tests/starterPackage.test.ts`
+  - `npm run test:e2e -- tests/e2e/game.spec.ts --grep "starter game ships runtime settings metadata and loads canvas|admin game toolbar separates build and settings drawers with synced aria state|settings tab stays disabled when a game exposes no runtime settings|particles slider persists across reloads and increases rendered particle density"`
+
+## Documentation
+
+- Updated [`docs/overview.md`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/docs/overview.md) so the overview reflects the `gameDevRequested` slider metadata, the renamed starter `particles` setting, the prompt-prelude guidance, and the existing disabled-settings-tab behavior.
+
+## Style Guide Review
+
+- Reviewed the prompt/schema/starter changes against `~/.codex/docs/style-guide.md` and `~/.codex/prompts/final-code-review.md`.
+- No remaining style-guide or final-review issues found in the touched files after the schema, starter, prompt, and test updates.
+
+## Prompt Guidance Follow-up
+
+- Updated [`game-build-prompt.md`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/game-build-prompt.md) so it now names the settings file path exactly as `[game-dir]/control-state.json` and narrows the removal rule to `gameDevRequested: true` settings that clearly are no longer relevant.
+- Updated [`docs/overview.md`](/Users/maryrosecook/conductor/workspaces/game-space/lisbon/docs/overview.md) so the prompt-prelude summary stays aligned with the new settings-file guidance.
+- Validation: skipped `typecheck`, `lint`, and tests because this follow-up is prompt/docs-only and does not change executable code.
+
 ## Lineage Tiles
 
 - Implementation:
