@@ -1,6 +1,7 @@
 export type ClientCodegenProvider = "codex" | "claude";
 
 export type HomepageTile = {
+  lineageId: string;
   id: string;
   href: string;
   displayId: string;
@@ -60,10 +61,20 @@ export type IdeasPageData = {
   archiveIdeaIcon: string;
 };
 
+export type GameLineageEntry = {
+  id: string;
+  href: string;
+  displayId: string;
+  tileColor: string;
+  tileSnapshotPath: string | null;
+  isCurrent: boolean;
+};
+
 export type GamePageData = {
   versionId: string;
   isAdmin: boolean;
   isFavorite: boolean;
+  lineageEntries: readonly GameLineageEntry[];
   codegenProvider: ClientCodegenProvider;
   providerLabel: string;
   enableLiveReload: boolean;
@@ -75,6 +86,9 @@ export type GamePageData = {
   rocketIcon: string;
   starIcon: string;
   botIcon: string;
+  lineageIcon: string;
+  playIcon: string;
+  closeIcon: string;
   videoIcon: string;
   trashIcon: string;
 };

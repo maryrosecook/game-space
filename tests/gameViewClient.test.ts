@@ -12,6 +12,7 @@ type TestEvent = {
 	pointerType?: string;
 	clientX?: number;
 	clientY?: number;
+	target?: unknown;
 	preventDefault: () => void;
 };
 
@@ -65,6 +66,10 @@ class TestEventTarget {
 		const listeners = this.listeners.get(type);
 		if (!listeners) {
 			return;
+		}
+
+		if (event.target === undefined) {
+			event.target = this;
 		}
 
 		for (const listener of listeners) {
@@ -125,12 +130,42 @@ class TestStyleDeclaration {
 	}
 }
 
+function dataAttributeNameToDatasetKey(name: string): string {
+	return name
+		.slice(5)
+		.split("-")
+		.map((segment, index) => {
+			if (index === 0) {
+				return segment;
+			}
+
+			return `${segment.slice(0, 1).toUpperCase()}${segment.slice(1)}`;
+		})
+		.join("");
+}
+
+function attributeSelectorParts(
+	selector: string,
+): { name: string; value: string | null } | null {
+	const match = selector.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/);
+	if (!match) {
+		return null;
+	}
+
+	return {
+		name: match[1] ?? "",
+		value: match[2] ?? null,
+	};
+}
+
 class TestHTMLElement extends TestEventTarget {
 	public readonly classList = new TestClassList();
 	public readonly style = new TestStyleDeclaration();
 	private readonly attributes = new Map<string, string>();
 	private readonly children: TestHTMLElement[] = [];
+	public readonly dataset: Record<string, string> = {};
 	public focused = false;
+	public hidden = false;
 	public id = "";
 	public textContent: string | null = null;
 	public scrollTop = 0;
@@ -139,6 +174,7 @@ class TestHTMLElement extends TestEventTarget {
 	public scrollWidth = 0;
 	public offsetHeight = 180;
 	public firstChild: TestHTMLElement | null = null;
+	public parentElement: TestHTMLElement | null = null;
 
 	set className(value: string) {
 		this.classList.replaceAll(value);
@@ -150,6 +186,15 @@ class TestHTMLElement extends TestEventTarget {
 
 	setAttribute(name: string, value: string): void {
 		this.attributes.set(name, value);
+		if (name === "id") {
+			this.id = value;
+		}
+		if (name === "hidden") {
+			this.hidden = true;
+		}
+		if (name.startsWith("data-")) {
+			this.dataset[dataAttributeNameToDatasetKey(name)] = value;
+		}
 	}
 
 	getAttribute(name: string): string | null {
@@ -162,6 +207,7 @@ class TestHTMLElement extends TestEventTarget {
 
 	appendChild(child: TestHTMLElement): TestHTMLElement {
 		this.children.push(child);
+		child.parentElement = this;
 		this.firstChild = this.children[0] ?? null;
 		return child;
 	}
@@ -173,11 +219,51 @@ class TestHTMLElement extends TestEventTarget {
 		}
 
 		this.children.splice(childIndex, 1);
+		child.parentElement = null;
 		this.firstChild = this.children[0] ?? null;
 	}
 
 	childElements(): readonly TestHTMLElement[] {
 		return this.children;
+	}
+
+	remove(): void {
+		this.parentElement?.removeChild(this);
+	}
+
+	querySelectorAll(selector: string): TestHTMLElement[] {
+		const matches: TestHTMLElement[] = [];
+		for (const child of this.children) {
+			if (child.matchesSelector(selector)) {
+				matches.push(child);
+			}
+
+			matches.push(...child.querySelectorAll(selector));
+		}
+
+		return matches;
+	}
+
+	private matchesSelector(selector: string): boolean {
+		if (selector.startsWith("#")) {
+			return this.id === selector.slice(1);
+		}
+
+		if (selector.startsWith(".")) {
+			return this.classList.contains(selector.slice(1));
+		}
+
+		const attributeSelector = attributeSelectorParts(selector);
+		if (!attributeSelector) {
+			return false;
+		}
+
+		const attributeValue = this.getAttribute(attributeSelector.name);
+		if (attributeSelector.value === null) {
+			return attributeValue !== null;
+		}
+
+		return attributeValue === attributeSelector.value;
 	}
 
 	getBoundingClientRect(): { left: number; top: number; height: number } {
@@ -188,6 +274,8 @@ class TestHTMLElement extends TestEventTarget {
 class TestHTMLButtonElement extends TestHTMLElement {
 	public disabled = false;
 }
+
+class TestHTMLUListElement extends TestHTMLElement {}
 
 class TestHTMLFormElement extends TestHTMLElement {
 	requestSubmit(): void {
@@ -389,7 +477,7 @@ class TestHTMLCanvasElement extends TestHTMLElement {
 }
 
 class TestBodyElement extends TestHTMLElement {
-	public readonly dataset: {
+	public override readonly dataset: {
 		versionId?: string;
 		csrfToken?: string;
 		gameFavorited?: string;
@@ -449,12 +537,25 @@ class TestDocument extends TestEventTarget {
 			return new TestHTMLCanvasElement();
 		}
 
+		if (tagName === "button") {
+			return new TestHTMLButtonElement();
+		}
+
+		if (tagName === "ul") {
+			return new TestHTMLUListElement();
+		}
+
+		if (tagName === "li") {
+			return new TestHTMLElement();
+		}
+
 		if (tagName === "input") {
 			return new TestHTMLInputElement();
 		}
 
 		if (
 			tagName === "div" ||
+			tagName === "img" ||
 			tagName === "p" ||
 			tagName === "label" ||
 			tagName === "span"
@@ -480,6 +581,10 @@ type GameViewHarness = {
 	recordButton: TestHTMLButtonElement;
 	tileCaptureButton: TestHTMLButtonElement;
 	codexToggle: TestHTMLButtonElement;
+	lineageButton: TestHTMLButtonElement;
+	lineageModalBackdrop: TestHTMLElement;
+	lineageModal: TestHTMLElement;
+	lineageModalCloseButton: TestHTMLButtonElement;
 	promptForm: TestHTMLFormElement;
 	promptInput: TestHTMLInputElement;
 	promptPanel: TestHTMLElement;
@@ -491,6 +596,8 @@ type GameViewHarness = {
 	renderTranscriptCalls: TranscriptRenderCall[];
 	getScrollToBottomCalls: () => number;
 	intervalCallbacks: Array<() => void>;
+	getLineageDeleteButton: (versionId: string) => TestHTMLButtonElement | null;
+	getLineagePlayButton: (versionId: string) => TestHTMLButtonElement | null;
 	dispatchWindowEvent: (event: string) => void;
 	getPeerConnection: () => TestRTCPeerConnection | null;
 	mediaTrack: TestMediaStreamTrack;
@@ -520,15 +627,22 @@ type RuntimeHost = {
 	saveControlState?: (controlState: unknown) => Promise<void>;
 };
 
+type LineageEntry = {
+	id: string;
+	href: string;
+};
+
 type RunGameViewOptions = {
 	csrfToken?: string | undefined;
 	startTranscriptPolling?: boolean;
 	gameFavorited?: boolean;
 	gameReactHydrated?: boolean;
+	confirmResult?: boolean;
 	codegenProvider?: string;
 	versionId?: string;
 	localStorageEntries?: Record<string, string>;
 	localStorageAvailable?: boolean;
+	lineageEntries?: LineageEntry[];
 	runtimeControls?: RuntimeControls;
 	runtimeHost?: RuntimeHost;
 };
@@ -582,6 +696,7 @@ function createEvent(overrides: Partial<TestEvent> = {}): TestEvent {
 		pointerType: overrides.pointerType,
 		clientX: overrides.clientX,
 		clientY: overrides.clientY,
+		target: overrides.target,
 		preventDefault: overrides.preventDefault ?? (() => {}),
 	};
 }
@@ -607,7 +722,9 @@ async function runGameViewScript(
 	const startTranscriptPolling = options.startTranscriptPolling ?? false;
 	const gameFavorited = options.gameFavorited ?? false;
 	const gameReactHydrated = options.gameReactHydrated ?? true;
+	const confirmResult = options.confirmResult ?? true;
 	const codegenProvider = options.codegenProvider;
+	const lineageEntries = options.lineageEntries ?? [];
 	const localStorageEntries = options.localStorageEntries ?? {};
 	const localStorageAvailable = options.localStorageAvailable ?? true;
 	const runtimeControls = options.runtimeControls;
@@ -628,6 +745,12 @@ async function runGameViewScript(
 	const recordButton = new TestHTMLButtonElement();
 	const tileCaptureButton = new TestHTMLButtonElement();
 	const codexToggle = new TestHTMLButtonElement();
+	const lineageButton = new TestHTMLButtonElement();
+	const lineageModalBackdrop = new TestHTMLElement();
+	const lineageModal = new TestHTMLElement();
+	const lineageModalCloseButton = new TestHTMLButtonElement();
+	const lineageList = new TestHTMLUListElement();
+	const lineageModalEmptyState = new TestHTMLElement();
 	const codexTranscript = new TestHTMLElement();
 	const promptOverlay = new TestHTMLElement();
 	const gameSessionView = new TestHTMLElement();
@@ -654,11 +777,41 @@ async function runGameViewScript(
 	document.registerElement("prompt-record-button", recordButton);
 	document.registerElement("game-tab-capture-tile", tileCaptureButton);
 	document.registerElement("game-codex-toggle", codexToggle);
+	document.registerElement("game-tab-lineage", lineageButton);
+	document.registerElement("lineage-modal-backdrop", lineageModalBackdrop);
+	document.registerElement("lineage-modal", lineageModal);
+	document.registerElement("lineage-modal-close", lineageModalCloseButton);
+	document.registerElement("lineage-list", lineageList);
+	document.registerElement("lineage-modal-empty", lineageModalEmptyState);
 	document.registerElement("game-codex-transcript", codexTranscript);
 	document.registerElement("prompt-overlay", promptOverlay);
 	document.registerElement("prompt-drawing-canvas", promptDrawingCanvas);
 	document.registerElement("game-canvas", gameCanvas);
 	document.registerElement("game-codex-session-view", gameSessionView);
+
+	const lineageDeleteButtonsById = new Map<string, TestHTMLButtonElement>();
+	const lineagePlayButtonsById = new Map<string, TestHTMLButtonElement>();
+	for (const entry of lineageEntries) {
+		const row = new TestHTMLElement();
+		row.setAttribute("data-lineage-row", "true");
+		row.setAttribute("data-lineage-version-id", entry.id);
+		row.setAttribute("data-lineage-version-href", entry.href);
+
+		const playButton = new TestHTMLButtonElement();
+		playButton.setAttribute("data-lineage-action", "play");
+		playButton.setAttribute("data-lineage-version-id", entry.id);
+		playButton.setAttribute("data-lineage-version-href", entry.href);
+		row.appendChild(playButton);
+
+		const lineageDeleteButton = new TestHTMLButtonElement();
+		lineageDeleteButton.setAttribute("data-lineage-action", "delete");
+		lineageDeleteButton.setAttribute("data-lineage-version-id", entry.id);
+		row.appendChild(lineageDeleteButton);
+
+		lineageList.appendChild(row);
+		lineageDeleteButtonsById.set(entry.id, lineageDeleteButton);
+		lineagePlayButtonsById.set(entry.id, playButton);
+	}
 
 	const fetchCalls: FetchCall[] = [];
 	const consoleLogs: unknown[][] = [];
@@ -698,6 +851,9 @@ async function runGameViewScript(
 	const window = {
 		__gameSpaceActiveGameRuntimeControls: runtimeControls,
 		__gameSpaceActiveGameRuntimeHost: runtimeHost,
+		confirm(): boolean {
+			return confirmResult;
+		},
 		requestAnimationFrame(callback: () => void): number {
 			callback();
 			return 1;
@@ -792,6 +948,7 @@ async function runGameViewScript(
 		HTMLFormElement: TestHTMLFormElement,
 		HTMLInputElement: TestHTMLInputElement,
 		HTMLCanvasElement: TestHTMLCanvasElement,
+		HTMLUListElement: TestHTMLUListElement,
 		navigator,
 		RTCPeerConnection: TestRTCPeerConnection,
 		createCodexTranscriptPresenter(
@@ -840,6 +997,10 @@ async function runGameViewScript(
 		recordButton,
 		tileCaptureButton,
 		codexToggle,
+		lineageButton,
+		lineageModalBackdrop,
+		lineageModal,
+		lineageModalCloseButton,
 		promptForm,
 		promptInput,
 		promptPanel,
@@ -851,6 +1012,12 @@ async function runGameViewScript(
 		renderTranscriptCalls,
 		getScrollToBottomCalls: () => scrollToBottomCalls,
 		intervalCallbacks,
+		getLineageDeleteButton(versionEntryId: string): TestHTMLButtonElement | null {
+			return lineageDeleteButtonsById.get(versionEntryId) ?? null;
+		},
+		getLineagePlayButton(versionEntryId: string): TestHTMLButtonElement | null {
+			return lineagePlayButtonsById.get(versionEntryId) ?? null;
+		},
 		dispatchWindowEvent(event: string): void {
 			const listeners = windowEventListeners.get(event);
 			if (!listeners) {
@@ -1392,6 +1559,81 @@ describe("game view prompt submit client", () => {
 		expect(harness.body.classList.contains("game-page--codex-expanded")).toBe(
 			false,
 		);
+	});
+
+	it("opens and closes the lineage modal from the history button and backdrop", async () => {
+		const harness = await runGameViewScript(
+			async () => ({
+				ok: true,
+				async json() {
+					return { status: "ok" };
+				},
+			}),
+			{
+				lineageEntries: [
+					{ id: "source-version", href: "/game/source-version" },
+				],
+			},
+		);
+
+		expect(harness.lineageModal.getAttribute("aria-hidden")).toBe("true");
+
+		harness.lineageButton.dispatchEvent("click", createEvent());
+		expect(harness.lineageModal.getAttribute("aria-hidden")).toBe("false");
+		expect(harness.lineageModalBackdrop.getAttribute("aria-hidden")).toBe(
+			"false",
+		);
+
+		harness.lineageModalBackdrop.dispatchEvent(
+			"click",
+			createEvent({ target: harness.lineageModalBackdrop }),
+		);
+		expect(harness.lineageModal.getAttribute("aria-hidden")).toBe("true");
+		expect(harness.lineageModalBackdrop.getAttribute("aria-hidden")).toBe(
+			"true",
+		);
+	});
+
+	it("deletes the current clone from the lineage modal and navigates to another clone", async () => {
+		const harness = await runGameViewScript(
+			async (url) => {
+				if (url !== "/api/games/source-version") {
+					throw new Error(`Unexpected fetch URL: ${url}`);
+				}
+
+				return {
+					ok: true,
+					async json() {
+						return { status: "ok" };
+					},
+				};
+			},
+			{
+				lineageEntries: [
+					{ id: "newest-clone", href: "/game/newest-clone" },
+					{ id: "source-version", href: "/game/source-version" },
+				],
+			},
+		);
+
+		expect(harness.getLineagePlayButton("source-version")?.disabled).toBe(true);
+		harness.lineageButton.dispatchEvent("click", createEvent());
+		harness.getLineageDeleteButton("source-version")?.dispatchEvent(
+			"click",
+			createEvent(),
+		);
+		await flushAsyncOperations();
+
+		expect(harness.fetchCalls[0]).toEqual({
+			url: "/api/games/source-version",
+			init: {
+				method: "DELETE",
+				headers: {
+					"X-CSRF-Token": "csrf-token-123",
+				},
+			},
+		});
+		expect(harness.assignCalls).toEqual(["/game/newest-clone"]);
 	});
 
 	it("scrolls transcript to bottom when opening codex transcript after messages load", async () => {

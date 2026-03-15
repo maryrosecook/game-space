@@ -66,3 +66,41 @@
 - Reviewed the changed settings drawer files against `~/.codex/docs/style-guide.md` and `~/.codex/prompts/final-code-review.md`.
 - No remaining style-guide or final-review issues found in the touched files.
 - Reverted generated `src/next-env.d.ts` churn from the Playwright build so the diff stays scoped to the requested behavior change.
+
+## Lineage Tiles
+
+- Implementation:
+  - Added persisted `lineageId` metadata plus shared lineage resolution/grouping helpers in [`src/services/gameLineages.ts`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/src/services/gameLineages.ts), then threaded lineage-aware grouping into [`src/app/shared/homepagePageData.ts`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/src/app/shared/homepagePageData.ts) so starter-derived clone trees render as one homepage tile.
+  - Updated fork/delete flows in [`src/services/forkGameVersion.ts`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/src/services/forkGameVersion.ts), [`src/services/gameVersions.ts`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/src/services/gameVersions.ts), and [`src/services/nextBackendHandlers.ts`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/src/services/nextBackendHandlers.ts) so new forks inherit a stable lineage id and surviving clones keep that lineage after deletes.
+  - Added the admin lineage-history modal in [`src/app/shared/components/GameLineageModal.tsx`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/src/app/shared/components/GameLineageModal.tsx), wired the new clock button and modal interactions through [`src/app/shared/components/GameApp.tsx`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/src/app/shared/components/GameApp.tsx), [`src/app/game/[versionId]/page.tsx`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/src/app/game/[versionId]/page.tsx), [`src/app/game/[versionId]/legacy/game-view-client.js`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/src/app/game/[versionId]/legacy/game-view-client.js), and styled it in [`src/public/styles.css`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/src/public/styles.css).
+  - Added coverage in [`tests/gameLineages.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/tests/gameLineages.test.ts), [`tests/homepagePageData.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/tests/homepagePageData.test.ts), [`tests/nextBackendHandlers.delete.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/tests/nextBackendHandlers.delete.test.ts), [`tests/gameViewClient.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/tests/gameViewClient.test.ts), [`tests/forkGameVersion.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/tests/forkGameVersion.test.ts), [`tests/gameVersions.test.ts`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/tests/gameVersions.test.ts), and [`tests/e2e/game.spec.ts`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/tests/e2e/game.spec.ts).
+- Validation:
+  - `npm run typecheck`
+  - `npm run lint`
+  - `npm run test -- tests/homepagePageData.test.ts tests/gameLineages.test.ts tests/nextBackendHandlers.delete.test.ts tests/gameViewClient.test.ts tests/forkGameVersion.test.ts tests/gameVersions.test.ts`
+  - `npm run test:e2e -- tests/e2e/game.spec.ts -g "homepage groups a lineage into one tile and lineage modal can play and delete clones"`
+
+## Documentation
+
+- Updated [`docs/overview.md`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/docs/overview.md) to describe the lineage metadata model, grouped homepage tiles, lineage-history modal flow, delete backfill behavior, and the new validation coverage.
+
+## Style Guide Review
+
+- Reviewed the lineage changes against `~/.codex/docs/style-guide.md` and `~/.codex/prompts/final-code-review.md`.
+- No remaining style-guide or final-review issues were found after validation and the final diff cleanup.
+
+## Lineage Modal Current Row Highlight
+
+- Implementation:
+  - Updated [`src/app/shared/components/GameLineageModal.tsx`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/src/app/shared/components/GameLineageModal.tsx) to add a dedicated current-row modifier class when a lineage entry matches the actively playing clone.
+  - Updated [`src/public/styles.css`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/src/public/styles.css) so the active lineage row renders with an off-white border.
+  - Extended the existing lineage Playwright scenario in [`tests/e2e/game.spec.ts`](/Users/maryrosecook/conductor/workspaces/game-space/zurich/tests/e2e/game.spec.ts) to assert the active row border color.
+- Validation:
+  - `npm run typecheck`
+  - `npm run lint`
+  - `npm run test:e2e -- tests/e2e/game.spec.ts -g "homepage groups a lineage into one tile and lineage modal can play and delete clones"`
+- Documentation:
+  - Skipped `docs/overview.md` because this follow-up only adjusts an existing modal’s visual affordance and does not change architecture, behavior flow, or operator-facing workflow.
+- Style Guide Review:
+  - Reviewed the touched files against `~/.codex/docs/style-guide.md` and `~/.codex/prompts/final-code-review.md`.
+  - No remaining issues found in the final diff for this tweak.

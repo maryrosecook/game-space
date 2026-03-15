@@ -17,6 +17,7 @@ export function HomepageApp({ data }: HomepageAppProps) {
             href={tile.href}
             aria-label={tile.displayId}
             data-version-id={tile.id}
+            data-lineage-id={tile.lineageId}
             data-tile-color={tile.tileColor}
             style={{ "--tile-color": tile.tileColor } as CSSProperties}
           >

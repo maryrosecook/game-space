@@ -32,7 +32,19 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     return null;
   }
 
-  const { id, threeWords, prompt, parentId, createdTime, tileColor, favorite, codexSessionId, codexSessionStatus, tileSnapshotPath } = value;
+  const {
+    id,
+    threeWords,
+    prompt,
+    parentId,
+    lineageId,
+    createdTime,
+    tileColor,
+    favorite,
+    codexSessionId,
+    codexSessionStatus,
+    tileSnapshotPath
+  } = value;
   if (typeof id !== 'string' || id.length === 0) {
     return null;
   }
@@ -54,6 +66,10 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     return null;
   }
 
+  if (!(lineageId === undefined || lineageId === null || typeof lineageId === 'string')) {
+    return null;
+  }
+
   if (typeof createdTime !== 'string') {
     return null;
   }
@@ -71,6 +87,8 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     typeof tileColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(tileColor.trim())
       ? tileColor.trim().toUpperCase()
       : undefined;
+  const normalizedLineageId =
+    typeof lineageId === 'string' && isSafeVersionId(lineageId.trim()) ? lineageId.trim() : undefined;
 
   if (!(favorite === undefined || typeof favorite === 'boolean')) {
     return null;
@@ -94,6 +112,7 @@ export function parseGameMetadata(value: unknown): GameMetadata | null {
     ...(normalizedThreeWords ? { threeWords: normalizedThreeWords } : {}),
     ...(normalizedPrompt ? { prompt: normalizedPrompt } : {}),
     parentId,
+    ...(normalizedLineageId ? { lineageId: normalizedLineageId } : {}),
     createdTime: new Date(createdTimestamp).toISOString(),
     tileColor: normalizedTileColor,
     favorite: favorite === true,
@@ -150,14 +169,20 @@ export async function writeMetadataFile(metadataPath: string, metadata: GameMeta
 
   const normalizedPrompt =
     typeof metadata.prompt === 'string' && metadata.prompt.trim().length > 0 ? metadata.prompt : undefined;
+  const normalizedLineageId =
+    typeof metadata.lineageId === 'string' && isSafeVersionId(metadata.lineageId.trim())
+      ? metadata.lineageId.trim()
+      : undefined;
 
   const metadataWithoutThreeWords = { ...metadata };
   delete metadataWithoutThreeWords.threeWords;
   delete metadataWithoutThreeWords.prompt;
+  delete metadataWithoutThreeWords.lineageId;
   const normalizedMetadata: GameMetadata = {
     ...metadataWithoutThreeWords,
     ...(normalizedThreeWords ? { threeWords: normalizedThreeWords } : {}),
     ...(normalizedPrompt ? { prompt: normalizedPrompt } : {}),
+    ...(normalizedLineageId ? { lineageId: normalizedLineageId } : {}),
     tileColor: normalizedTileColor,
     favorite: metadata.favorite === true,
     codexSessionId: metadata.codexSessionId ?? null,

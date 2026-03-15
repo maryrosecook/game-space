@@ -35,6 +35,7 @@ import {
   resolveCodexSessionStatus,
   writeMetadataFile,
 } from './gameVersions';
+import { findGameLineage, resolveGameLineageId } from './gameLineages';
 import { isAllowedGamesRuntimeAssetPath } from './gameAssetAllowlist';
 import { generateIdeaPrompt } from './ideaGeneration';
 import {
@@ -1100,6 +1101,24 @@ export async function handleApiGameDelete(request: Request, versionId: string): 
   const directoryPath = gameDirectoryPath(runtimePaths.gamesRootPath, versionId);
   if (!(await hasGameDirectory(runtimePaths.gamesRootPath, versionId))) {
     return jsonResponse(404, { error: 'Game version not found' });
+  }
+
+  const allVersions = await listGameVersions(runtimePaths.gamesRootPath);
+  const lineageId = resolveGameLineageId(versionId, allVersions);
+  const lineage = findGameLineage(versionId, allVersions);
+  if (lineageId && lineage) {
+    for (const lineageVersion of lineage.versions) {
+      if (lineageVersion.id === versionId || lineageVersion.lineageId === lineageId) {
+        continue;
+      }
+
+      const lineageMetadata = { ...lineageVersion };
+      Reflect.deleteProperty(lineageMetadata, 'directoryPath');
+      await writeMetadataFile(path.join(lineageVersion.directoryPath, 'metadata.json'), {
+        ...lineageMetadata,
+        lineageId,
+      });
+    }
   }
 
   await fs.rm(directoryPath, { recursive: true, force: false });

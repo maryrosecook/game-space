@@ -2,15 +2,18 @@ import path from 'node:path';
 
 import {
   Bot,
+  Clock3,
   ChevronLeft,
   Hammer,
   Mic,
   Paintbrush,
+  Play,
   Rocket,
   Settings,
   Star,
   Trash2,
   Video,
+  X,
   type IconNode,
 } from 'lucide';
 import { cookies, headers } from 'next/headers';
@@ -30,10 +33,12 @@ import {
 } from '../../../services/csrf';
 import { pathExists } from '../../../services/fsUtils';
 import { controlStateFilePath, readControlStateFile } from '../../../services/gameControlState';
+import { findGameLineage } from '../../../services/gameLineages';
 import {
   gameDirectoryPath,
   hasGameDirectory,
   isSafeVersionId,
+  listGameVersions,
   readMetadataFile,
 } from '../../../services/gameVersions';
 import { readSharedCodegenConfigStore } from '../../../services/serverRuntimeState';
@@ -55,27 +60,33 @@ type RouteContext = {
 
 type LucideIconName =
   | 'bot'
+  | 'clock-3'
   | 'chevron-left'
   | 'hammer'
   | 'mic'
   | 'paintbrush'
+  | 'play'
   | 'rocket'
   | 'settings'
   | 'star'
   | 'trash-2'
-  | 'video';
+  | 'video'
+  | 'x';
 
 const LUCIDE_ICON_NODES: Record<LucideIconName, IconNode> = {
   bot: Bot,
+  'clock-3': Clock3,
   'chevron-left': ChevronLeft,
   hammer: Hammer,
   mic: Mic,
   paintbrush: Paintbrush,
+  play: Play,
   rocket: Rocket,
   settings: Settings,
   star: Star,
   'trash-2': Trash2,
   video: Video,
+  x: X,
 };
 
 function escapeHtml(value: string): string {
@@ -375,6 +386,28 @@ export default async function GamePage(context: RouteContext) {
   const codegenProvider = readSharedCodegenConfigStore().read().provider;
   const providerLabel = codegenProviderLabel(codegenProvider);
   const isFavorite = metadata?.favorite === true;
+  const allVersions = isAdmin ? await listGameVersions(gamesRootPath) : [];
+  const lineageEntries = isAdmin
+    ? (findGameLineage(versionId, allVersions)?.versions ?? [])
+        .filter((lineageVersion) => lineageVersion.id !== 'starter')
+        .map((lineageVersion) => {
+          const tileSnapshotPath =
+            typeof lineageVersion.tileSnapshotPath === 'string' && lineageVersion.tileSnapshotPath.length > 0
+              ? lineageVersion.tileSnapshotPath
+              : null;
+          return {
+            id: lineageVersion.id,
+            href: `/game/${encodeURIComponent(lineageVersion.id)}`,
+            displayId: (lineageVersion.threeWords ?? lineageVersion.id).replaceAll('-', ' '),
+            tileColor:
+              typeof lineageVersion.tileColor === 'string' && lineageVersion.tileColor.length > 0
+                ? lineageVersion.tileColor
+                : '#1D3557',
+            tileSnapshotPath,
+            isCurrent: lineageVersion.id === versionId,
+          };
+        })
+    : [];
   const tileColor =
     typeof metadata?.tileColor === 'string' && metadata.tileColor.length > 0
       ? metadata.tileColor
@@ -383,6 +416,7 @@ export default async function GamePage(context: RouteContext) {
     versionId,
     isAdmin,
     isFavorite,
+    lineageEntries,
     codegenProvider,
     providerLabel,
     enableLiveReload: process.env.GAME_SPACE_DEV_LIVE_RELOAD === '1',
@@ -394,6 +428,9 @@ export default async function GamePage(context: RouteContext) {
     rocketIcon: renderLucideIcon('rocket', 'game-view-icon'),
     starIcon: renderLucideIcon('star', 'game-view-icon'),
     botIcon: renderLucideIcon('bot', 'game-view-icon'),
+    lineageIcon: renderLucideIcon('clock-3', 'game-view-icon'),
+    playIcon: renderLucideIcon('play', 'game-view-icon'),
+    closeIcon: renderLucideIcon('x', 'game-view-icon'),
     videoIcon: renderLucideIcon('video', 'game-view-icon'),
     trashIcon: renderLucideIcon('trash-2', 'game-view-icon'),
   };

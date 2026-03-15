@@ -264,6 +264,50 @@ Rain clouds douse towers; lose all towers and it's game over.`;
     ).toBeNull();
   });
 
+  it('accepts safe lineage ids and normalizes invalid lineage ids away', () => {
+    expect(
+      parseGameMetadata({
+        id: 'v6-lineage',
+        parentId: 'v6',
+        lineageId: 'lineage-root',
+        createdTime: '2026-02-06T01:00:00.000Z'
+      })
+    ).toEqual({
+      id: 'v6-lineage',
+      parentId: 'v6',
+      lineageId: 'lineage-root',
+      createdTime: '2026-02-06T01:00:00.000Z',
+      favorite: false,
+      codexSessionId: null,
+      codexSessionStatus: 'none'
+    });
+
+    expect(
+      parseGameMetadata({
+        id: 'v6-lineage',
+        parentId: 'v6',
+        lineageId: '',
+        createdTime: '2026-02-06T01:00:00.000Z'
+      })
+    ).toEqual({
+      id: 'v6-lineage',
+      parentId: 'v6',
+      createdTime: '2026-02-06T01:00:00.000Z',
+      favorite: false,
+      codexSessionId: null,
+      codexSessionStatus: 'none'
+    });
+
+    expect(
+      parseGameMetadata({
+        id: 'v6-lineage',
+        parentId: 'v6',
+        lineageId: 42,
+        createdTime: '2026-02-06T01:00:00.000Z'
+      })
+    ).toBeNull();
+  });
+
   it('accepts prompt text and rejects invalid prompt values', () => {
     expect(
       parseGameMetadata({
