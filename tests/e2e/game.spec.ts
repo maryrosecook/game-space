@@ -4,6 +4,9 @@ import path from "node:path";
 
 import { loginAsAdmin } from "./helpers/auth";
 
+const ONE_BY_ONE_PNG_BASE64 =
+	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aQ0QAAAAASUVORK5CYII=";
+
 async function waitForAdminGameViewReady(page: Page): Promise<void> {
 	await expect(page.locator("#game-tab-edit")).toHaveAttribute(
 		"aria-busy",
@@ -713,6 +716,80 @@ async function createCopiedStarterGameFixture(
 	};
 }
 
+async function createStarterLineageFixture(prefix: string): Promise<{
+	lineageRootId: string;
+	lineageChildId: string;
+	lineageRootDirectoryPath: string;
+	lineageChildDirectoryPath: string;
+}> {
+	const randomSuffix = Math.random().toString(36).slice(2, 10);
+	const lineageRootId = `${prefix}-root-${Date.now().toString(36)}-${randomSuffix}`;
+	const lineageChildId = `${prefix}-child-${Date.now().toString(36)}-${randomSuffix}`;
+	const bundleSourcePath = path.resolve("games/starter/dist/game.js");
+	const sharedSnapshotBytes = Buffer.from(ONE_BY_ONE_PNG_BASE64, "base64");
+
+	async function createVersion(options: {
+		versionId: string;
+		parentId: string;
+		lineageId: string;
+		threeWords: string;
+		createdTime: string;
+	}): Promise<string> {
+		const gameDirectoryPath = path.resolve("games", options.versionId);
+		await fs.mkdir(path.join(gameDirectoryPath, "dist"), { recursive: true });
+		await fs.mkdir(path.join(gameDirectoryPath, "snapshots"), {
+			recursive: true,
+		});
+		await fs.copyFile(
+			bundleSourcePath,
+			path.join(gameDirectoryPath, "dist", "game.js"),
+		);
+		await fs.writeFile(
+			path.join(gameDirectoryPath, "snapshots", "tile.png"),
+			sharedSnapshotBytes,
+		);
+		await fs.writeFile(
+			path.join(gameDirectoryPath, "metadata.json"),
+			JSON.stringify(
+				{
+					id: options.versionId,
+					parentId: options.parentId,
+					lineageId: options.lineageId,
+					threeWords: options.threeWords,
+					createdTime: options.createdTime,
+				},
+				null,
+				2,
+			) + "\n",
+			"utf8",
+		);
+
+		return gameDirectoryPath;
+	}
+
+	const lineageRootDirectoryPath = await createVersion({
+		versionId: lineageRootId,
+		parentId: "starter",
+		lineageId: lineageRootId,
+		threeWords: "lineage-root-spark",
+		createdTime: "2026-03-10T00:00:00.000Z",
+	});
+	const lineageChildDirectoryPath = await createVersion({
+		versionId: lineageChildId,
+		parentId: lineageRootId,
+		lineageId: lineageRootId,
+		threeWords: "lineage-child-glow",
+		createdTime: "2026-03-11T00:00:00.000Z",
+	});
+
+	return {
+		lineageRootId,
+		lineageChildId,
+		lineageRootDirectoryPath,
+		lineageChildDirectoryPath,
+	};
+}
+
 async function createNoSettingsGameFixture(
 	prefix: string,
 ): Promise<{ versionId: string; gameDirectoryPath: string }> {
@@ -810,6 +887,88 @@ test("manual tile capture returns unique tile URLs and homepage uses the latest 
 		).toHaveAttribute("src", secondTileSnapshotPath);
 	} finally {
 		await fs.rm(gameDirectoryPath, { recursive: true, force: true });
+	}
+});
+
+test("homepage groups a lineage into one tile and lineage modal can play and delete clones", async ({
+	page,
+}) => {
+	const {
+		lineageRootId,
+		lineageChildId,
+		lineageRootDirectoryPath,
+		lineageChildDirectoryPath,
+	} = await createStarterLineageFixture("e2e-lineage");
+
+	try {
+		await loginAsAdmin(page);
+		await page.goto("/");
+		const lineageTile = page.locator(
+			`.game-tile[data-lineage-id="${lineageRootId}"]`,
+		);
+		await expect(lineageTile).toHaveCount(1);
+		await expect(lineageTile).toHaveAttribute("data-version-id", lineageChildId);
+
+		await lineageTile.click();
+		await expect(page).toHaveURL(
+			new RegExp(`/game/${encodeURIComponent(lineageChildId)}$`),
+		);
+		await waitForAdminGameViewReady(page);
+
+		await page.locator("#game-tab-edit").click();
+		await page.locator("#game-tab-lineage").click();
+		await expect(page.locator("#lineage-modal")).toHaveAttribute(
+			"aria-hidden",
+			"false",
+		);
+		await expect(
+			page.locator('#lineage-list [data-lineage-row="true"]'),
+		).toHaveCount(2);
+		await expect(
+			page.locator(
+				`#lineage-list [data-lineage-row="true"][data-lineage-version-id="${lineageChildId}"]`,
+			),
+		).toHaveCSS("border-top-color", "rgb(243, 239, 226)");
+
+		await page
+			.locator(
+				`#lineage-list [data-lineage-version-id="${lineageRootId}"] [data-lineage-action="play"]`,
+			)
+			.click();
+		await expect(page).toHaveURL(
+			new RegExp(`/game/${encodeURIComponent(lineageRootId)}$`),
+		);
+		await waitForAdminGameViewReady(page);
+
+		await page.locator("#game-tab-edit").click();
+		await page.locator("#game-tab-lineage").click();
+		const acceptDeleteDialog = page.waitForEvent("dialog").then((dialog) => {
+			return dialog.accept();
+		});
+		await page
+			.locator(
+				`#lineage-list [data-lineage-version-id="${lineageRootId}"] [data-lineage-action="delete"]`,
+			)
+			.click({ force: true });
+		await acceptDeleteDialog;
+
+		await expect(page).toHaveURL(
+			new RegExp(`/game/${encodeURIComponent(lineageChildId)}$`),
+		);
+		await waitForAdminGameViewReady(page);
+		await expect
+			.poll(async () => {
+				try {
+					await fs.access(lineageRootDirectoryPath);
+					return true;
+				} catch {
+					return false;
+				}
+			})
+			.toBe(false);
+	} finally {
+		await fs.rm(lineageRootDirectoryPath, { recursive: true, force: true });
+		await fs.rm(lineageChildDirectoryPath, { recursive: true, force: true });
 	}
 });
 

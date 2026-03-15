@@ -1,4 +1,5 @@
 import { IconMarkup } from "./IconMarkup";
+import { GameLineageModal } from "./GameLineageModal";
 import type { GamePageData } from "../types";
 
 type GameAppProps = {
@@ -124,6 +125,16 @@ export function GameApp({ data }: GameAppProps) {
                   <IconMarkup markup={data.botIcon} />
                 </button>
                 <button
+                  id="game-tab-lineage"
+                  className="prompt-action-button prompt-action-button--icon"
+                  type="button"
+                  aria-controls="lineage-modal"
+                  aria-expanded="false"
+                  aria-label="Open lineage history"
+                >
+                  <IconMarkup markup={data.lineageIcon} />
+                </button>
+                <button
                   id="game-tab-capture-tile"
                   className="prompt-action-button prompt-action-button--icon prompt-action-button--tile-capture"
                   type="button"
@@ -167,6 +178,12 @@ export function GameApp({ data }: GameAppProps) {
               <p className="settings-panel-empty">Loading settings...</p>
             </div>
           </section>
+          <GameLineageModal
+            entries={data.lineageEntries}
+            closeIcon={data.closeIcon}
+            playIcon={data.playIcon}
+            trashIcon={data.trashIcon}
+          />
           {gameToolbarMarkup}
         </>
       ) : (

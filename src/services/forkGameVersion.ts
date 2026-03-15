@@ -3,7 +3,8 @@ import path from 'node:path';
 import { randomInt } from 'node:crypto';
 
 import { isObjectRecord, pathExists } from './fsUtils';
-import { gameDirectoryPath, isSafeVersionId, readMetadataFile, writeMetadataFile } from './gameVersions';
+import { resolveGameLineageId } from './gameLineages';
+import { gameDirectoryPath, isSafeVersionId, listGameVersions, readMetadataFile, writeMetadataFile } from './gameVersions';
 import { createReadableRandomHexColor } from './tileColor';
 import type { GameMetadata } from '../types';
 
@@ -193,9 +194,12 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
   }
 
   const forkVersionId = await createUniqueForkVersionId(gamesRootPath, idFactory);
+  const allVersions = await listGameVersions(gamesRootPath);
+  const sourceLineageId = resolveGameLineageId(sourceVersionId, allVersions);
   const threeWords = getThreeWordsFromPrompt(sourcePrompt);
   const creationPrompt =
     typeof sourcePrompt === 'string' && sourcePrompt.trim().length > 0 ? sourcePrompt : undefined;
+  const lineageId = sourceVersionId === 'starter' ? forkVersionId : sourceLineageId ?? sourceVersionId;
 
   const forkDirectoryPath = gameDirectoryPath(gamesRootPath, forkVersionId);
   await fs.cp(sourceDirectoryPath, forkDirectoryPath, {
@@ -213,6 +217,7 @@ export async function createForkedGameVersion(options: CreateForkedGameVersionOp
     threeWords,
     ...(creationPrompt ? { prompt: creationPrompt } : {}),
     parentId: sourceVersionId,
+    lineageId,
     createdTime: now().toISOString(),
     tileColor: createReadableRandomHexColor(),
     favorite: false,

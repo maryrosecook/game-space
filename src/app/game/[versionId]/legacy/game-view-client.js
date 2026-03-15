@@ -12,12 +12,18 @@ const favoriteButton = document.getElementById("game-tab-favorite");
 const recordButton = document.getElementById("prompt-record-button");
 const tileCaptureButton = document.getElementById("game-tab-capture-tile");
 const codexToggle = document.getElementById("game-codex-toggle");
+const lineageButton = document.getElementById("game-tab-lineage");
 const deleteButton = document.getElementById("game-tab-delete");
 const promptOverlay = document.getElementById("prompt-overlay");
 const promptDrawingCanvas = document.getElementById("prompt-drawing-canvas");
 const gameCanvas = document.getElementById("game-canvas");
 const codexTranscript = document.getElementById("game-codex-transcript");
 const gameSessionView = document.getElementById("game-codex-session-view");
+const lineageModalBackdrop = document.getElementById("lineage-modal-backdrop");
+const lineageModal = document.getElementById("lineage-modal");
+const lineageModalCloseButton = document.getElementById("lineage-modal-close");
+const lineageList = document.getElementById("lineage-list");
+const lineageModalEmptyState = document.getElementById("lineage-modal-empty");
 
 const promptInputIsTextEntry =
   promptInput instanceof HTMLInputElement ||
@@ -37,10 +43,21 @@ if (
   !(recordButton instanceof HTMLButtonElement) ||
   !(tileCaptureButton instanceof HTMLButtonElement) ||
   !(codexToggle instanceof HTMLButtonElement) ||
+  !(lineageButton instanceof HTMLButtonElement) ||
   !(deleteButton instanceof HTMLButtonElement) ||
   !(codexTranscript instanceof HTMLElement) ||
   !(gameSessionView instanceof HTMLElement) ||
-  !(promptDrawingCanvas instanceof HTMLCanvasElement)
+  !(promptDrawingCanvas instanceof HTMLCanvasElement) ||
+  !(lineageModalBackdrop instanceof HTMLElement) ||
+  !(lineageModal instanceof HTMLElement) ||
+  !(lineageModalCloseButton instanceof HTMLButtonElement) ||
+  !(
+    lineageList === null ||
+    (typeof HTMLUListElement === "function"
+      ? lineageList instanceof HTMLUListElement
+      : lineageList instanceof HTMLElement)
+  ) ||
+  !(lineageModalEmptyState instanceof HTMLElement)
 ) {
   throw new Error("Game view controls missing from page");
 }
@@ -70,6 +87,7 @@ let tileCaptureInFlight = false;
 let settingsSaveTimerId = null;
 let settingsSaveInFlight = false;
 let pendingSettingsSave = false;
+let lineageEntries = readLineageEntries();
 const initialUiState = Object.freeze({
   activeDrawer: null,
   codexPanelExpanded: false,
@@ -77,6 +95,7 @@ const initialUiState = Object.freeze({
   annotationEnabled: false,
   recordingInProgress: false,
   transcriptionInFlight: false,
+  lineageModalOpen: false,
 });
 const promptDraftStorageKeyPrefix = "game-space:prompt-draft:";
 
@@ -198,6 +217,14 @@ function reduceUiState(state, action) {
         ...state,
         transcriptionInFlight: action.inFlight,
       };
+    case "set-lineage-modal-open":
+      if (state.lineageModalOpen === action.open) {
+        return state;
+      }
+      return {
+        ...state,
+        lineageModalOpen: action.open,
+      };
     default:
       return state;
   }
@@ -253,6 +280,143 @@ function getActiveGameRuntimeHost() {
   }
 
   return runtimeHost;
+}
+
+function readLineageEntries() {
+  if (!(lineageList instanceof HTMLElement)) {
+    return [];
+  }
+
+  return Array.from(
+    lineageList.querySelectorAll('[data-lineage-row="true"]'),
+  ).flatMap((element) => {
+    if (!(element instanceof HTMLElement)) {
+      return [];
+    }
+
+    const entryVersionId = element.dataset.lineageVersionId;
+    const entryHref = element.dataset.lineageVersionHref;
+    if (
+      typeof entryVersionId !== "string" ||
+      entryVersionId.length === 0 ||
+      typeof entryHref !== "string" ||
+      entryHref.length === 0
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        id: entryVersionId,
+        href: entryHref,
+      },
+    ];
+  });
+}
+
+function toggleLineageEmptyState() {
+  if (!(lineageModalEmptyState instanceof HTMLElement)) {
+    return;
+  }
+
+  lineageModalEmptyState.hidden = lineageEntries.length > 0;
+}
+
+function lineagePlayButtons() {
+  if (!(lineageList instanceof HTMLElement)) {
+    return [];
+  }
+
+  return Array.from(
+    lineageList.querySelectorAll('[data-lineage-action="play"]'),
+  ).filter((element) => element instanceof HTMLButtonElement);
+}
+
+function lineageDeleteButtons() {
+  if (!(lineageList instanceof HTMLElement)) {
+    return [];
+  }
+
+  return Array.from(
+    lineageList.querySelectorAll('[data-lineage-action="delete"]'),
+  ).filter((element) => element instanceof HTMLButtonElement);
+}
+
+function applyLineageButtonState() {
+  lineageButton.disabled = deleteRequestInFlight;
+  for (const playButton of lineagePlayButtons()) {
+    const targetVersionId = playButton.dataset.lineageVersionId;
+    playButton.disabled =
+      deleteRequestInFlight ||
+      (typeof targetVersionId === "string" && targetVersionId === versionId);
+  }
+
+  for (const lineageDeleteButton of lineageDeleteButtons()) {
+    lineageDeleteButton.disabled = deleteRequestInFlight;
+  }
+}
+
+function applyLineageModalState() {
+  const lineageModalOpen = uiState.lineageModalOpen;
+  lineageModalBackdrop.classList.toggle(
+    "lineage-modal-backdrop--open",
+    lineageModalOpen,
+  );
+  lineageModal.classList.toggle("lineage-modal--open", lineageModalOpen);
+  lineageModalBackdrop.setAttribute(
+    "aria-hidden",
+    lineageModalOpen ? "false" : "true",
+  );
+  lineageModal.setAttribute("aria-hidden", lineageModalOpen ? "false" : "true");
+  lineageButton.setAttribute(
+    "aria-expanded",
+    lineageModalOpen ? "true" : "false",
+  );
+  document.body.classList.toggle(
+    "game-page--lineage-modal-open",
+    lineageModalOpen,
+  );
+  toggleLineageEmptyState();
+  applyLineageButtonState();
+}
+
+function setLineageModalOpen(open) {
+  dispatchUiState({ type: "set-lineage-modal-open", open });
+  applyLineageModalState();
+}
+
+function toggleLineageModal() {
+  setLineageModalOpen(!uiState.lineageModalOpen);
+}
+
+function removeLineageEntry(targetVersionId) {
+  lineageEntries = lineageEntries.filter((entry) => entry.id !== targetVersionId);
+  if (!(lineageList instanceof HTMLElement)) {
+    toggleLineageEmptyState();
+    return;
+  }
+
+  const lineageRows = lineageList.querySelectorAll('[data-lineage-row="true"]');
+  for (const row of lineageRows) {
+    if (
+      row instanceof HTMLElement &&
+      row.dataset.lineageVersionId === targetVersionId
+    ) {
+      row.remove();
+    }
+  }
+
+  toggleLineageEmptyState();
+  applyLineageButtonState();
+}
+
+function nextLineageDestinationAfterDelete(targetVersionId) {
+  const nextLineageEntry = lineageEntries.find((entry) => entry.id !== targetVersionId);
+  if (nextLineageEntry) {
+    return nextLineageEntry.href;
+  }
+
+  return "/";
 }
 
 function readRuntimeSliderDefinitions() {
@@ -1082,8 +1246,25 @@ async function toggleFavorite() {
   }
 }
 
-async function deleteGameVersion() {
-  if (!versionId || favoriteRequestInFlight || deleteRequestInFlight) {
+function playLineageVersion(targetHref) {
+  if (
+    deleteRequestInFlight ||
+    typeof targetHref !== "string" ||
+    targetHref.length === 0
+  ) {
+    return;
+  }
+
+  window.location.assign(targetHref);
+}
+
+async function deleteGameVersion(targetVersionId = versionId) {
+  if (
+    typeof targetVersionId !== "string" ||
+    targetVersionId.length === 0 ||
+    favoriteRequestInFlight ||
+    deleteRequestInFlight
+  ) {
     return;
   }
 
@@ -1097,10 +1278,11 @@ async function deleteGameVersion() {
   deleteRequestInFlight = true;
   favoriteButton.disabled = true;
   deleteButton.disabled = true;
+  applyLineageButtonState();
 
   try {
     const response = await fetch(
-      `/api/games/${encodeURIComponent(versionId)}`,
+      `/api/games/${encodeURIComponent(targetVersionId)}`,
       {
         method: "DELETE",
         headers: csrfRequestHeaders(),
@@ -1111,11 +1293,17 @@ async function deleteGameVersion() {
       return;
     }
 
-    window.location.assign("/");
+    if (targetVersionId === versionId) {
+      window.location.assign(nextLineageDestinationAfterDelete(targetVersionId));
+      return;
+    }
+
+    removeLineageEntry(targetVersionId);
   } finally {
     deleteRequestInFlight = false;
     favoriteButton.disabled = false;
     deleteButton.disabled = false;
+    applyLineageButtonState();
   }
 }
 
@@ -1601,7 +1789,9 @@ function toggleEditPanel() {
   if (uiState.activeDrawer === "edit") {
     dispatchUiState({ type: "set-active-drawer", drawer: null });
     dispatchUiState({ type: "set-codex-panel-expanded", expanded: false });
+    dispatchUiState({ type: "set-lineage-modal-open", open: false });
     applyBottomPanelState();
+    applyLineageModalState();
     return;
   }
 
@@ -1623,7 +1813,9 @@ function toggleSettingsPanel() {
 
   dispatchUiState({ type: "set-active-drawer", drawer: "settings" });
   dispatchUiState({ type: "set-codex-panel-expanded", expanded: false });
+  dispatchUiState({ type: "set-lineage-modal-open", open: false });
   applyBottomPanelState();
+  applyLineageModalState();
 }
 
 function requestTranscriptScrollToBottom() {
@@ -1945,6 +2137,42 @@ function initializeGameViewControls() {
     toggleCodexPanelExpanded();
   });
 
+  lineageButton.addEventListener("click", () => {
+    toggleLineageModal();
+  });
+
+  lineageModalCloseButton.addEventListener("click", () => {
+    setLineageModalOpen(false);
+  });
+
+  lineageModalBackdrop.addEventListener("click", (event) => {
+    if (event.target !== lineageModalBackdrop) {
+      return;
+    }
+
+    setLineageModalOpen(false);
+  });
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && uiState.lineageModalOpen) {
+      setLineageModalOpen(false);
+    }
+  });
+
+  for (const playButton of lineagePlayButtons()) {
+    playButton.addEventListener("click", () => {
+      const targetHref = playButton.dataset.lineageVersionHref;
+      playLineageVersion(targetHref);
+    });
+  }
+
+  for (const lineageDeleteButton of lineageDeleteButtons()) {
+    lineageDeleteButton.addEventListener("click", () => {
+      const targetVersionId = lineageDeleteButton.dataset.lineageVersionId;
+      void deleteGameVersion(targetVersionId);
+    });
+  }
+
   tileCaptureButton.addEventListener("click", () => {
     void captureTileSnapshot();
   });
@@ -2027,6 +2255,7 @@ function initializeGameViewControls() {
 
   resizeDrawingCanvas();
   applyAnnotationState();
+  applyLineageModalState();
 
   promptDrawingCanvas.addEventListener("pointerdown", (event) => {
     beginAnnotationStroke(event);

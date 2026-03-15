@@ -7,6 +7,7 @@ export type GameMetadata = {
   threeWords?: string;
   prompt?: string;
   parentId: string | null;
+  lineageId?: string | null;
   createdTime: string;
   tileColor?: string;
   favorite?: boolean;

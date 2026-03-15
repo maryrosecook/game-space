@@ -9,6 +9,7 @@ function createVersion(partial: Partial<GameVersion> & Pick<GameVersion, 'id' | 
   return {
     id: partial.id,
     parentId: partial.parentId ?? null,
+    lineageId: partial.lineageId,
     createdTime: partial.createdTime,
     directoryPath: partial.directoryPath ?? path.join('/tmp/games', partial.id),
     threeWords: partial.threeWords,
@@ -19,7 +20,7 @@ function createVersion(partial: Partial<GameVersion> & Pick<GameVersion, 'id' | 
 }
 
 describe('buildHomepagePageData', () => {
-  it('returns favorites only for logged-out visitors and maps tile defaults', () => {
+  it('returns one tile per lineage for logged-out visitors and keeps favorite visibility scoped to favorite clones', () => {
     const versions: GameVersion[] = [
       createVersion({
         id: 'alpha',
@@ -28,11 +29,20 @@ describe('buildHomepagePageData', () => {
         tileColor: '#000000'
       }),
       createVersion({
-        id: 'beta-version',
+        id: 'beta-root',
         createdTime: '2026-01-02T00:00:00.000Z',
+        parentId: 'starter',
         favorite: true,
         threeWords: 'beta-splash-mode',
-        tileSnapshotPath: '/games/beta-version/snapshots/tile.png?v=cached'
+        tileSnapshotPath: '/games/beta-root/snapshots/tile.png?v=cached'
+      }),
+      createVersion({
+        id: 'beta-child',
+        createdTime: '2026-01-04T00:00:00.000Z',
+        parentId: 'beta-root',
+        favorite: false,
+        threeWords: 'beta-afterglow-shift',
+        tileSnapshotPath: '/games/beta-child/snapshots/tile.png?v=cached'
       }),
       createVersion({
         id: 'gamma',
@@ -48,46 +58,79 @@ describe('buildHomepagePageData', () => {
       showIdeasLink: false,
       tiles: [
         {
-          id: 'beta-version',
-          href: '/game/beta-version',
-          displayId: 'beta splash mode',
-          tileColor: '#1D3557',
-          isFavorite: true,
-          tileSnapshotPath: '/games/beta-version/snapshots/tile.png?v=cached'
-        },
-        {
+          lineageId: 'gamma',
           id: 'gamma',
           href: '/game/gamma',
           displayId: 'gamma',
           tileColor: '#1D3557',
           isFavorite: true,
           tileSnapshotPath: null
+        },
+        {
+          lineageId: 'beta-root',
+          id: 'beta-root',
+          href: '/game/beta-root',
+          displayId: 'beta splash mode',
+          tileColor: '#1D3557',
+          isFavorite: true,
+          tileSnapshotPath: '/games/beta-root/snapshots/tile.png?v=cached'
         }
       ]
     });
   });
 
-  it('returns all versions for admins and preserves explicit tile color', () => {
+  it('returns one tile per lineage for admins and uses the newest clone as the representative tile', () => {
     const versions: GameVersion[] = [
       createVersion({
         id: 'alpha',
         createdTime: '2026-01-01T00:00:00.000Z',
         favorite: false,
         tileColor: '#123456'
+      }),
+      createVersion({
+        id: 'beta-root',
+        createdTime: '2026-01-02T00:00:00.000Z',
+        parentId: 'starter',
+        favorite: true,
+        threeWords: 'beta-splash-mode',
+        tileSnapshotPath: '/games/beta-root/snapshots/tile.png?v=cached'
+      }),
+      createVersion({
+        id: 'beta-child',
+        createdTime: '2026-01-04T00:00:00.000Z',
+        parentId: 'beta-root',
+        favorite: false,
+        threeWords: 'beta-afterglow-shift',
+        tileColor: '#345678',
+        tileSnapshotPath: '/games/beta-child/snapshots/tile.png?v=latest'
       })
     ];
 
     const data = buildHomepagePageData(versions, { isAdmin: true });
 
-    expect(data.authLabel).toBe('Admin');
-    expect(data.showIdeasLink).toBe(true);
-    expect(data.tiles).toHaveLength(1);
-    expect(data.tiles[0]).toMatchObject({
-      id: 'alpha',
-      href: '/game/alpha',
-      displayId: 'alpha',
-      tileColor: '#123456',
-      isFavorite: false
+    expect(data).toEqual({
+      authLabel: 'Admin',
+      showIdeasLink: true,
+      tiles: [
+        {
+          lineageId: 'beta-root',
+          id: 'beta-child',
+          href: '/game/beta-child',
+          displayId: 'beta afterglow shift',
+          tileColor: '#345678',
+          isFavorite: true,
+          tileSnapshotPath: '/games/beta-child/snapshots/tile.png?v=latest'
+        },
+        {
+          lineageId: 'alpha',
+          id: 'alpha',
+          href: '/game/alpha',
+          displayId: 'alpha',
+          tileColor: '#123456',
+          isFavorite: false,
+          tileSnapshotPath: null
+        }
+      ]
     });
   });
 });
